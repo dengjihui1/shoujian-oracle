@@ -1,0 +1,16 @@
+{
+  "name": "shoujian-oracle",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A tiny, local-first virtual diviner Web Component for cultural and entertainment use.",
+  "scripts": {
+    "test": "node --test",
+    "check": "node scripts/check-project.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT"
+}
+
