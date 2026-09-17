@@ -5,7 +5,10 @@ import process from "node:process";
 
 const root = new URL("../", import.meta.url);
 const rootPath = fileURLToPath(root);
-const required = ["README.md", "LICENSE", "index.html", "src/oracle-engine.js", "src/shoujian-oracle.js"];
+const required = [
+  "README.md", "NOTICE.md", "LICENSE", "index.html", "docs/COMPONENT_MAP.md", "docs/LEARNING_GUIDE.md",
+  "src/oracle-engine.js", "src/question-boundary.js", "src/dialogue-engine.js", "src/shoujian-oracle.js"
+];
 
 for (const relativePath of required) {
   await readFile(new URL(relativePath, root), "utf8");

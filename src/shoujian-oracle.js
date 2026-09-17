@@ -1,130 +1,175 @@
-import { castHexagram } from "./oracle-engine.js";
-
-const lineText = Object.freeze({
-  6: "老阴，动",
-  7: "少阳",
-  8: "少阴",
-  9: "老阳，动"
-});
+import { LINE_DEFINITIONS, castWithCoins } from "./oracle-engine.js";
+import { assessQuestion } from "./question-boundary.js";
+import { boundaryReply, followUpReply, readingReply, welcomeReply } from "./dialogue-engine.js";
 
 export class ShoujianOracle extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: "open" });
-    this.renderIdle();
+    this.resetSession();
   }
 
   connectedCallback() {
     this.shadowRoot.addEventListener("click", this.handleClick);
+    this.shadowRoot.addEventListener("submit", this.handleSubmit);
   }
 
   disconnectedCallback() {
     this.shadowRoot.removeEventListener("click", this.handleClick);
+    this.shadowRoot.removeEventListener("submit", this.handleSubmit);
   }
 
-  handleClick = (event) => {
-    if (event.target.closest("[data-cast]")) this.cast();
-    if (event.target.closest("[data-reset]")) this.renderIdle();
+  resetSession() {
+    this.stage = "question";
+    this.question = "";
+    this.reading = null;
+    this.messages = [{ role: "master", text: welcomeReply() }];
+    this.render();
+  }
+
+  handleSubmit = (event) => {
+    event.preventDefault();
+    const field = this.shadowRoot.querySelector("textarea");
+    const text = field?.value.trim() ?? "";
+    if (text) this.sendText(text);
   };
 
-  cast() {
-    const question = this.shadowRoot.querySelector("textarea").value.trim();
-    const reading = castHexagram();
-    this.renderReading(reading, question);
-    this.shadowRoot.querySelector("[data-result]")?.focus();
+  handleClick = (event) => {
+    const action = event.target.closest("[data-action]")?.dataset.action;
+    if (action === "cast") this.cast();
+    if (action === "reset") this.resetSession();
+    const quick = event.target.closest("[data-quick]")?.dataset.quick;
+    if (quick) this.sendText(quick);
+  };
+
+  sendText(text) {
+    this.messages.push({ role: "user", text });
+    if (this.stage === "question") {
+      const assessment = assessQuestion(text);
+      this.messages.push({ role: "master", text: boundaryReply(assessment) });
+      if (assessment.level === "clear") {
+        this.question = text;
+        this.stage = "ready";
+      }
+    } else if (this.stage === "ready") {
+      this.messages.push({ role: "master", text: "原问已经收下。请先起卦；若要换题，点“另起一问”。" });
+    } else {
+      const reply = followUpReply(text, this.reading);
+      this.messages.push({ role: "master", text: reply.text });
+      if (reply.action === "restart") {
+        this.stage = "question";
+        this.question = "";
+        this.reading = null;
+      }
+    }
+    this.render();
+    this.focusLatest();
   }
 
-  renderIdle() {
+  cast() {
+    if (this.stage !== "ready") return;
+    this.reading = castWithCoins();
+    this.stage = "reading";
+    this.messages.push({ role: "master", text: readingReply(this.reading) });
+    this.render();
+    this.focusLatest();
+  }
+
+  focusLatest() {
+    this.shadowRoot.querySelector("[data-latest]")?.focus();
+  }
+
+  render() {
+    if (!this.shadowRoot) return;
+    const phase = this.stage === "question" ? "候问" : this.stage === "ready" ? "问已收" : "照卦答";
+    const posture = this.stage === "question" ? "候" : this.stage === "ready" ? "契" : "解";
     this.shadowRoot.innerHTML = `${styles}
       <main class="shell">
-        <section class="master" aria-label="虚拟卦师守简">
-          <div class="portrait" aria-hidden="true">
-            <span class="hat"></span><span class="face">守</span><span class="beard"></span>
+        <header class="master-card stage-${this.stage}">
+          <div class="portrait" role="img" aria-label="中式老卦师墨衡，当前仪态：${phase}">
+            <span class="hat"></span><span class="face">墨</span><span class="beard"></span><span class="seal">${posture}</span>
           </div>
-          <div>
-            <p class="eyebrow">一问一掷 · 本机完成</p>
-            <h1>守简</h1>
-            <p>话不必说满，先把心里那一问放在案上。</p>
-          </div>
-        </section>
-        <label for="question">此刻所问</label>
-        <textarea id="question" maxlength="120" placeholder="例如：我该从哪一步开始？"></textarea>
-        <button class="primary" type="button" data-cast>掷三钱六次</button>
-        <p class="boundary">问题只留在当前页面，不上传、不保存。结果用于传统文化体验与自我整理，不替代医疗、法律、投资或现实决策。</p>
-      </main>`;
-  }
+          <div><p class="eyebrow">墨衡小卦 · ${phase}</p><h1>有问先收，有据才答</h1><p>这是从主项目抽出的轻量主持、问界与起卦组件。</p></div>
+        </header>
 
-  renderReading(reading, question) {
-    const lines = [...reading.lines].reverse().map((line, visualIndex) => {
-      const originalIndex = 5 - visualIndex;
-      const glyph = line.yang ? "━━━━━━" : "━━  ━━";
-      return `<li class="line ${line.moving ? "moving" : ""}"><span>${glyph}</span><small>第${originalIndex + 1}爻 · ${lineText[line.value]}</small></li>`;
-    }).join("");
-
-    this.shadowRoot.innerHTML = `${styles}
-      <main class="shell result" tabindex="-1" data-result>
-        <section class="master compact" aria-label="虚拟卦师守简">
-          <div class="portrait" aria-hidden="true"><span class="hat"></span><span class="face">守</span><span class="beard"></span></div>
-          <div><p class="eyebrow">守简落签</p><h1>${escapeHtml(reading.primary.label)}</h1></div>
+        <section class="dialogue" aria-label="与墨衡的当前对话" aria-live="polite">
+          ${this.messages.map((message, index) => `<article class="message ${message.role}" ${index === this.messages.length - 1 ? 'tabindex="-1" data-latest' : ""}>
+            <b>${message.role === "master" ? "墨衡" : "你"}</b><p>${escapeHtml(message.text)}</p>
+          </article>`).join("")}
         </section>
-        ${question ? `<blockquote>“${escapeHtml(question)}”</blockquote>` : ""}
-        <ol class="hexagram" aria-label="六爻，自上而下显示">${lines}</ol>
-        <p class="spoken">${escapeHtml(reading.prompt)}</p>
-        <dl>
-          <div><dt>下卦</dt><dd>${reading.primary.lower.name} · ${reading.primary.lower.image}</dd></div>
-          <div><dt>上卦</dt><dd>${reading.primary.upper.name} · ${reading.primary.upper.image}</dd></div>
-          <div><dt>动爻</dt><dd>${reading.movingLines.length ? reading.movingLines.join("、") : "无"}</dd></div>
-        </dl>
-        <button class="secondary" type="button" data-reset>收签再问</button>
-        <p class="boundary">这是轻量娱乐性提示，不声称预测未来，也不建议据此作高风险决定。</p>
+
+        ${this.reading ? readingCard(this.reading, this.question) : ""}
+
+        <section class="controls">
+          ${this.stage === "ready" ? `<button class="primary" type="button" data-action="cast">掷三钱六次，依数排卦</button>` : ""}
+          ${this.stage === "reading" ? `<div class="quick" aria-label="可追问内容">
+            <button type="button" data-quick="这个卦是什么意思">什么意思</button>
+            <button type="button" data-quick="动爻怎么看">动爻怎么看</button>
+            <button type="button" data-quick="你是怎么算的">怎么算的</button>
+            <button type="button" data-quick="边界是什么">边界是什么</button>
+          </div>` : ""}
+          <form>
+            <label for="say">${this.stage === "question" ? "留下一件具体的事" : this.stage === "ready" ? "原问已固定" : "继续问墨衡"}</label>
+            <div class="input-row">
+              <textarea id="say" maxlength="160" ${this.stage === "ready" ? "disabled" : ""} placeholder="${this.stage === "reading" ? "可问：什么意思、动爻怎么看、怎么算的……" : "例如：未来三天，我该先验证哪一步？"}"></textarea>
+              <button type="submit" ${this.stage === "ready" ? "disabled" : ""}>送问</button>
+            </div>
+          </form>
+          ${this.stage !== "question" ? `<button class="text-button" type="button" data-action="reset">另起一问</button>` : `<div class="quick"><button type="button" data-quick="我不会问，请给一个例子">我不会问</button><button type="button" data-quick="边界是什么">哪些不能问</button></div>`}
+        </section>
+
+        <footer>问题与对话只在当前标签页内存中存在，不上传、不持久化。演示结果不替代医疗、法律、投资或现实安全判断。</footer>
       </main>`;
   }
 }
 
+function readingCard(reading, question) {
+  const lines = [...reading.lines].reverse().map((value, visualIndex) => {
+    const position = 6 - visualIndex;
+    const definition = LINE_DEFINITIONS[value];
+    return `<li class="line ${definition.moving ? "moving" : ""}"><span>${definition.polarity === "阳" ? "━━━━━━" : "━━  ━━"}</span><small>第${position}爻 · ${definition.label}${definition.moving ? "，动" : ""}</small></li>`;
+  }).join("");
+  return `<section class="reading" aria-label="本次卦象">
+    <p class="question">原问：“${escapeHtml(question)}”</p>
+    <div class="reading-title"><span>${reading.primary.symbol}</span><div><small>第 ${reading.primary.number} 卦</small><h2>${reading.primary.fullName}</h2></div></div>
+    <ol aria-label="六爻，自上而下显示">${lines}</ol>
+    <dl><div><dt>下卦</dt><dd>${reading.primary.lower.symbol}${reading.primary.lower.name} · ${reading.primary.lower.image}</dd></div><div><dt>上卦</dt><dd>${reading.primary.upper.symbol}${reading.primary.upper.name} · ${reading.primary.upper.image}</dd></div><div><dt>之卦</dt><dd>${reading.changed?.fullName ?? "无"}</dd></div></dl>
+  </section>`;
+}
+
 function escapeHtml(value) {
-  return value.replace(/[&<>'"]/g, (character) => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;"
-  })[character]);
+  return value.replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character]);
 }
 
 const styles = `<style>
   :host { color-scheme: dark; display: block; font-family: "Noto Serif SC", "Songti SC", serif; }
-  * { box-sizing: border-box; }
-  .shell { width: min(100%, 540px); margin: auto; padding: 28px; color: #efe5cd; background: radial-gradient(circle at top right, #493525 0, #1b1816 44%, #11100f 100%); border: 1px solid #766044; border-radius: 24px; box-shadow: 0 24px 70px #0008; }
-  .master { display: grid; grid-template-columns: 112px 1fr; gap: 20px; align-items: center; margin-bottom: 24px; }
-  .master.compact { grid-template-columns: 78px 1fr; margin-bottom: 18px; }
-  .portrait { position: relative; width: 104px; height: 118px; margin: auto; display: grid; place-items: center; }
-  .compact .portrait { width: 74px; height: 84px; }
-  .face { z-index: 2; display: grid; place-items: center; width: 72%; aspect-ratio: 1; border-radius: 48% 48% 45% 45%; color: #6b271d; background: #cfb083; border: 2px solid #8e6c49; font-weight: 800; }
+  * { box-sizing: border-box; } button, textarea { font: inherit; }
+  .shell { width: min(100%, 680px); margin: auto; padding: 26px; color: #efe5cd; background: radial-gradient(circle at 95% 0, #493525 0, #1b1816 42%, #11100f 100%); border: 1px solid #766044; border-radius: 24px; box-shadow: 0 24px 70px #0008; }
+  .master-card { display: grid; grid-template-columns: 112px 1fr; gap: 20px; align-items: center; padding-bottom: 22px; border-bottom: 1px solid #71573a80; }
+  .portrait { position: relative; width: 104px; height: 118px; display: grid; place-items: center; }
+  .face { z-index: 2; display: grid; place-items: center; width: 72%; aspect-ratio: 1; border-radius: 48%; color: #6b271d; background: #cfb083; border: 2px solid #8e6c49; font-weight: 800; font-size: 24px; }
   .hat { position: absolute; z-index: 3; top: 8%; width: 84%; height: 24%; background: #191919; border-radius: 50% 50% 12% 12%; border-bottom: 3px solid #9f3430; }
   .hat::after { content: ""; position: absolute; left: 12%; right: 12%; bottom: -7px; height: 7px; border-radius: 50%; background: #090909; }
-  .beard { position: absolute; z-index: 1; bottom: 6%; width: 48%; height: 42%; background: linear-gradient(90deg, #bbb, #fff, #aaa); clip-path: polygon(16% 0, 84% 0, 100% 18%, 60% 100%, 42% 100%, 0 18%); }
-  .eyebrow { margin: 0 0 5px; color: #bd9362; font: 600 12px/1.4 system-ui, sans-serif; letter-spacing: .18em; text-transform: uppercase; }
-  h1 { margin: 0 0 8px; font-size: clamp(28px, 7vw, 42px); font-weight: 650; }
-  p { line-height: 1.75; }
-  label { display: block; margin-bottom: 8px; color: #d9bd91; font-weight: 700; }
-  textarea { width: 100%; min-height: 110px; resize: vertical; padding: 14px 16px; color: #f3ead8; background: #0e0d0caa; border: 1px solid #6c5942; border-radius: 14px; font: inherit; line-height: 1.65; }
-  textarea:focus, button:focus-visible, .result:focus { outline: 3px solid #d2a15b; outline-offset: 3px; }
-  button { width: 100%; min-height: 48px; margin-top: 16px; border: 0; border-radius: 999px; font: 700 16px/1 system-ui, sans-serif; cursor: pointer; }
-  .primary { color: #fff8e8; background: #8e332a; }
-  .secondary { color: #2c2017; background: #d3b27f; }
-  .boundary { margin: 16px 2px 0; color: #aa9d8d; font: 13px/1.7 system-ui, sans-serif; }
-  blockquote { margin: 0 0 18px; padding: 12px 16px; color: #d9c39e; background: #ffffff09; border-left: 3px solid #913a30; }
-  .hexagram { display: flex; flex-direction: column; gap: 6px; padding: 16px; margin: 0; list-style: none; background: #09080770; border-radius: 15px; }
-  .line { display: grid; grid-template-columns: 1fr auto; gap: 14px; align-items: center; min-height: 30px; }
-  .line span { color: #d2b782; font: 800 22px/1 monospace; letter-spacing: .03em; }
-  .line small { color: #928778; font: 12px/1.4 system-ui, sans-serif; }
-  .line.moving span, .line.moving small { color: #e5705e; }
-  .spoken { padding: 18px; margin: 18px 0; color: #f6e8cc; background: linear-gradient(100deg, #782b231f, transparent); border: 1px solid #6e4c38; border-radius: 15px; font-size: 17px; }
-  dl { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 0; }
-  dl div { padding: 10px; text-align: center; background: #ffffff08; border-radius: 10px; }
-  dt { color: #9f917e; font: 12px/1.4 system-ui, sans-serif; }
-  dd { margin: 4px 0 0; }
-  @media (max-width: 440px) { .shell { padding: 20px; border-radius: 18px; } .master { grid-template-columns: 82px 1fr; } .portrait { width: 80px; height: 92px; } .line { grid-template-columns: 1fr; gap: 2px; } dl { grid-template-columns: 1fr; } }
-  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; } }
+  .beard { position: absolute; z-index: 1; bottom: 6%; width: 48%; height: 42%; background: linear-gradient(90deg, #aaa, #fff, #aaa); clip-path: polygon(16% 0,84% 0,100% 18%,60% 100%,42% 100%,0 18%); }
+  .seal { position: absolute; z-index: 4; right: 0; bottom: 4px; display: grid; place-items: center; width: 30px; height: 30px; color: #f4d4a2; background: #812d27; border: 1px solid #da8674; border-radius: 4px; }
+  .eyebrow { margin: 0 0 5px; color: #bd9362; font: 600 12px/1.4 system-ui,sans-serif; letter-spacing: .16em; }
+  h1 { margin: 0 0 8px; font-size: clamp(24px, 5vw, 36px); } .master-card p { margin: 0; line-height: 1.65; color: #bdb09c; }
+  .dialogue { display: grid; gap: 10px; max-height: 320px; overflow: auto; padding: 18px 2px; }
+  .message { max-width: 88%; padding: 11px 14px; border-radius: 14px; background: #ffffff09; border: 1px solid #68533c; }
+  .message.user { justify-self: end; background: #6d2d2729; border-color: #8e4a40; } .message b { color: #c9a46e; font-size: 13px; } .message p { margin: 5px 0 0; line-height: 1.7; }
+  .reading { padding: 18px; background: #09080772; border: 1px solid #604932; border-radius: 16px; } .question { margin: 0 0 14px; color: #bca889; }
+  .reading-title { display: flex; gap: 14px; align-items: center; } .reading-title > span { font-size: 46px; color: #d2b782; } h2 { margin: 2px 0 0; font-size: 25px; }
+  .reading ol { display: grid; gap: 5px; padding: 15px; list-style: none; background: #05050566; border-radius: 12px; }
+  .line { display: grid; grid-template-columns: 1fr auto; gap: 12px; } .line span { color: #d2b782; font: 800 21px/1 monospace; } .line small { color: #918574; font: 12px/1.4 system-ui,sans-serif; } .line.moving span,.line.moving small { color: #e5705e; }
+  dl { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin: 0; } dl div { padding: 9px; text-align: center; background: #ffffff08; border-radius: 9px; } dt { color: #9d8f7b; font: 12px system-ui,sans-serif; } dd { margin: 4px 0 0; }
+  .controls { display: grid; gap: 12px; padding-top: 18px; } label { display: block; margin-bottom: 7px; color: #d9bd91; font-weight: 700; } .input-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+  textarea { min-height: 70px; resize: vertical; padding: 11px 13px; color: #f3ead8; background: #090807aa; border: 1px solid #6c5942; border-radius: 12px; } button { min-height: 44px; padding: 9px 16px; color: #f8ead0; background: #593a29; border: 1px solid #826244; border-radius: 999px; cursor: pointer; } button:disabled { opacity: .48; cursor: not-allowed; } .primary { width: 100%; background: #8e332a; border-color: #bb6b5d; font-weight: 700; } .text-button { justify-self: center; background: transparent; border: 0; color: #c5aa7e; text-decoration: underline; }
+  .quick { display: flex; flex-wrap: wrap; gap: 7px; } .quick button { min-height: 38px; padding: 7px 12px; font-size: 13px; }
+  footer { margin-top: 18px; color: #9f9485; font: 12px/1.65 system-ui,sans-serif; }
+  textarea:focus,button:focus-visible,[data-latest]:focus { outline: 3px solid #d2a15b; outline-offset: 3px; }
+  @media(max-width:520px){ .shell{padding:18px;border-radius:16px}.master-card{grid-template-columns:78px 1fr}.portrait{width:74px;height:86px}.input-row{grid-template-columns:1fr}.line{grid-template-columns:1fr;gap:2px}dl{grid-template-columns:1fr}.message{max-width:95%} }
+  @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
 </style>`;
 
-if (!customElements.get("shoujian-oracle")) {
-  customElements.define("shoujian-oracle", ShoujianOracle);
-}
+if (!customElements.get("shoujian-oracle")) customElements.define("shoujian-oracle", ShoujianOracle);
 
