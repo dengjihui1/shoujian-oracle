@@ -7,14 +7,16 @@ const root = new URL("../", import.meta.url);
 const rootPath = fileURLToPath(root);
 const required = [
   "README.md", "NOTICE.md", "LICENSE", "index.html", "docs/COMPONENT_MAP.md", "docs/LEARNING_GUIDE.md",
-  "src/oracle-engine.js", "src/question-boundary.js", "src/dialogue-engine.js", "src/shoujian-oracle.js"
+  "docs/API_SETUP.md", "server/index.mjs", "server/gemini-client.mjs", "server/prompt.mjs",
+  "src/oracle-engine.js", "src/question-boundary.js", "src/dialogue-engine.js", "src/shoujian-oracle.js",
+  "src/api-client.js", "src/audio-recorder.js", "src/audio-player.js"
 ];
 
 for (const relativePath of required) {
   await readFile(new URL(relativePath, root), "utf8");
 }
 
-const secretLike = [/api[_-]?key\s*[:=]/i, /private[_-]?key\s*[:=]/i];
+const secretLike = [/AIza[0-9A-Za-z_-]{20,}/u, /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/u];
 const runtimeCoupling = [/xunzhai/i, /paymentSandbox/, /najia/i];
 
 async function walk(directory) {
