@@ -5,6 +5,8 @@ import { OracleApiClient } from "./api-client.js";
 import { AudioRecorder, BrowserSpeechRecognizer, blobToBase64 } from "./audio-recorder.js";
 import { playPcmBase64 } from "./audio-player.js";
 import { ConversationMemory, recentConversation } from "./conversation-memory.js";
+import { SentenceSegmenter } from "./speech-segmenter.js";
+import { StreamingSpeechQueue } from "./speech-queue.js";
 import { StreamingTextRevealer } from "./streaming-text.js";
 import { renderOracleView } from "./oracle-view.js";
 import { deriveAvatarPresentation } from "./avatar-state.js";
@@ -27,8 +29,7 @@ export class ShoujianOracle extends HTMLElement {
     this.draft = "";
     this.chatController = null;
     this.transcriptionController = null;
-    this.speechController = null;
-    this.audioPlayback = null;
+    this.speechQueue = null;
     this.initializeSession();
     this.restoreMemory();
     this.render();
@@ -214,7 +215,8 @@ export class ShoujianOracle extends HTMLElement {
       },
     });
     this.activeRevealer = revealer;
-    let speechText = "";
+    const speechQueue = this.voiceReplies ? this.createSpeechQueue() : null;
+    const speechSegmenter = speechQueue ? new SentenceSegmenter() : null;
     let receivedText = false;
     this.render();
     try {
@@ -235,6 +237,7 @@ export class ShoujianOracle extends HTMLElement {
           if (!controller.signal.aborted) {
             receivedText = true;
             revealer.enqueue(delta);
+            for (const sentence of speechSegmenter?.push(delta) ?? []) speechQueue.enqueue(sentence);
           }
         },
       });
@@ -243,9 +246,11 @@ export class ShoujianOracle extends HTMLElement {
       reply.text = result.text || reply.text;
       reply.evidence = result.evidence ?? reply.evidence;
       reply.streaming = false;
-      speechText = result.text;
+      for (const sentence of speechSegmenter?.flush() ?? []) speechQueue.enqueue(sentence);
+      speechQueue?.close();
     } catch (error) {
       revealer.cancel();
+      speechQueue?.cancel();
       if (error?.name === "AbortError") {
         reply.text = receivedText && reply.text ? `${reply.text}\n\n（已停止）` : "已停止本次回答。";
         reply.cancelled = true;
@@ -263,12 +268,12 @@ export class ShoujianOracle extends HTMLElement {
       this.render();
       this.focusComposer();
     }
-    if (speechText && this.voiceReplies) void this.speak(speechText);
   }
 
   cancelResponse() {
     this.activeRevealer?.cancel();
     this.chatController?.abort();
+    this.cancelSpeech();
   }
 
   updateStreamingMessage(index) {
@@ -364,38 +369,44 @@ export class ShoujianOracle extends HTMLElement {
   }
 
   async speak(text) {
+    const queue = this.createSpeechQueue();
+    const segmenter = new SentenceSegmenter();
+    for (const sentence of [...segmenter.push(text), ...segmenter.flush()]) queue.enqueue(sentence);
+    await queue.close();
+  }
+
+  createSpeechQueue() {
     this.cancelSpeech();
-    const controller = new AbortController();
-    this.speechController = controller;
-    this.voiceState = "generating";
-    this.updateVoiceStatus();
-    try {
-      const audio = await this.api.speech(text, { signal: controller.signal });
-      if (controller.signal.aborted || this.speechController !== controller || !this.voiceReplies) return;
-      this.voiceState = "playing";
-      this.updateVoiceStatus();
-      const playback = await playPcmBase64(audio.data, { sampleRate: audio.sampleRate });
-      this.audioPlayback = playback;
-      await playback.ended;
-    } catch (error) {
-      if (error?.name !== "AbortError") console.warn("Voice reply failed:", error);
-    } finally {
-      if (this.speechController === controller) {
-        this.speechController = null;
-        this.audioPlayback = null;
-        this.voiceState = "idle";
+    let queue;
+    queue = new StreamingSpeechQueue({
+      synthesize: (text, { signal }) => this.api.speech(text, { signal }),
+      play: (audio, { onLevel }) => playPcmBase64(audio.data, { sampleRate: audio.sampleRate, onLevel }),
+      onState: (state) => {
+        if (this.speechQueue !== queue) return;
+        this.voiceState = state;
+        if (state === "idle") this.speechQueue = null;
         this.updateVoiceStatus();
-      }
-    }
+      },
+      onLevel: (level) => this.updateVoiceLevel(level),
+      onError: (error) => console.warn("Voice sentence failed:", error),
+      prefetch: 2,
+    });
+    this.speechQueue = queue;
+    return queue;
   }
 
   cancelSpeech() {
-    this.speechController?.abort();
-    this.speechController = null;
-    this.audioPlayback?.stop();
-    this.audioPlayback = null;
+    const queue = this.speechQueue;
+    this.speechQueue = null;
+    queue?.cancel();
     this.voiceState = "idle";
+    this.updateVoiceLevel(0);
     this.updateVoiceStatus();
+  }
+
+  updateVoiceLevel(level) {
+    const stage = this.shadowRoot?.querySelector(".avatar-stage");
+    if (stage) stage.style.setProperty("--voice-level", String(Math.max(0, Math.min(1, Number(level) || 0))));
   }
 
   updateVoiceStatus() {
