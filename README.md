@@ -36,7 +36,7 @@
 | `oracleQuestionBoundary` | 7 类公开字规 | 问契签名、验期、准绳与追验 |
 | `iching` | 6/7/8/9、八卦、文王序 64 卦映射 | 古籍全文、爻辞、纳甲、六亲、旬空、六神 |
 
-经传数据另从中文维基文库公开来源建立独立知识包，不复制主项目住宅知识。完整映射见 [组件抽取与流程图](docs/COMPONENT_MAP.md)，逐模块输入输出、依赖、降级、测试和练习见 [守简模块池](docs/MODULE_POOL.md)，阅读顺序见 [代码学习指南](docs/LEARNING_GUIDE.md)。
+经传数据另从中文维基文库公开来源建立独立知识包，不复制主项目住宅知识。完整映射见 [组件抽取与流程图](docs/COMPONENT_MAP.md)，逐模块输入输出、依赖、降级、测试和练习见 [守简模块池](docs/MODULE_POOL.md)，阅读顺序见 [代码学习指南](docs/LEARNING_GUIDE.md)，本轮自动化与真实 Gemini 验收见 [0.9.0 质量基线](docs/QUALITY_BASELINE.md)。
 
 ## 本地运行（无需 API）
 
