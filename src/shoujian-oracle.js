@@ -4,9 +4,8 @@ import { boundaryReply, followUpReply, readingReply, welcomeReply } from "./dial
 import { OracleApiClient } from "./api-client.js";
 import { AudioRecorder, BrowserSpeechRecognizer, blobToBase64 } from "./audio-recorder.js";
 import { playPcmBase64 } from "./audio-player.js";
-
-const MEMORY_KEY = "shoujian-oracle:conversation:v1";
-const MAX_MEMORY_MESSAGES = 24;
+import { ConversationMemory, PERSISTED_MEMORY_MESSAGES, recentConversation } from "./conversation-memory.js";
+import { StreamingTextRevealer } from "./streaming-text.js";
 
 export class ShoujianOracle extends HTMLElement {
   constructor() {
@@ -15,6 +14,7 @@ export class ShoujianOracle extends HTMLElement {
     this.api = new OracleApiClient();
     this.recorder = new AudioRecorder();
     this.liveTranscriber = new BrowserSpeechRecognizer();
+    this.memory = new ConversationMemory();
     this.cloud = false;
     this.knowledge = null;
     this.recording = false;
@@ -71,7 +71,7 @@ export class ShoujianOracle extends HTMLElement {
 
   clearMemory() {
     this.cancelSpeech();
-    try { localStorage.removeItem(MEMORY_KEY); } catch { /* storage unavailable */ }
+    this.memory.clear();
     this.initializeSession();
     this.draft = "";
     this.render();
@@ -79,27 +79,12 @@ export class ShoujianOracle extends HTMLElement {
   }
 
   restoreMemory() {
-    try {
-      const stored = JSON.parse(localStorage.getItem(MEMORY_KEY) ?? "null");
-      if (!Array.isArray(stored?.messages) || stored.messages.length === 0) return;
-      this.messages = stored.messages.slice(-MAX_MEMORY_MESSAGES).map((message) => ({
-        role: message?.role === "user" ? "user" : "master",
-        text: String(message?.text ?? "").slice(0, 2_000),
-        cloud: Boolean(message?.cloud),
-        evidence: Array.isArray(message?.evidence) ? message.evidence.slice(0, 8) : [],
-      })).filter(({ text }) => text);
-      if (!this.messages.length) this.initializeSession();
-    } catch { /* corrupt or unavailable storage falls back to a clean session */ }
+    const messages = this.memory.load();
+    if (messages.length) this.messages = messages;
   }
 
   persistMemory() {
-    try {
-      const messages = this.messages.filter((message) => message.text && !message.streaming && !message.error && !message.cancelled)
-        .slice(-MAX_MEMORY_MESSAGES).map(({ role, text, cloud, evidence }) => ({
-          role, text: String(text).slice(0, 2_000), cloud: Boolean(cloud), evidence: evidence ?? [],
-        }));
-      localStorage.setItem(MEMORY_KEY, JSON.stringify({ version: 1, messages }));
-    } catch { /* memory remains available for the current page */ }
+    this.memory.save(this.messages);
   }
 
   handleSubmit = async (event) => {
@@ -209,8 +194,13 @@ export class ShoujianOracle extends HTMLElement {
     this.messages.push(reply);
     const replyIndex = this.messages.length - 1;
     const reduceMotion = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
-    let revealChain = Promise.resolve();
-    let streamCancelled = false;
+    const revealer = new StreamingTextRevealer({
+      reducedMotion: reduceMotion,
+      onText: (text) => {
+        reply.text = text;
+        this.updateStreamingMessage(replyIndex);
+      },
+    });
     let speechText = "";
     this.render();
     try {
@@ -220,7 +210,7 @@ export class ShoujianOracle extends HTMLElement {
         stage: this.stage,
         question: this.question,
         reading: this.reading,
-        history: history.filter((item) => item?.text && !item.error).slice(-MAX_MEMORY_MESSAGES),
+        history: recentConversation(history),
       }, {
         signal: controller.signal,
         onMeta: (meta) => {
@@ -228,29 +218,17 @@ export class ShoujianOracle extends HTMLElement {
           this.updateStreamingMessage(replyIndex);
         },
         onDelta: (delta) => {
-          if (reduceMotion) {
-            reply.text += delta;
-            this.updateStreamingMessage(replyIndex);
-            return;
-          }
-          revealChain = revealChain.then(async () => {
-            for (const character of [...delta]) {
-              if (streamCancelled || controller.signal.aborted) return;
-              reply.text += character;
-              this.updateStreamingMessage(replyIndex);
-              await wait(characterDelay(character));
-            }
-          });
+          if (!controller.signal.aborted) revealer.enqueue(delta);
         },
       });
-      await revealChain;
+      await revealer.finish();
       if (controller.signal.aborted) throw Object.assign(new Error("已停止"), { name: "AbortError" });
       reply.text = result.text || reply.text;
       reply.evidence = result.evidence ?? reply.evidence;
       reply.streaming = false;
       speechText = result.text;
     } catch (error) {
-      streamCancelled = true;
+      revealer.cancel();
       if (error?.name === "AbortError") {
         reply.text = reply.text ? `${reply.text}\n\n（已停止）` : "已停止本次回答。";
         reply.cancelled = true;
@@ -477,21 +455,13 @@ export class ShoujianOracle extends HTMLElement {
             ${this.busy && !this.transcribing ? `<button type="button" data-action="cancel-response">停止回答</button>` : ""}
             ${this.cloud ? `<button type="button" data-action="voice" aria-pressed="${this.voiceReplies}">${this.voiceButtonLabel()}</button>` : ""}
           </div>
-          ${this.cloud ? `<div class="memory-tools"><small>本机记忆最近 ${MAX_MEMORY_MESSAGES} 条对话，刷新后仍可继续。</small><button type="button" data-action="clear-memory" ${this.busy || this.recording ? "disabled" : ""}>清除本机记忆</button></div>` : ""}
+          ${this.cloud ? `<div class="memory-tools"><small>本机记忆最近 ${PERSISTED_MEMORY_MESSAGES} 条对话，刷新后仍可继续。</small><button type="button" data-action="clear-memory" ${this.busy || this.recording ? "disabled" : ""}>清除本机记忆</button></div>` : ""}
           ${this.stage !== "question" ? `<button class="text-button" type="button" data-action="reset" ${this.busy || this.recording ? "disabled" : ""}>另起一问</button>` : !this.cloud ? `<div class="quick"><button type="button" data-quick="我不会问，请给一个例子">我不会问</button><button type="button" data-quick="边界是什么">哪些不能问</button></div>` : ""}
         </section>
 
         <footer>${this.cloud ? `自由对话会把你提交的文字、最近上下文和必要检索片段发送给 Google Gemini；${this.liveTranscriber.supported ? "实时语音输入由浏览器语音服务处理" : "录音会发送给 Gemini 转写"}。最近对话只保存在此浏览器本机，可随时清除，服务端不建用户档案。` : "本地模式不上传问题，但只能回答固定意图。配置 Gemini 后可启用普通闲聊、有来源的经传问答、语音转文字和语音回答。"} 演示结果不替代医疗、法律、投资或现实安全判断。</footer>
       </main>`;
   }
-}
-
-function wait(milliseconds) {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
-}
-
-function characterDelay(character) {
-  return /[。！？!?\n]/u.test(character) ? 36 : /[，、；：,.]/u.test(character) ? 20 : 9;
 }
 
 function readingCard(reading, question) {
