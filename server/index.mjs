@@ -7,7 +7,7 @@ import { GeminiClient, GeminiError, DEFAULT_MODELS } from "./gemini-client.mjs";
 import { buildChatInput, buildSystemInstruction, formatShanghaiDateTime } from "./prompt.mjs";
 import { loadKnowledgeBase } from "./knowledge-retriever.mjs";
 import { assessQuestion } from "../src/question-boundary.js";
-import { boundaryReply } from "../src/dialogue-engine.js";
+import { resolveResponsePolicy } from "../src/response-policy.js";
 import { SlidingWindowRateLimiter } from "./rate-limiter.mjs";
 
 const projectRoot = fileURLToPath(new URL("../", import.meta.url));
@@ -67,7 +67,7 @@ async function handleTranscribe(response, client, body) {
 
 async function handleChat(response, client, knowledgeBase, body, now) {
   const prepared = prepareChat(body, knowledgeBase, now);
-  if (prepared.blocked) return json(response, 200, prepared.blocked);
+  if (prepared.response) return json(response, 200, prepared.response);
   const result = await client.chat({ input: prepared.input, systemInstruction: prepared.systemInstruction });
   validateCitations(result.text, prepared.evidence);
   return json(response, 200, {
@@ -94,9 +94,9 @@ async function handleChatStream(response, client, knowledgeBase, body, now) {
     purpose: prepared.purpose,
     serverTime: prepared.serverTime,
   });
-  if (prepared.blocked) {
-    sse(response, "delta", { text: prepared.blocked.text });
-    sse(response, "done", prepared.blocked);
+  if (prepared.response) {
+    sse(response, "delta", { text: prepared.response.text });
+    sse(response, "done", prepared.response);
     return response.end();
   }
 
@@ -130,13 +130,12 @@ function prepareChat(body, knowledgeBase, now) {
   const message = cleanText(body.message, 2_000, "对话内容");
   const stage = ["question", "ready", "reading"].includes(body.stage) ? body.stage : "question";
   const assessment = assessQuestion(message);
-  const divinationMode = stage !== "question" || body.purpose === "divination";
-  const immediateDanger = assessment.issues.some(({ code }) => code === "immediate-harm");
-  if ((divinationMode && assessment.level === "blocked") || immediateDanger) {
+  const policy = resolveResponsePolicy({ message, purpose: body.purpose, stage, assessment });
+  if (policy.action === "respond") {
     return {
-      blocked: { text: boundaryReply(assessment), blocked: true },
+      response: policy.response,
       evidence: [],
-      purpose: divinationMode ? "divination" : "chat",
+      purpose: policy.purpose,
       serverTime: formatShanghaiDateTime(now()),
     };
   }
@@ -154,7 +153,7 @@ function prepareChat(body, knowledgeBase, now) {
   const serverTime = formatShanghaiDateTime(now());
   return {
     evidence,
-    purpose: divinationMode ? "divination" : "chat",
+    purpose: policy.purpose,
     serverTime,
     input: buildChatInput(message, history),
     systemInstruction: buildSystemInstruction({ stage, question, reading, evidence, currentDateTime: serverTime }),

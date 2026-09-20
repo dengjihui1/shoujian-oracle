@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { castHexagram } from "../src/oracle-engine.js";
-import { detectIntent, followUpReply, readingReply } from "../src/dialogue-engine.js";
+import { boundaryReply, detectIntent, followUpReply, readingReply } from "../src/dialogue-engine.js";
+import { assessQuestion } from "../src/question-boundary.js";
 
 const reading = castHexagram([7, 8, 8, 8, 7, 7]);
 test("dialogue router exposes a small auditable intent set", () => {
@@ -12,3 +13,8 @@ test("reading reply uses computed result rather than question text", () => {
   assert.match(readingReply(reading), /第42卦/); assert.match(followUpReply("怎么算的", reading).text, /六爻自下而上/);
 });
 test("restart intent is an explicit state transition", () => assert.equal(followUpReply("我想再问一件事", reading).action, "restart"));
+test("local divination boundary includes a useful next path", () => {
+  const reply = boundaryReply(assessQuestion("未来三天我是否应该买这只股票？"));
+  assert.match(reply, /不能由卦象替你作现实决定/u);
+  assert.match(reply, /直接问我/u);
+});

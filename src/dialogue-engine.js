@@ -1,3 +1,5 @@
+import { divinationBoundaryReply } from "./response-policy.js";
+
 const INTENTS = Object.freeze([
   { id: "restart", pattern: /再问|重来|重新|换一个问题/u }, { id: "moving", pattern: /动爻|哪一爻|变化/u },
   { id: "method", pattern: /怎么算|怎么起|依据|来源|随机/u }, { id: "boundary", pattern: /边界|不能问|风险|注意什么/u },
@@ -11,9 +13,7 @@ export function detectIntent(text) {
 export const welcomeReply = () => "先随意坐。你可以问我是谁、会做什么，也可以聊《周易》和日常困惑；真想起卦时，再把一件具体的事交给我。";
 
 export function boundaryReply(assessment) {
-  if (assessment.level === "clear") return "此问可收。问题文字不会改变卦象；确认后再掷三钱六次。";
-  const prefix = assessment.level === "blocked" ? "这一问我不能替你起卦。" : "这一问先收窄。";
-  return `${prefix}${assessment.issues.map((issue) => issue.reply).join(" ")}`;
+  return divinationBoundaryReply(assessment);
 }
 
 export function readingReply(reading) {

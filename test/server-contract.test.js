@@ -113,6 +113,50 @@ test("ordinary basic questions are not rejected by divination keyword rules", as
   });
 });
 
+test("immediate-harm chat uses crisis support instead of a divination refusal", async () => {
+  let called = false;
+  const client = {
+    models: { chat: "test-chat" },
+    async chat() { called = true; return { text: "should not be called" }; },
+  };
+  await withServer(createApp({ client }), async (base) => {
+    const response = await fetch(`${base}/api/chat`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message: "如果有人想伤害自己，现在应该怎么办？", purpose: "chat", stage: "question" }),
+    });
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(called, false);
+    assert.equal(body.handled, true);
+    assert.equal(body.safety, "crisis-support");
+    assert.equal(body.blocked, undefined);
+    assert.doesNotMatch(body.text, /不能替你起卦/u);
+    assert.match(body.text, /110 或 120/u);
+  });
+});
+
+test("investment divination refusal includes safe chat and reframing routes", async () => {
+  let called = false;
+  const client = {
+    models: { chat: "test-chat" },
+    async chat() { called = true; return { text: "should not be called" }; },
+  };
+  await withServer(createApp({ client }), async (base) => {
+    const response = await fetch(`${base}/api/chat`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message: "未来三天我是否应该买这只股票？", purpose: "divination", stage: "question" }),
+    });
+    const body = await response.json();
+    assert.equal(called, false);
+    assert.equal(body.blocked, true);
+    assert.equal(body.safety, "divination-boundary");
+    assert.match(body.text, /直接问我/u);
+    assert.match(body.text, /若想继续起卦/u);
+  });
+});
+
 test("streaming chat carries trusted Shanghai time and recent conversation context", async () => {
   const client = {
     models: { chat: "test-chat" },
