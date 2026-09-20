@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { GeminiClient, GeminiError, extractAudio, extractText } from "../server/gemini-client.mjs";
+import { GeminiClient, GeminiError, extractAudio, extractText, parseGeminiSse } from "../server/gemini-client.mjs";
 
 test("extractors understand wrapped Interactions API responses", () => {
   assert.equal(extractText({ interaction: { outputs: [{ type: "text", text: " 墨衡答复 " }] } }), "墨衡答复");
@@ -46,6 +46,22 @@ test("transcription falls back to Files API when inline audio is rejected", asyn
   assert.equal(interaction.input[0].uri, "https://files.test/audio");
   assert.match(calls[4].url, /v1beta\/files\/audio-1$/u);
   assert.equal(calls[4].options.method, "DELETE");
+});
+
+test("transcription does not add a slow upload retry for provider outages", async () => {
+  let calls = 0;
+  const client = new GeminiClient({
+    apiKey: "test-only",
+    fetchFn: async () => {
+      calls += 1;
+      return Response.json({ error: { message: "temporarily unavailable" } }, { status: 503 });
+    }
+  });
+  await assert.rejects(
+    () => client.transcribe({ bytes: Uint8Array.from([1, 2, 3]), mimeType: "audio/webm" }),
+    (error) => error.code === "upstream_error" && error.providerStatus === 503
+  );
+  assert.equal(calls, 1);
 });
 
 test("chat and speech use configurable current model IDs", async () => {
@@ -113,4 +129,39 @@ test("chat stream yields Gemini SSE chunks and falls back before the first chunk
   assert.deepEqual(chunks.map(({ text }) => text), ["今天是", "2026年9月20日。"]) ;
   assert.ok(chunks.every(({ model }) => model === "chat-streaming"));
   assert.deepEqual(requestedModels, ["chat-busy", "chat-streaming"]);
+});
+
+test("Gemini SSE parsing handles CRLF split across network chunks", async () => {
+  const encoder = new TextEncoder();
+  const body = new ReadableStream({
+    start(controller) {
+      controller.enqueue(encoder.encode('data: {"candidates":[{"content":{"parts":[{"text":"拆'));
+      controller.enqueue(encoder.encode('包"}]}}]}\r'));
+      controller.enqueue(encoder.encode('\n\r\n'));
+      controller.close();
+    }
+  });
+  const chunks = [];
+  for await (const text of parseGeminiSse(body)) chunks.push(text);
+  assert.deepEqual(chunks, ["拆包"]);
+});
+
+test("an aborted chat stream does not try fallback models", async () => {
+  const controller = new AbortController();
+  controller.abort();
+  let calls = 0;
+  const client = new GeminiClient({
+    apiKey: "test-only",
+    models: { chat: "primary" },
+    chatFallbackModels: ["fallback"],
+    fetchFn: async (_url, options) => {
+      calls += 1;
+      if (options.signal.aborted) throw Object.assign(new Error("aborted"), { name: "AbortError" });
+      return new Response("");
+    }
+  });
+  await assert.rejects(async () => {
+    for await (const _chunk of client.chatStream({ input: "x", systemInstruction: "y", signal: controller.signal })) { /* no-op */ }
+  }, (error) => error.code === "cancelled");
+  assert.equal(calls, 1);
 });

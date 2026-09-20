@@ -46,7 +46,7 @@ export class ShoujianOracle extends HTMLElement {
     clearTimeout(this.recordingTimer);
     if (this.recording && this.recordingMode === "recorded") this.recorder.stop()?.catch(() => {});
     this.liveTranscriber.abort();
-    this.chatController?.abort();
+    this.cancelResponse();
     this.transcriptionController?.abort();
     this.cancelSpeech();
   }
@@ -201,6 +201,7 @@ export class ShoujianOracle extends HTMLElement {
         this.updateStreamingMessage(replyIndex);
       },
     });
+    this.activeRevealer = revealer;
     let speechText = "";
     this.render();
     try {
@@ -239,6 +240,7 @@ export class ShoujianOracle extends HTMLElement {
       }
       reply.streaming = false;
     } finally {
+      if (this.activeRevealer === revealer) this.activeRevealer = null;
       if (this.chatController === controller) this.chatController = null;
       this.busy = false;
       this.persistMemory();
@@ -249,6 +251,7 @@ export class ShoujianOracle extends HTMLElement {
   }
 
   cancelResponse() {
+    this.activeRevealer?.cancel();
     this.chatController?.abort();
   }
 

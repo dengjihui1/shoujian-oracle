@@ -8,14 +8,15 @@ import { buildChatInput, buildSystemInstruction, formatShanghaiDateTime } from "
 import { loadKnowledgeBase } from "./knowledge-retriever.mjs";
 import { assessQuestion } from "../src/question-boundary.js";
 import { boundaryReply } from "../src/dialogue-engine.js";
+import { SlidingWindowRateLimiter } from "./rate-limiter.mjs";
 
 const projectRoot = fileURLToPath(new URL("../", import.meta.url));
 const AUDIO_TYPES = new Set(["audio/webm", "audio/ogg", "audio/mp4", "audio/mpeg", "audio/wav", "audio/x-wav"]);
-const BODY_LIMIT = 8 * 1024 * 1024;
+const BODY_LIMIT = 9 * 1024 * 1024;
 const defaultKnowledgeBase = await loadKnowledgeBase();
 
 export function createApp({ client = null, knowledgeBase = defaultKnowledgeBase, rootPath = projectRoot, now = Date.now } = {}) {
-  const requests = new Map();
+  const rateLimiter = new SlidingWindowRateLimiter();
   const apiEnabled = Boolean(client);
 
   return async function app(request, response) {
@@ -23,7 +24,7 @@ export function createApp({ client = null, knowledgeBase = defaultKnowledgeBase,
     try {
       const url = new URL(request.url, `http://${request.headers.host ?? "localhost"}`);
       if (url.pathname.startsWith("/api/")) {
-        if (!allowRequest(request.socket.remoteAddress ?? "unknown", requests, now)) return json(response, 429, { error: "rate_limited", message: "请求太频繁，请稍后再试。" });
+        if (!rateLimiter.allow(request.socket.remoteAddress ?? "unknown", now())) return json(response, 429, { error: "rate_limited", message: "请求太频繁，请稍后再试。" });
         if (request.method === "GET" && url.pathname === "/api/status") {
           return json(response, 200, {
             cloud: apiEnabled,
@@ -79,6 +80,8 @@ async function handleChat(response, client, knowledgeBase, body, now) {
 
 async function handleChatStream(response, client, knowledgeBase, body, now) {
   const prepared = prepareChat(body, knowledgeBase, now);
+  const upstreamController = new AbortController();
+  response.once("close", () => upstreamController.abort());
   response.writeHead(200, {
     "content-type": "text/event-stream; charset=utf-8",
     "cache-control": "no-store, no-transform",
@@ -98,8 +101,16 @@ async function handleChatStream(response, client, knowledgeBase, body, now) {
   }
 
   let fullText = "";
+  const heartbeat = setInterval(() => {
+    if (!response.writableEnded && !response.destroyed) response.write(": keep-alive\n\n");
+  }, 15_000);
+  heartbeat.unref?.();
   try {
-    for await (const chunk of client.chatStream({ input: prepared.input, systemInstruction: prepared.systemInstruction })) {
+    for await (const chunk of client.chatStream({
+      input: prepared.input,
+      systemInstruction: prepared.systemInstruction,
+      signal: upstreamController.signal,
+    })) {
       if (response.destroyed) return;
       fullText += chunk.text;
       sse(response, "delta", { text: chunk.text });
@@ -109,6 +120,8 @@ async function handleChatStream(response, client, knowledgeBase, body, now) {
   } catch (error) {
     const exposed = publicStreamError(error);
     sse(response, "error", exposed);
+  } finally {
+    clearInterval(heartbeat);
   }
   response.end();
 }
@@ -216,15 +229,8 @@ async function serveStatic(response, pathname, rootPath) {
   }
 }
 
-function allowRequest(key, store, now) {
-  const minute = 60_000;
-  const recent = (store.get(key) ?? []).filter((time) => now() - time < minute);
-  if (recent.length >= 40) return false;
-  recent.push(now()); store.set(key, recent); return true;
-}
-
 function contentType(path) {
-  return ({ ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".md": "text/markdown; charset=utf-8", ".svg": "image/svg+xml" })[extname(path)] ?? "application/octet-stream";
+  return ({ ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".md": "text/markdown; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".webp": "image/webp" })[extname(path)] ?? "application/octet-stream";
 }
 
 function setSecurityHeaders(response) {

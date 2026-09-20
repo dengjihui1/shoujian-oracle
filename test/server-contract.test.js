@@ -139,6 +139,33 @@ test("streaming chat carries trusted Shanghai time and recent conversation conte
   });
 });
 
+test("disconnecting a streaming browser aborts the upstream model request", async () => {
+  let markAborted;
+  const aborted = new Promise((resolve) => { markAborted = resolve; });
+  const client = {
+    models: { chat: "test-chat" },
+    async *chatStream({ signal }) {
+      await new Promise((resolve) => {
+        if (signal.aborted) return resolve();
+        signal.addEventListener("abort", resolve, { once: true });
+      });
+      markAborted(signal.aborted);
+    },
+  };
+  await withServer(createApp({ client }), async (base) => {
+    const controller = new AbortController();
+    const response = await fetch(`${base}/api/chat/stream`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message: "请回答一个很长的问题", purpose: "chat", stage: "question" }),
+      signal: controller.signal,
+    });
+    assert.equal(response.status, 200);
+    controller.abort();
+    assert.equal(await aborted, true);
+  });
+});
+
 test("upstream failure returns a stable error without terminating the server", async () => {
   const client = {
     models: { chat: "test-chat" },

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { OracleApiClient } from "../src/api-client.js";
+import { OracleApiClient, parseEventStream } from "../src/api-client.js";
 
 test("default browser fetch keeps its required global receiver", async () => {
   const originalFetch = globalThis.fetch;
@@ -68,4 +68,19 @@ test("browser forwards cancellation signals to chat, transcription, and speech",
   await client.transcribe({ data: "AQI=", mimeType: "audio/webm" }, { signal: controllers[1].signal });
   await client.speech("你好", { signal: controllers[2].signal });
   assert.deepEqual(signals, controllers.map(({ signal }) => signal));
+});
+
+test("browser SSE parsing handles CRLF boundaries split between chunks", async () => {
+  const encoder = new TextEncoder();
+  const body = new ReadableStream({
+    start(controller) {
+      controller.enqueue(encoder.encode('event: delta\r\ndata: {"text":"渐'));
+      controller.enqueue(encoder.encode('进"}\r'));
+      controller.enqueue(encoder.encode('\n\r\n'));
+      controller.close();
+    }
+  });
+  const events = [];
+  for await (const event of parseEventStream(body)) events.push(event);
+  assert.deepEqual(events, [{ event: "delta", data: { text: "渐进" } }]);
 });

@@ -68,7 +68,9 @@ export async function* parseEventStream(body) {
   try {
     while (true) {
       const { done, value } = await reader.read();
-      buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done }).replace(/\r\n/gu, "\n");
+      buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done });
+      buffer = buffer.replace(/\r\n/gu, "\n");
+      if (done) buffer = buffer.replace(/\r/gu, "\n");
       let boundary;
       while ((boundary = buffer.indexOf("\n\n")) >= 0) {
         const parsed = parseEvent(buffer.slice(0, boundary));

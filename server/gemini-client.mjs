@@ -8,11 +8,12 @@ export const DEFAULT_MODELS = Object.freeze({
 const DEFAULT_CHAT_FALLBACKS = Object.freeze(["gemini-3.6-flash"]);
 
 export class GeminiError extends Error {
-  constructor(message, { status = 502, code = "gemini_error" } = {}) {
+  constructor(message, { status = 502, code = "gemini_error", providerStatus = null } = {}) {
     super(message);
     this.name = "GeminiError";
     this.status = status;
     this.code = code;
+    this.providerStatus = providerStatus;
   }
 }
 
@@ -49,7 +50,7 @@ export class GeminiClient {
     throw lastError;
   }
 
-  async *chatStream({ input, systemInstruction }) {
+  async *chatStream({ input, systemInstruction, signal }) {
     let lastError;
     for (const model of this.chatModels) {
       let emitted = false;
@@ -60,7 +61,8 @@ export class GeminiClient {
           body: JSON.stringify({
             system_instruction: { parts: [{ text: systemInstruction }] },
             contents: [{ role: "user", parts: [{ text: input }] }],
-          })
+          }),
+          signal,
         });
         await ensureOk(response);
         let fullText = "";
@@ -175,9 +177,14 @@ export class GeminiClient {
   }
 
   async #fetch(url, options) {
+    const timeoutSignal = AbortSignal.timeout(this.timeoutMs);
+    const signal = options.signal ? AbortSignal.any([options.signal, timeoutSignal]) : timeoutSignal;
     try {
-      return await this.fetchFn(url, { ...options, signal: AbortSignal.timeout(this.timeoutMs) });
+      return await this.fetchFn(url, { ...options, signal });
     } catch (error) {
+      if (options.signal?.aborted) {
+        throw new GeminiError("Gemini request cancelled", { status: 499, code: "cancelled" });
+      }
       if (error?.name === "TimeoutError" || error?.name === "AbortError") {
         throw new GeminiError("Gemini request timed out", { status: 504, code: "timeout" });
       }
@@ -191,7 +198,10 @@ function isTransientChatError(error) {
 }
 
 function shouldFallbackToFileUpload(error) {
-  return error instanceof GeminiError && ["upstream_error", "invalid_response", "empty_transcript"].includes(error.code);
+  return error instanceof GeminiError && (
+    ["invalid_response", "empty_transcript"].includes(error.code)
+    || (error.code === "upstream_error" && [400, 404, 415].includes(error.providerStatus))
+  );
 }
 
 export async function* parseGeminiSse(body) {
@@ -202,7 +212,9 @@ export async function* parseGeminiSse(body) {
   try {
     while (true) {
       const { done, value } = await reader.read();
-      buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done }).replace(/\r\n/gu, "\n");
+      buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done });
+      buffer = buffer.replace(/\r\n/gu, "\n");
+      if (done) buffer = buffer.replace(/\r/gu, "\n");
       let boundary;
       while ((boundary = buffer.indexOf("\n\n")) >= 0) {
         const event = buffer.slice(0, boundary);
@@ -237,7 +249,8 @@ async function ensureOk(response) {
   const safeDetail = detail.replace(/AIza[\w-]+/gu, "[redacted]").slice(0, 240);
   throw new GeminiError(`Gemini rejected the request${safeDetail ? `: ${safeDetail}` : ""}`, {
     status: response.status === 429 ? 429 : 502,
-    code: response.status === 429 ? "quota_exceeded" : "upstream_error"
+    code: response.status === 429 ? "quota_exceeded" : "upstream_error",
+    providerStatus: response.status,
   });
 }
 

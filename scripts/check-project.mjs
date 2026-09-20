@@ -8,9 +8,9 @@ const rootPath = fileURLToPath(root);
 const required = [
   "README.md", "NOTICE.md", "LICENSE", "index.html", "docs/COMPONENT_MAP.md", "docs/LEARNING_GUIDE.md",
   "docs/API_SETUP.md", "server/index.mjs", "server/gemini-client.mjs", "server/prompt.mjs",
-  "server/knowledge-retriever.mjs", "knowledge/shoujian-rag.v1.json", "knowledge/README.md",
+  "server/knowledge-retriever.mjs", "server/rate-limiter.mjs", "knowledge/shoujian-rag.v1.json", "knowledge/README.md",
   "src/oracle-engine.js", "src/question-boundary.js", "src/dialogue-engine.js", "src/shoujian-oracle.js",
-  "src/api-client.js", "src/audio-recorder.js", "src/audio-player.js"
+  "src/api-client.js", "src/audio-recorder.js", "src/audio-player.js", "src/conversation-memory.js", "src/streaming-text.js"
 ];
 
 for (const relativePath of required) {
