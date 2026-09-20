@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { ConversationMemory, recentConversation } from "../src/conversation-memory.js";
+import { castHexagram } from "../src/oracle-engine.js";
 
 function fakeStorage(initial = null) {
   let value = initial;
@@ -43,3 +44,41 @@ test("corrupt browser storage fails closed", () => {
   assert.deepEqual(memory.load(), []);
 });
 
+test("conversation memory restores a deterministic reading after refresh", () => {
+  const storage = fakeStorage();
+  const reading = castHexagram([9, 7, 8, 8, 7, 6]);
+  const memory = new ConversationMemory({ storage });
+  memory.saveSession({
+    messages: [{ role: "user", text: "这次合作应该先验证什么？" }, { role: "master", text: "先看卦。" }],
+    stage: "reading",
+    question: "这次合作应该先验证什么？",
+    reading,
+  });
+
+  const restored = memory.loadSession();
+  assert.equal(restored.stage, "reading");
+  assert.equal(restored.question, "这次合作应该先验证什么？");
+  assert.deepEqual(restored.reading.lines, [9, 7, 8, 8, 7, 6]);
+  assert.equal(restored.reading.primary.number, reading.primary.number);
+  assert.equal(restored.reading.changed.number, reading.changed.number);
+});
+
+test("legacy message-only snapshots remain readable and corrupt session state is ignored", () => {
+  const legacy = fakeStorage(JSON.stringify({ version: 1, messages: [{ role: "user", text: "旧对话" }] }));
+  assert.deepEqual(new ConversationMemory({ storage: legacy }).loadSession(), {
+    messages: [{ role: "user", text: "旧对话", cloud: false, evidence: [] }],
+    stage: "question",
+    question: "",
+    reading: null,
+  });
+
+  const corrupt = fakeStorage(JSON.stringify({
+    version: 2,
+    messages: [{ role: "master", text: "保留文字" }],
+    session: { stage: "reading", question: "不完整卦", lines: [7, 7] },
+  }));
+  const restored = new ConversationMemory({ storage: corrupt }).loadSession();
+  assert.equal(restored.stage, "question");
+  assert.equal(restored.reading, null);
+  assert.equal(restored.messages[0].text, "保留文字");
+});

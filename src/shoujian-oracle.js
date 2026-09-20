@@ -80,12 +80,20 @@ export class ShoujianOracle extends HTMLElement {
   }
 
   restoreMemory() {
-    const messages = this.memory.load();
-    if (messages.length) this.messages = messages;
+    const session = this.memory.loadSession();
+    if (session.messages.length) this.messages = session.messages;
+    this.stage = session.stage;
+    this.question = session.question;
+    this.reading = session.reading;
   }
 
   persistMemory() {
-    this.memory.save(this.messages);
+    this.memory.saveSession({
+      messages: this.messages,
+      stage: this.stage,
+      question: this.question,
+      reading: this.reading,
+    });
   }
 
   handleSubmit = async (event) => {
