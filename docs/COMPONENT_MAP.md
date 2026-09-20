@@ -35,10 +35,11 @@ Gemini 未配置 → 有限追问：意思 / 动爻 / 算法 / 边界
 | 组件 | 文件 | 输入 | 输出 | 是否纯函数 |
 | --- | --- | --- | --- | --- |
 | 虚拟人外壳 | `src/shoujian-oracle.js` | 点击、文本、会话状态 | 对话和卦象界面 | 否，负责 UI 状态 |
-| 虚拟人状态 | `src/avatar-state.js` | 录音、转写、回答、语音与卦象阶段 | 八种人物表现状态 | 是 |
+| 虚拟人状态 | `src/avatar-state.js` | 录音、转写、回答、语音与卦象阶段 | 九种人物表现状态 | 是 |
 | 安全视图 | `src/oracle-view.js` | 当前只读状态 | Shadow DOM、卦卡、证据链接 | 是，返回转义后的 HTML |
 | 对话路由 | `src/dialogue-engine.js` | 用户追问、当前卦象 | 固定意图与回答 | 是 |
 | 问题边界 | `src/question-boundary.js` | 原问文本 | `clear/rewrite/blocked` | 是 |
+| 响应策略 | `src/response-policy.js` | 文本、聊天/起卦目的、阶段与边界评估 | 放行、危机支持或带替代路径的起卦边界 | 是 |
 | 起卦计算 | `src/oracle-engine.js` | 六个 6/7/8/9 | 本卦、动爻、之卦、审计轨迹 | 是 |
 | 随机适配器 | `castWithCoins()` | `crypto.getRandomValues` | 六个爻值 | 外层有随机，排卦仍纯计算 |
 | 浏览器 API 适配器 | `src/api-client.js` | 文本、录音 | JSON / SSE 事件流 | 否，网络 I/O |
@@ -88,3 +89,5 @@ question --问题通过--> ready --起卦--> reading
 这些边界保证本仓库足以学习“虚拟人 + 确定性起卦 + RAG 知识问答”的组合方式，又不是商业核心的开源副本。
 
 虚拟人参考项目、未采用 Live2D／VRM 的原因和人物资产边界见 [虚拟人研究与实现说明](VIRTUAL_HUMAN_RESEARCH.md)。
+
+每个文件的职责、输入输出、依赖、失败降级、对应测试、成熟度和练习入口见 [守简模块池](MODULE_POOL.md)。

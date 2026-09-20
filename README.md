@@ -4,7 +4,7 @@
 
 独立的轻量虚拟卦师与经传 RAG 组件。它保留虚拟人主持、问题边界、三钱六爻和 64 卦确定性映射，并加入可追溯的《周易》《彖》《象》《说卦》冻结知识检索；明确不包含住宅分析、纳甲时证、档案、支付与追验等主项目核心。
 
-![版本](https://img.shields.io/badge/version-0.8.0-8e332a)
+![版本](https://img.shields.io/badge/version-0.9.0-8e332a)
 ![许可](https://img.shields.io/badge/license-MIT-d3b27f)
 
 ## 现在能完成什么
@@ -36,7 +36,7 @@
 | `oracleQuestionBoundary` | 7 类公开字规 | 问契签名、验期、准绳与追验 |
 | `iching` | 6/7/8/9、八卦、文王序 64 卦映射 | 古籍全文、爻辞、纳甲、六亲、旬空、六神 |
 
-经传数据另从中文维基文库公开来源建立独立知识包，不复制主项目住宅知识。完整映射见 [组件抽取与流程图](docs/COMPONENT_MAP.md)，学习顺序见 [代码学习指南](docs/LEARNING_GUIDE.md)。
+经传数据另从中文维基文库公开来源建立独立知识包，不复制主项目住宅知识。完整映射见 [组件抽取与流程图](docs/COMPONENT_MAP.md)，逐模块输入输出、依赖、降级、测试和练习见 [守简模块池](docs/MODULE_POOL.md)，阅读顺序见 [代码学习指南](docs/LEARNING_GUIDE.md)。
 
 ## 本地运行（无需 API）
 
@@ -82,18 +82,20 @@ npm start
 - `src/oracle-view.js`：Shadow DOM 视图、卦卡、证据展示和输出转义；
 - `src/conversation-memory.js`：完成轮次过滤、最近上下文与可恢复会话快照；
 - `src/streaming-text.js`：可取消、积压自适应的字符级显示队列；
-- `src/avatar-state.js`：虚拟人的八种可测试状态与优先级；
+- `src/avatar-state.js`：虚拟人的九种可测试状态与优先级；
 - `src/speech-segmenter.js`：面向中文流式文本的分句、长句切分与引用标记清理；
 - `src/speech-queue.js`：最多两句预取、严格顺序播放和可立即淘汰的 TTS 队列；
 - `src/dialogue-engine.js`：有限意图识别与墨衡回答；
 - `src/api-client.js`：浏览器与本机 API 的 JSON/SSE 通信；
 - `src/audio-recorder.js` / `audio-player.js`：浏览器实时转写、录音兜底、PCM Web Audio 播放与实时音量分析；
 - `src/question-boundary.js`：起卦前问题边界；
+- `src/response-policy.js`：区分自由聊天、现实危机与起卦边界，并给出可继续的安全路径；
 - `src/oracle-engine.js`：三钱六爻与 64 卦纯计算；
 - `server/`：密钥隔离、Gemini 流式生成、Files/Interactions API、限流和静态服务；
 - `server/knowledge-retriever.mjs`：本卦强绑定与自由问题检索；
 - `knowledge/shoujian-rag.v1.json`：64 卦、384 爻与 8 个说卦取象冻结知识；
 - `test/`：上述三层的确定性测试。
+- `docs/MODULE_POOL.md`：全项目 24 个模块的学习、测试、成熟度与后续迭代池。
 
 ## 验证
 
