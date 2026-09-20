@@ -10,27 +10,43 @@ export class AudioRecorder {
   async start() {
     if (!this.supported) throw new Error("当前浏览器不支持麦克风录音");
     this.stream = await this.mediaDevices.getUserMedia({ audio: true });
-    const preferred = ["audio/webm;codecs=opus", "audio/mp4", "audio/webm"].find((type) => this.MediaRecorderClass.isTypeSupported?.(type));
-    this.chunks = [];
-    this.recorder = preferred ? new this.MediaRecorderClass(this.stream, { mimeType: preferred }) : new this.MediaRecorderClass(this.stream);
-    this.recorder.addEventListener("dataavailable", (event) => { if (event.data?.size) this.chunks.push(event.data); });
-    this.result = new Promise((resolve, reject) => {
-      this.recorder.addEventListener("stop", () => {
-        clearTimeout(this.timer);
-        this.stream?.getTracks().forEach((track) => track.stop());
-        const blob = new Blob(this.chunks, { type: this.recorder.mimeType || "audio/webm" });
-        blob.size ? resolve(blob) : reject(new Error("没有录到声音，请重试"));
-      }, { once: true });
-      this.recorder.addEventListener("error", () => reject(new Error("录音失败，请检查麦克风权限")), { once: true });
-    });
-    this.recorder.start();
-    this.timer = setTimeout(() => this.stop(), this.maxDurationMs);
+    try {
+      const preferred = ["audio/webm;codecs=opus", "audio/mp4", "audio/webm"].find((type) => this.MediaRecorderClass.isTypeSupported?.(type));
+      this.chunks = [];
+      this.recorder = preferred ? new this.MediaRecorderClass(this.stream, { mimeType: preferred }) : new this.MediaRecorderClass(this.stream);
+      this.recorder.addEventListener("dataavailable", (event) => { if (event.data?.size) this.chunks.push(event.data); });
+      this.result = new Promise((resolve, reject) => {
+        let settled = false;
+        const finish = (value, error = null) => {
+          if (settled) return;
+          settled = true;
+          this.#releaseStream();
+          error ? reject(error) : resolve(value);
+        };
+        this.recorder.addEventListener("stop", () => {
+          const blob = new Blob(this.chunks, { type: this.recorder.mimeType || "audio/webm" });
+          blob.size ? finish(blob) : finish(null, new Error("没有录到声音，请重试"));
+        }, { once: true });
+        this.recorder.addEventListener("error", () => finish(null, new Error("录音失败，请检查麦克风权限")), { once: true });
+      });
+      this.recorder.start();
+      this.timer = setTimeout(() => this.stop(), this.maxDurationMs);
+    } catch (error) {
+      this.#releaseStream();
+      throw error;
+    }
   }
 
   async stop() {
     if (!this.recorder || this.recorder.state === "inactive") return this.result;
     this.recorder.stop();
     return this.result;
+  }
+
+  #releaseStream() {
+    clearTimeout(this.timer);
+    this.stream?.getTracks().forEach((track) => track.stop());
+    this.stream = null;
   }
 }
 
@@ -52,6 +68,7 @@ export class BrowserSpeechRecognizer {
     recognition.maxAlternatives = 1;
     this.recognition = recognition;
     this.active = true;
+    this.abortRequested = false;
     this.finalText = "";
     this.latestText = "";
 
@@ -62,8 +79,10 @@ export class BrowserSpeechRecognizer {
         settled = true;
         this.active = false;
         this.recognition = null;
+        this.finishCurrent = null;
         error ? reject(error) : resolve(value);
       };
+      this.finishCurrent = finish;
       recognition.onresult = (event) => {
         let interim = "";
         for (let index = event.resultIndex ?? 0; index < event.results.length; index += 1) {
@@ -76,6 +95,7 @@ export class BrowserSpeechRecognizer {
         onText?.(this.latestText, { final: this.finalText, interim });
       };
       recognition.onerror = (event) => {
+        if (event.error === "aborted" || this.abortRequested) return finish("", abortError());
         const messages = {
           "not-allowed": "麦克风权限未开启",
           "audio-capture": "没有找到可用麦克风",
@@ -84,7 +104,9 @@ export class BrowserSpeechRecognizer {
         };
         finish("", new Error(messages[event.error] ?? "实时语音转写失败"));
       };
-      recognition.onend = () => finish(this.finalText || this.latestText);
+      recognition.onend = () => this.abortRequested
+        ? finish("", abortError())
+        : finish(this.finalText || this.latestText);
       try { recognition.start(); } catch (error) { finish("", error); }
     });
     return this.result;
@@ -96,8 +118,18 @@ export class BrowserSpeechRecognizer {
   }
 
   abort() {
-    if (this.active) this.recognition?.abort();
+    if (!this.active) return;
+    this.abortRequested = true;
+    const recognition = this.recognition;
+    const finish = this.finishCurrent;
+    try { recognition?.abort(); } finally {
+      if (this.active) finish?.("", abortError());
+    }
   }
+}
+
+function abortError() {
+  return Object.assign(new Error("语音转写已取消"), { name: "AbortError" });
 }
 
 export async function blobToBase64(blob) {

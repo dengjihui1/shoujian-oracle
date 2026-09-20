@@ -46,6 +46,8 @@ export class ShoujianOracle extends HTMLElement {
     this.shadowRoot.removeEventListener("input", this.handleInput);
     clearTimeout(this.recordingTimer);
     if (this.recording && this.recordingMode === "recorded") this.recorder.stop()?.catch(() => {});
+    this.recording = false;
+    this.transcribing = false;
     this.liveTranscriber.abort();
     this.cancelResponse();
     this.transcriptionController?.abort();
