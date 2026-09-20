@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { once } from "node:events";
 import { createApp } from "../server/index.mjs";
+import { OracleApiClient } from "../src/api-client.js";
 
 async function withServer(app, run) {
   const server = createServer(app).listen(0, "127.0.0.1");
@@ -109,6 +110,32 @@ test("ordinary basic questions are not rejected by divination keyword rules", as
     assert.equal(called, true);
     assert.equal(body.blocked, undefined);
     assert.equal(body.purpose, "chat");
+  });
+});
+
+test("streaming chat carries trusted Shanghai time and recent conversation context", async () => {
+  const client = {
+    models: { chat: "test-chat" },
+    async *chatStream({ input, systemInstruction }) {
+      assert.match(input, /我叫小明/u);
+      assert.match(input, /我叫什么/u);
+      assert.match(systemInstruction, /可信服务器时钟：2026年09月20日 09:15:30/u);
+      yield { text: "你叫", model: "test-chat" };
+      yield { text: "小明。今天是2026年9月20日。", model: "test-chat" };
+    },
+  };
+  const fixedNow = () => Date.parse("2026-09-20T01:15:30.000Z");
+  await withServer(createApp({ client, now: fixedNow }), async (base) => {
+    const deltas = [];
+    const api = new OracleApiClient({ baseUrl: base });
+    const result = await api.chatStream({
+      message: "我叫什么，今天几号？",
+      purpose: "chat",
+      stage: "question",
+      history: [{ role: "user", text: "我叫小明" }, { role: "master", text: "记住了。" }],
+    }, { onDelta: (text) => deltas.push(text) });
+    assert.deepEqual(deltas, ["你叫", "小明。今天是2026年9月20日。"]);
+    assert.equal(result.text, "你叫小明。今天是2026年9月20日。");
   });
 });
 

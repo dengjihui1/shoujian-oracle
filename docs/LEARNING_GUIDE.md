@@ -53,6 +53,8 @@
 
 - 浏览器永远不接触 Gemini 密钥；
 - 服务端先做长度、类型和问题边界校验；
+- 每轮由服务端注入可信的 `Asia/Shanghai` 当前时间，模型不得自行猜日期；
+- 自由回答使用 Gemini `streamGenerateContent` SSE，浏览器解析 `meta / delta / done / error` 事件；
 - 转写先上传 Files API，再把 URI 交给 Transcribe；
 - 提示词把本地计算结果标为只读，模型不能重新排卦，并把本轮 RAG 片段作为唯一经传证据；
 - `fetch` 可以注入，所以测试不需要真实密钥或额度。
@@ -67,6 +69,8 @@
 - `ready` 阶段冻结原问并等待起卦；
 - `reading` 阶段显示结果、自由输入和可展开来源；有 Gemini 时不再用固定追问按钮限制用户；
 - `sendText()` 是对话入口；
+- `askCloud()` 在同一条气泡里消费流式分片并逐字符揭示；
+- `restoreMemory()` / `persistMemory()` 只在浏览器本机保留最近 24 条完成对话，每次最多发送最近 16 条上下文；
 - `cast()` 只负责连接随机适配器与纯计算层；
 - `render()` 把当前状态投影为 Shadow DOM。
 

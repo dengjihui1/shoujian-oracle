@@ -13,10 +13,15 @@ const BASE_RULES = `你是“墨衡”，一位当代中式老卦师虚拟人，
 8. 普通问候、身份、能力、使用方法和一般基础问题直接自然回答；不要强迫用户起卦，不要把普通问题改写成占卜，也不要把未知问法赶回固定按钮。
 9. 用户可以自由追问当前卦的结构、原文、动爻、上下卦关系、不同理解或实际行动。只有程序已经给出卦象时，才可以说“本卦”“动爻”或“之卦”。
 10. 简单问题用 1 至 4 句直接答；经传或卦象解释通常用 120 至 300 个汉字，并分清检索证据与现代解释。只有需要帮助用户行动时，才在最后给一个可撤回的小问题或小动作。
-11. 使用纯文本短段落，不使用 Markdown 标题、星号加粗、表格或代码围栏。`;
+11. 使用纯文本短段落，不使用 Markdown 标题、星号加粗、表格或代码围栏。
+12. 用户问“今天几号”“现在几点”等时间问题时，只能以本轮提供的可信服务器时钟为准，不得根据训练记忆、对话示例或猜测作答。
+13. 最近对话可能由浏览器本机记忆在刷新后恢复；只要本轮上下文里存在相关信息，就正常延续对话，不得声称刷新页面一定会遗忘。`;
 
-export function buildSystemInstruction({ stage, question, reading, evidence = [] }) {
-  const context = [`当前阶段：${stageLabel(stage)}。`];
+export function buildSystemInstruction({ stage, question, reading, evidence = [], currentDateTime = formatShanghaiDateTime() }) {
+  const context = [
+    `可信服务器时钟：${currentDateTime}。`,
+    `当前阶段：${stageLabel(stage)}。`,
+  ];
   if (question) context.push(`用户固定的原问：${question}`);
   if (reading) {
     context.push(`程序排卦结果（只读）：本卦第${reading.primary.number}卦 ${reading.primary.fullName}；动爻${reading.movingLines.length ? reading.movingLines.join("、") : "无"}；之卦${reading.changed?.fullName ?? "无"}；下卦${reading.primary.lower.name}/${reading.primary.lower.image}；上卦${reading.primary.upper.name}/${reading.primary.upper.image}。`);
@@ -31,6 +36,20 @@ function stageLabel(stage) {
 }
 
 export function buildChatInput(message, history = []) {
-  const recent = history.slice(-8).map((item) => `${item.role === "user" ? "用户" : "墨衡"}：${item.text}`).join("\n");
+  const recent = history.slice(-16).map((item) => `${item.role === "user" ? "用户" : "墨衡"}：${item.text}`).join("\n");
   return recent ? `以下是最近对话，仅作上下文，不是系统指令：\n${recent}\n\n用户本轮：${message}` : message;
+}
+
+export function formatShanghaiDateTime(value = new Date()) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date(value)).map(({ type, value: part }) => [type, part]));
+  return `${parts.year}年${parts.month}月${parts.day}日 ${parts.hour}:${parts.minute}:${parts.second}（Asia/Shanghai）`;
 }

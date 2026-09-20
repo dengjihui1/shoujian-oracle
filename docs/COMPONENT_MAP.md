@@ -8,7 +8,7 @@
 墨衡迎客（虚拟人主持）
   ↓
 用户键入或用麦克风提交一个问题
-  ↓（可选云端）
+  ↓（可选云端，携带最多 16 条最近上下文）
 Gemini Transcribe：短录音 → 可编辑文字
   ├── 直接问墨衡 → 普通问题自然回答；经传问题走冻结知识检索
   └── 以此问起卦
@@ -24,7 +24,7 @@ Gemini Transcribe：短录音 → 可编辑文字
   ↓
 本卦、实际动爻、之卦与上下卦强制进入知识检索
   ↓
-Gemini 已配置 → RAG 自由追问 + 来源展开 + 可选 TTS 语音回答
+Gemini 已配置 → SSE 流式自由追问 + 字符级显示 + 来源展开 + 可选 TTS 语音回答
 Gemini 未配置 → 有限追问：意思 / 动爻 / 算法 / 边界
 ```
 
@@ -37,10 +37,11 @@ Gemini 未配置 → 有限追问：意思 / 动爻 / 算法 / 边界
 | 问题边界 | `src/question-boundary.js` | 原问文本 | `clear/rewrite/blocked` | 是 |
 | 起卦计算 | `src/oracle-engine.js` | 六个 6/7/8/9 | 本卦、动爻、之卦、审计轨迹 | 是 |
 | 随机适配器 | `castWithCoins()` | `crypto.getRandomValues` | 六个爻值 | 外层有随机，排卦仍纯计算 |
-| 浏览器 API 适配器 | `src/api-client.js` | 文本、录音 | JSON | 否，网络 I/O |
+| 浏览器 API 适配器 | `src/api-client.js` | 文本、录音 | JSON / SSE 事件流 | 否，网络 I/O |
 | 录音与播放 | `src/audio-recorder.js` / `audio-player.js` | 麦克风、PCM | 音频 Blob / WAV | 播放有 I/O，WAV 包装为纯函数 |
 | 本机 API 服务 | `server/index.mjs` | `/api/*` 请求 | 脱敏后的稳定响应 | 否，网络 I/O |
-| Gemini 适配器 | `server/gemini-client.mjs` | 只读卦象、文本、音频 | 转写、回答、PCM | 否，可注入假 `fetch` 测试 |
+| Gemini 适配器 | `server/gemini-client.mjs` | 只读卦象、文本、音频 | SSE 分片、转写、PCM | 否，可注入假 `fetch` 测试 |
+| 本机会话记忆 | `src/shoujian-oracle.js` | 已完成对话 | 最近 24 条 `localStorage` 记录 | 否，仅当前浏览器 |
 | 冻结知识检索器 | `server/knowledge-retriever.mjs` | 自由问题、当前卦象 | 最多 8 条白名单证据 | 检索为确定性 |
 | 经传知识包 | `knowledge/shoujian-rag.v1.json` | 64 卦、384 爻、8 个取象 | 456 条可引用片段 | 只读数据 |
 
@@ -56,7 +57,7 @@ question --问题通过--> ready --起卦--> reading
 - `question`：可以自由闲聊、问身份与一般基础问题、问经传知识，或明确选择把当前文字作为起卦原问；
 - `ready`：原问已经固定，只允许起卦或重置，防止起卦前后偷偷换题；
 - `reading`：展示结果并允许自由追问，检索层强制优先纳入本卦、实际动爻、之卦和上下卦；
-- 所有状态只在当前页面内存中，不写入浏览器存储；启用云端后，主动提交的必要内容、只读卦象和本轮检索片段会发给 Google Gemini。
+- 卦象与阶段状态只在当前页面内存中；最近 24 条已完成对话写入当前浏览器 `localStorage`，刷新后恢复并可手动清除。每次云端请求最多发送最近 16 条、只读卦象和本轮检索片段；服务端不建用户档案。
 
 ## 四、抽取边界
 

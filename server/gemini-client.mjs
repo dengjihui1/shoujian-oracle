@@ -49,6 +49,39 @@ export class GeminiClient {
     throw lastError;
   }
 
+  async *chatStream({ input, systemInstruction }) {
+    let lastError;
+    for (const model of this.chatModels) {
+      let emitted = false;
+      try {
+        const response = await this.#fetch(`${this.baseUrl}/v1beta/models/${encodeURIComponent(model.replace(/^models\//u, ""))}:streamGenerateContent?alt=sse`, {
+          method: "POST",
+          headers: { "x-goog-api-key": this.apiKey, "content-type": "application/json" },
+          body: JSON.stringify({
+            system_instruction: { parts: [{ text: systemInstruction }] },
+            contents: [{ role: "user", parts: [{ text: input }] }],
+          })
+        });
+        await ensureOk(response);
+        let fullText = "";
+        for await (const text of parseGeminiSse(response.body)) {
+          if (!text) continue;
+          emitted = true;
+          fullText += text;
+          yield { text, model };
+        }
+        if (!fullText) throw new GeminiError("Gemini returned no text", { code: "empty_text" });
+        return;
+      } catch (error) {
+        lastError = error instanceof GeminiError
+          ? error
+          : new GeminiError("Gemini stream failed", { code: "network_error" });
+        if (emitted || !isTransientChatError(lastError)) throw lastError;
+      }
+    }
+    throw lastError;
+  }
+
   async transcribe({ bytes, mimeType }) {
     const file = await this.#upload(bytes, mimeType);
     try {
@@ -140,7 +173,43 @@ export class GeminiClient {
 }
 
 function isTransientChatError(error) {
-  return error instanceof GeminiError && ["quota_exceeded", "upstream_error", "network_error", "timeout"].includes(error.code);
+  return error instanceof GeminiError && ["quota_exceeded", "upstream_error", "network_error", "timeout", "empty_text"].includes(error.code);
+}
+
+export async function* parseGeminiSse(body) {
+  if (!body?.getReader) throw new GeminiError("Gemini stream body was missing", { code: "invalid_response" });
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done }).replace(/\r\n/gu, "\n");
+      let boundary;
+      while ((boundary = buffer.indexOf("\n\n")) >= 0) {
+        const event = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        const text = parseStreamEvent(event);
+        if (text) yield text;
+      }
+      if (done) break;
+    }
+    const tail = parseStreamEvent(buffer);
+    if (tail) yield tail;
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+function parseStreamEvent(event) {
+  const payload = event.split("\n").filter((line) => line.startsWith("data:"))
+    .map((line) => line.slice(5).trimStart()).join("\n");
+  if (!payload || payload === "[DONE]") return "";
+  let data;
+  try { data = JSON.parse(payload); } catch { throw new GeminiError("Gemini returned invalid stream data", { code: "invalid_response" }); }
+  return (data.candidates?.[0]?.content?.parts ?? [])
+    .filter((part) => part?.thought !== true && typeof part?.text === "string")
+    .map((part) => part.text).join("");
 }
 
 async function ensureOk(response) {

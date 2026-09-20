@@ -5,6 +5,9 @@ import { OracleApiClient } from "./api-client.js";
 import { AudioRecorder, blobToBase64 } from "./audio-recorder.js";
 import { playPcmBase64 } from "./audio-player.js";
 
+const MEMORY_KEY = "shoujian-oracle:conversation:v1";
+const MAX_MEMORY_MESSAGES = 24;
+
 export class ShoujianOracle extends HTMLElement {
   constructor() {
     super();
@@ -16,7 +19,9 @@ export class ShoujianOracle extends HTMLElement {
     this.recording = false;
     this.busy = false;
     this.voiceReplies = false;
-    this.resetSession();
+    this.initializeSession();
+    this.restoreMemory();
+    this.render();
   }
 
   connectedCallback() {
@@ -32,12 +37,51 @@ export class ShoujianOracle extends HTMLElement {
     if (this.recording) this.recorder.stop().catch(() => {});
   }
 
-  resetSession() {
+  initializeSession() {
     this.stage = "question";
     this.question = "";
     this.reading = null;
     this.messages = [{ role: "master", text: welcomeReply() }];
+  }
+
+  resetSession() {
+    this.stage = "question";
+    this.question = "";
+    this.reading = null;
+    this.messages.push({ role: "master", text: "上一卦收好。前面的聊天我还记得，可以继续聊，也可以重新留一件事起卦。" });
+    this.persistMemory();
     this.render();
+  }
+
+  clearMemory() {
+    try { localStorage.removeItem(MEMORY_KEY); } catch { /* storage unavailable */ }
+    this.initializeSession();
+    this.render();
+    this.focusLatest();
+  }
+
+  restoreMemory() {
+    try {
+      const stored = JSON.parse(localStorage.getItem(MEMORY_KEY) ?? "null");
+      if (!Array.isArray(stored?.messages) || stored.messages.length === 0) return;
+      this.messages = stored.messages.slice(-MAX_MEMORY_MESSAGES).map((message) => ({
+        role: message?.role === "user" ? "user" : "master",
+        text: String(message?.text ?? "").slice(0, 2_000),
+        cloud: Boolean(message?.cloud),
+        evidence: Array.isArray(message?.evidence) ? message.evidence.slice(0, 8) : [],
+      })).filter(({ text }) => text);
+      if (!this.messages.length) this.initializeSession();
+    } catch { /* corrupt or unavailable storage falls back to a clean session */ }
+  }
+
+  persistMemory() {
+    try {
+      const messages = this.messages.filter((message) => message.text && !message.streaming && !message.error)
+        .slice(-MAX_MEMORY_MESSAGES).map(({ role, text, cloud, evidence }) => ({
+          role, text: String(text).slice(0, 2_000), cloud: Boolean(cloud), evidence: evidence ?? [],
+        }));
+      localStorage.setItem(MEMORY_KEY, JSON.stringify({ version: 1, messages }));
+    } catch { /* memory remains available for the current page */ }
   }
 
   handleSubmit = async (event) => {
@@ -52,6 +96,7 @@ export class ShoujianOracle extends HTMLElement {
     const action = event.target.closest("[data-action]")?.dataset.action;
     if (action === "cast") await this.cast();
     if (action === "reset") this.resetSession();
+    if (action === "clear-memory") this.clearMemory();
     if (action === "record") await this.startRecording();
     if (action === "stop-record") await this.stopRecording();
     if (action === "voice") { this.voiceReplies = !this.voiceReplies; this.render(); }
@@ -62,6 +107,7 @@ export class ShoujianOracle extends HTMLElement {
   async sendText(text, mode = "divination") {
     if (this.busy) return;
     this.messages.push({ role: "user", text });
+    this.persistMemory();
     const history = this.messages.slice(0, -1);
     if (this.stage === "question") {
       if (mode === "chat" && this.cloud) {
@@ -91,6 +137,7 @@ export class ShoujianOracle extends HTMLElement {
         this.messages.push({ role: "master", text: localReply.text });
       }
     }
+    this.persistMemory();
     this.render();
     this.focusLatest();
   }
@@ -100,6 +147,7 @@ export class ShoujianOracle extends HTMLElement {
     this.reading = castWithCoins();
     this.stage = "reading";
     this.messages.push({ role: "master", text: readingReply(this.reading) });
+    this.persistMemory();
     this.render();
     this.focusLatest();
     if (this.cloud) await this.askCloud("请只依据程序给出的本卦、动爻和之卦，解释它怎样帮助我重新看原问，并给一个可撤回的小行动。", this.messages.slice(0, -1));
@@ -120,18 +168,68 @@ export class ShoujianOracle extends HTMLElement {
 
   async askCloud(message, history, purpose = this.stage === "reading" ? "divination" : "chat") {
     this.busy = true;
+    const reply = { role: "master", text: "", cloud: true, evidence: [], streaming: true };
+    this.messages.push(reply);
+    const replyIndex = this.messages.length - 1;
+    const reduceMotion = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
+    let revealChain = Promise.resolve();
+    let streamCancelled = false;
     this.render();
     try {
-      const result = await this.api.chat({ message, purpose, stage: this.stage, question: this.question, reading: this.reading, history });
-      this.messages.push({ role: "master", text: result.text, cloud: true, evidence: result.evidence ?? [] });
+      const result = await this.api.chatStream({
+        message,
+        purpose,
+        stage: this.stage,
+        question: this.question,
+        reading: this.reading,
+        history: history.filter((item) => item?.text && !item.error).slice(-MAX_MEMORY_MESSAGES),
+      }, {
+        onMeta: (meta) => {
+          reply.evidence = meta.evidence ?? [];
+          this.updateStreamingMessage(replyIndex);
+        },
+        onDelta: (delta) => {
+          if (reduceMotion) {
+            reply.text += delta;
+            this.updateStreamingMessage(replyIndex);
+            return;
+          }
+          revealChain = revealChain.then(async () => {
+            for (const character of [...delta]) {
+              if (streamCancelled) return;
+              reply.text += character;
+              this.updateStreamingMessage(replyIndex);
+              await wait(characterDelay(character));
+            }
+          });
+        },
+      });
+      await revealChain;
+      reply.text = result.text || reply.text;
+      reply.evidence = result.evidence ?? reply.evidence;
+      reply.streaming = false;
       if (this.voiceReplies) await this.speak(result.text);
     } catch (error) {
-      this.messages.push({ role: "master", text: `本次知识检索问答没有完成：${error.message}。没有生成替代结论；请检查 Gemini 连接后重试。`, error: true });
+      streamCancelled = true;
+      const reason = String(error.message ?? "未知错误").replace(/[。！？!?]+$/u, "");
+      reply.text = `本次回答没有完成：${reason}。没有生成替代结论，请稍后重试。`;
+      reply.error = true;
+      reply.streaming = false;
     } finally {
       this.busy = false;
+      this.persistMemory();
       this.render();
       this.focusLatest();
     }
+  }
+
+  updateStreamingMessage(index) {
+    const article = this.shadowRoot.querySelector(`[data-message-index="${index}"]`);
+    if (!article) return;
+    article.querySelector("p").textContent = this.messages[index].text;
+    article.querySelector("b").textContent = this.messages[index].evidence?.length ? "墨衡 · RAG" : "墨衡 · 云端";
+    const dialogue = this.shadowRoot.querySelector(".dialogue");
+    if (dialogue) dialogue.scrollTop = dialogue.scrollHeight;
   }
 
   async startRecording() {
@@ -143,6 +241,7 @@ export class ShoujianOracle extends HTMLElement {
       this.render();
     } catch (error) {
       this.messages.push({ role: "master", text: error.message });
+      this.persistMemory();
       this.render();
     }
   }
@@ -160,6 +259,7 @@ export class ShoujianOracle extends HTMLElement {
       transcript = result.text;
     } catch (error) {
       this.messages.push({ role: "master", text: `没能听清：${error.message}` });
+      this.persistMemory();
     } finally {
       this.busy = false;
       this.render();
@@ -174,6 +274,7 @@ export class ShoujianOracle extends HTMLElement {
       await playPcmBase64(audio.data, { sampleRate: audio.sampleRate });
     } catch (error) {
       this.messages.push({ role: "master", text: `语音回答暂时不可用：${error.message}` });
+      this.persistMemory();
     }
   }
 
@@ -199,7 +300,7 @@ export class ShoujianOracle extends HTMLElement {
         </header>
 
         <section class="dialogue" aria-label="与墨衡的当前对话" aria-live="polite">
-          ${this.messages.map((message, index) => `<article class="message ${message.role} ${message.error ? "error" : ""}" ${index === this.messages.length - 1 ? 'tabindex="-1" data-latest' : ""}>
+          ${this.messages.map((message, index) => `<article class="message ${message.role} ${message.error ? "error" : ""} ${message.streaming ? "streaming" : ""}" data-message-index="${index}" ${index === this.messages.length - 1 ? 'tabindex="-1" data-latest' : ""}>
             <b>${message.role === "master" ? `墨衡${message.evidence?.length ? " · RAG" : message.cloud ? " · 云端" : ""}` : "你"}</b><p>${escapeHtml(message.text)}</p>${evidenceDetails(message.evidence)}
           </article>`).join("")}
         </section>
@@ -228,12 +329,21 @@ export class ShoujianOracle extends HTMLElement {
             ${this.cloud && this.recorder.supported ? `<button type="button" data-action="${this.recording ? "stop-record" : "record"}" ${this.busy && !this.recording ? "disabled" : ""}>${this.recording ? "停止并转文字" : "按下说话"}</button>` : ""}
             ${this.cloud ? `<button type="button" data-action="voice" aria-pressed="${this.voiceReplies}">语音回答：${this.voiceReplies ? "开" : "关"}</button>` : ""}
           </div>
+          ${this.cloud ? `<div class="memory-tools"><small>本机记忆最近 ${MAX_MEMORY_MESSAGES} 条对话，刷新后仍可继续。</small><button type="button" data-action="clear-memory" ${this.busy ? "disabled" : ""}>清除本机记忆</button></div>` : ""}
           ${this.stage !== "question" ? `<button class="text-button" type="button" data-action="reset" ${this.busy || this.recording ? "disabled" : ""}>另起一问</button>` : !this.cloud ? `<div class="quick"><button type="button" data-quick="我不会问，请给一个例子">我不会问</button><button type="button" data-quick="边界是什么">哪些不能问</button></div>` : ""}
         </section>
 
-        <footer>${this.cloud ? "自由对话会把你提交的文字发送给 Google Gemini；涉及经传或当前卦象时还会附带本轮检索片段。本项目自身不持久化内容。" : "本地模式不上传问题，但只能回答固定意图。配置 Gemini 后可启用普通闲聊、有来源的经传问答、语音转文字和语音回答。"} 演示结果不替代医疗、法律、投资或现实安全判断。</footer>
+        <footer>${this.cloud ? "自由对话会把你提交的文字、最近上下文和必要检索片段发送给 Google Gemini；最近对话只保存在此浏览器本机，可随时清除，服务端不建用户档案。" : "本地模式不上传问题，但只能回答固定意图。配置 Gemini 后可启用普通闲聊、有来源的经传问答、语音转文字和语音回答。"} 演示结果不替代医疗、法律、投资或现实安全判断。</footer>
       </main>`;
   }
+}
+
+function wait(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+function characterDelay(character) {
+  return /[。！？!?\n]/u.test(character) ? 36 : /[，、；：,.]/u.test(character) ? 20 : 9;
 }
 
 function readingCard(reading, question) {
@@ -251,7 +361,7 @@ function readingCard(reading, question) {
 }
 
 function escapeHtml(value) {
-  return value.replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character]);
+  return String(value ?? "").replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character]);
 }
 
 function evidenceDetails(evidence) {
@@ -283,6 +393,7 @@ const styles = `<style>
   .message { max-width: 88%; padding: 11px 14px; border-radius: 14px; background: #ffffff09; border: 1px solid #68533c; }
   .message.user { justify-self: end; background: #6d2d2729; border-color: #8e4a40; } .message b { color: #c9a46e; font-size: 13px; } .message p { margin: 5px 0 0; line-height: 1.7; white-space: pre-line; }
   .message.error { border-color: #a85248; background: #7a2c2422; }
+  .message.streaming p::after { content: "▍"; margin-left: 2px; color: #d2a15b; animation: cursor-blink .8s steps(1) infinite; }
   .rag-evidence { margin-top: 10px; border-top: 1px solid #66513b; padding-top: 8px; font: 12px/1.55 system-ui,sans-serif; }
   .rag-evidence summary { color: #d0ac76; cursor: pointer; }
   .rag-evidence ol { display: grid; gap: 10px; margin: 10px 0 0; padding-left: 20px; }
@@ -299,8 +410,10 @@ const styles = `<style>
   .quick { display: flex; flex-wrap: wrap; gap: 7px; } .quick button { min-height: 38px; padding: 7px 12px; font-size: 13px; }
   .rag-invitation { margin: 0; padding: 10px 12px; color: #d5c2a2; background: #88713b18; border: 1px solid #74623e; border-radius: 12px; font: 13px/1.65 system-ui,sans-serif; }
   .voice-tools { display: flex; flex-wrap: wrap; gap: 8px; } .voice-tools button { background: #25201b; }
+  .memory-tools { display: flex; gap: 10px; align-items: center; justify-content: space-between; color: #938674; font: 11px/1.5 system-ui,sans-serif; } .memory-tools button { min-height: 32px; padding: 5px 10px; background: transparent; color: #bda987; font-size: 11px; }
   footer { margin-top: 18px; color: #9f9485; font: 12px/1.65 system-ui,sans-serif; }
   textarea:focus,button:focus-visible,[data-latest]:focus { outline: 3px solid #d2a15b; outline-offset: 3px; }
+  @keyframes cursor-blink { 50% { opacity: 0; } }
   @media(max-width:520px){ .shell{padding:18px;border-radius:16px}.master-card{grid-template-columns:78px 1fr}.portrait{width:74px;height:86px}.input-row{grid-template-columns:1fr}.line{grid-template-columns:1fr;gap:2px}dl{grid-template-columns:1fr}.message{max-width:95%} }
   @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
 </style>`;

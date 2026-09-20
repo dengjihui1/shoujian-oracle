@@ -160,7 +160,6 @@ function aliasesForHexagram(hexagram) {
     normalize(`${hexagram.shortName}卦`),
     normalize(hexagram.fullName),
     `第${hexagram.number}卦`,
-    String(hexagram.number),
     normalize(hexagram.symbol),
   ])];
 }

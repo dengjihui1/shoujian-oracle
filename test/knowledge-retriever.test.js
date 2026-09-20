@@ -45,3 +45,8 @@ test("unknown questions do not fabricate a decorative source", () => {
   assert.deepEqual(evidence, []);
   assert.match(formatEvidenceForPrompt(evidence), /资料不足/u);
 });
+
+test("ordinary numbers do not accidentally match a numbered hexagram", () => {
+  const evidence = knowledge.retrieve({ query: "请用大约300字介绍你自己，以及你能做什么。" });
+  assert.deepEqual(evidence, []);
+});

@@ -68,3 +68,28 @@ test("chat falls back to another model when the primary model is overloaded", as
   assert.equal(result.model, "chat-stable");
   assert.deepEqual(requestedModels, ["chat-busy", "chat-stable"]);
 });
+
+test("chat stream yields Gemini SSE chunks and falls back before the first chunk", async () => {
+  const requestedModels = [];
+  const client = new GeminiClient({
+    apiKey: "test-only",
+    models: { chat: "chat-busy" },
+    chatFallbackModels: ["chat-streaming"],
+    fetchFn: async (url) => {
+      const model = decodeURIComponent(url.match(/models\/([^:]+):/u)?.[1] ?? "");
+      requestedModels.push(model);
+      if (model === "chat-busy") return Response.json({ error: { message: "high demand" } }, { status: 503 });
+      return new Response([
+        'data: {"candidates":[{"content":{"parts":[{"text":"今天是"}]}}]}',
+        'data: {"candidates":[{"content":{"parts":[{"text":"2026年9月20日。"}]}}]}',
+        "",
+      ].join("\n\n"), { headers: { "content-type": "text/event-stream" } });
+    }
+  });
+
+  const chunks = [];
+  for await (const chunk of client.chatStream({ input: "今天几号", systemInstruction: "使用服务器日期" })) chunks.push(chunk);
+  assert.deepEqual(chunks.map(({ text }) => text), ["今天是", "2026年9月20日。"]) ;
+  assert.ok(chunks.every(({ model }) => model === "chat-streaming"));
+  assert.deepEqual(requestedModels, ["chat-busy", "chat-streaming"]);
+});

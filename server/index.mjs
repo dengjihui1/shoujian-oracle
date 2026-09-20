@@ -4,7 +4,7 @@ import { extname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import process from "node:process";
 import { GeminiClient, GeminiError, DEFAULT_MODELS } from "./gemini-client.mjs";
-import { buildChatInput, buildSystemInstruction } from "./prompt.mjs";
+import { buildChatInput, buildSystemInstruction, formatShanghaiDateTime } from "./prompt.mjs";
 import { loadKnowledgeBase } from "./knowledge-retriever.mjs";
 import { assessQuestion } from "../src/question-boundary.js";
 import { boundaryReply } from "../src/dialogue-engine.js";
@@ -30,13 +30,15 @@ export function createApp({ client = null, knowledgeBase = defaultKnowledgeBase,
             provider: apiEnabled ? "Google Gemini" : null,
             models: apiEnabled ? client.models : null,
             knowledge: knowledgeBase.summary,
+            serverTime: formatShanghaiDateTime(now()),
           });
         }
         if (!apiEnabled) return json(response, 503, { error: "cloud_disabled", message: "未配置 Gemini，当前使用本地有限对话。" });
         if (request.method !== "POST") return json(response, 405, { error: "method_not_allowed", message: "请求方法不受支持。" });
         const body = await readJsonBody(request);
         if (url.pathname === "/api/transcribe") return await handleTranscribe(response, client, body);
-        if (url.pathname === "/api/chat") return await handleChat(response, client, knowledgeBase, body);
+        if (url.pathname === "/api/chat") return await handleChat(response, client, knowledgeBase, body, now);
+        if (url.pathname === "/api/chat/stream") return await handleChatStream(response, client, knowledgeBase, body, now);
         if (url.pathname === "/api/speech") return await handleSpeech(response, client, body);
         return json(response, 404, { error: "not_found", message: "接口不存在。" });
       }
@@ -62,32 +64,88 @@ async function handleTranscribe(response, client, body) {
   return json(response, 200, { text: result.text });
 }
 
-async function handleChat(response, client, knowledgeBase, body) {
+async function handleChat(response, client, knowledgeBase, body, now) {
+  const prepared = prepareChat(body, knowledgeBase, now);
+  if (prepared.blocked) return json(response, 200, prepared.blocked);
+  const result = await client.chat({ input: prepared.input, systemInstruction: prepared.systemInstruction });
+  validateCitations(result.text, prepared.evidence);
+  return json(response, 200, {
+    text: result.text,
+    evidence: prepared.evidence,
+    grounded: prepared.evidence.length > 0,
+    purpose: prepared.purpose,
+  });
+}
+
+async function handleChatStream(response, client, knowledgeBase, body, now) {
+  const prepared = prepareChat(body, knowledgeBase, now);
+  response.writeHead(200, {
+    "content-type": "text/event-stream; charset=utf-8",
+    "cache-control": "no-store, no-transform",
+    "connection": "keep-alive",
+    "x-accel-buffering": "no",
+  });
+  sse(response, "meta", {
+    evidence: prepared.evidence,
+    grounded: prepared.evidence.length > 0,
+    purpose: prepared.purpose,
+    serverTime: prepared.serverTime,
+  });
+  if (prepared.blocked) {
+    sse(response, "delta", { text: prepared.blocked.text });
+    sse(response, "done", prepared.blocked);
+    return response.end();
+  }
+
+  let fullText = "";
+  try {
+    for await (const chunk of client.chatStream({ input: prepared.input, systemInstruction: prepared.systemInstruction })) {
+      if (response.destroyed) return;
+      fullText += chunk.text;
+      sse(response, "delta", { text: chunk.text });
+    }
+    validateCitations(fullText, prepared.evidence);
+    sse(response, "done", { text: fullText });
+  } catch (error) {
+    const exposed = publicStreamError(error);
+    sse(response, "error", exposed);
+  }
+  response.end();
+}
+
+function prepareChat(body, knowledgeBase, now) {
   const message = cleanText(body.message, 2_000, "对话内容");
   const stage = ["question", "ready", "reading"].includes(body.stage) ? body.stage : "question";
   const assessment = assessQuestion(message);
   const divinationMode = stage !== "question" || body.purpose === "divination";
   const immediateDanger = assessment.issues.some(({ code }) => code === "immediate-harm");
   if ((divinationMode && assessment.level === "blocked") || immediateDanger) {
-    return json(response, 200, { text: boundaryReply(assessment), blocked: true });
+    return {
+      blocked: { text: boundaryReply(assessment), blocked: true },
+      evidence: [],
+      purpose: divinationMode ? "divination" : "chat",
+      serverTime: formatShanghaiDateTime(now()),
+    };
   }
   const question = typeof body.question === "string" ? body.question.slice(0, 500) : "";
   const reading = sanitizeReading(body.reading);
-  const history = Array.isArray(body.history) ? body.history.slice(-8).map((item) => ({
+  const history = Array.isArray(body.history) ? body.history.slice(-16).map((item) => ({
     role: item?.role === "user" ? "user" : "master",
-    text: String(item?.text ?? "").slice(0, 500)
+    text: String(item?.text ?? "").slice(0, 1_000)
   })) : [];
   const evidence = knowledgeBase.retrieve({
     query: [message, question].filter(Boolean).join("\n"),
     reading,
     limit: 8,
   });
-  const result = await client.chat({
+  const serverTime = formatShanghaiDateTime(now());
+  return {
+    evidence,
+    purpose: divinationMode ? "divination" : "chat",
+    serverTime,
     input: buildChatInput(message, history),
-    systemInstruction: buildSystemInstruction({ stage, question, reading, evidence })
-  });
-  validateCitations(result.text, evidence);
-  return json(response, 200, { text: result.text, evidence, grounded: evidence.length > 0, purpose: divinationMode ? "divination" : "chat" });
+    systemInstruction: buildSystemInstruction({ stage, question, reading, evidence, currentDateTime: serverTime }),
+  };
 }
 
 async function handleSpeech(response, client, body) {
@@ -180,6 +238,24 @@ function json(response, status, value) {
   if (response.writableEnded) return;
   response.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
   response.end(JSON.stringify(value));
+}
+
+function sse(response, event, value) {
+  if (!response.writableEnded && !response.destroyed) {
+    response.write(`event: ${event}\ndata: ${JSON.stringify(value)}\n\n`);
+  }
+}
+
+function publicStreamError(error) {
+  const code = error?.code ?? "server_error";
+  const messages = {
+    quota_exceeded: "Gemini 当前配额或服务容量不足，请稍后再试。",
+    timeout: "Gemini 回答超时，请稍后重试。",
+    network_error: "Gemini 网络连接暂时不可用，请稍后重试。",
+    upstream_error: "Gemini 服务暂时不可用，请稍后重试。",
+    ungrounded_reply: error?.message,
+  };
+  return { error: code, message: messages[code] ?? "本次回答没有完成，请稍后重试。" };
 }
 
 function httpError(status, code, message) { return Object.assign(new Error(message), { status, code, expose: true }); }

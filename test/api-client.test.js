@@ -36,3 +36,19 @@ test("browser receives a stable Chinese message for upstream failures", async ()
     (error) => error.code === "upstream_error" && error.message === "Gemini 服务暂时不可用，请稍后重试"
   );
 });
+
+test("browser client exposes metadata and text while an SSE answer is arriving", async () => {
+  const sse = [
+    'event: meta\ndata: {"evidence":[],"grounded":false,"purpose":"chat"}',
+    'event: delta\ndata: {"text":"今天是"}',
+    'event: delta\ndata: {"text":"2026年9月20日。"}',
+    'event: done\ndata: {"text":"今天是2026年9月20日。"}',
+    "",
+  ].join("\n\n");
+  const deltas = [];
+  const client = new OracleApiClient({ fetchFn: async () => new Response(sse, { headers: { "content-type": "text/event-stream" } }) });
+  const result = await client.chatStream({ message: "今天几号" }, { onDelta: (text) => deltas.push(text) });
+  assert.deepEqual(deltas, ["今天是", "2026年9月20日。"]) ;
+  assert.equal(result.text, "今天是2026年9月20日。");
+  assert.equal(result.purpose, "chat");
+});
