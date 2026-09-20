@@ -25,7 +25,8 @@
   ↓
 本卦、实际动爻、之卦与上下卦强制进入知识检索
   ↓
-Gemini 已配置 → SSE 流式自由追问 + 字符级显示 + 来源展开 + 可选 TTS 语音回答
+Gemini 已配置 → SSE 流式自由追问 + 字符级显示 + 来源展开
+  └── 可选语音：完整句切分 → 最多预取 2 句 TTS → 顺序播放 → 音量驱动墨衡嘴型
 Gemini 未配置 → 有限追问：意思 / 动爻 / 算法 / 边界
 ```
 
@@ -34,13 +35,16 @@ Gemini 未配置 → 有限追问：意思 / 动爻 / 算法 / 边界
 | 组件 | 文件 | 输入 | 输出 | 是否纯函数 |
 | --- | --- | --- | --- | --- |
 | 虚拟人外壳 | `src/shoujian-oracle.js` | 点击、文本、会话状态 | 对话和卦象界面 | 否，负责 UI 状态 |
+| 虚拟人状态 | `src/avatar-state.js` | 录音、转写、回答、语音与卦象阶段 | 八种人物表现状态 | 是 |
 | 安全视图 | `src/oracle-view.js` | 当前只读状态 | Shadow DOM、卦卡、证据链接 | 是，返回转义后的 HTML |
 | 对话路由 | `src/dialogue-engine.js` | 用户追问、当前卦象 | 固定意图与回答 | 是 |
 | 问题边界 | `src/question-boundary.js` | 原问文本 | `clear/rewrite/blocked` | 是 |
 | 起卦计算 | `src/oracle-engine.js` | 六个 6/7/8/9 | 本卦、动爻、之卦、审计轨迹 | 是 |
 | 随机适配器 | `castWithCoins()` | `crypto.getRandomValues` | 六个爻值 | 外层有随机，排卦仍纯计算 |
 | 浏览器 API 适配器 | `src/api-client.js` | 文本、录音 | JSON / SSE 事件流 | 否，网络 I/O |
-| 录音与播放 | `src/audio-recorder.js` / `audio-player.js` | 麦克风、PCM | 实时文字 / 音频 Blob / 可取消 WAV 播放 | 播放有 I/O，WAV 包装为纯函数 |
+| 录音与播放 | `src/audio-recorder.js` / `audio-player.js` | 麦克风、PCM | 实时文字 / Web Audio 播放 / RMS 音量 | 播放有 I/O，PCM 转换与音量计算为纯函数 |
+| 流式语音分句 | `src/speech-segmenter.js` | Gemini SSE 文字分片 | 可朗读的完整短句 | 是 |
+| TTS 播放队列 | `src/speech-queue.js` | 完整短句、取消信号 | 最多两句预取、严格顺序播放 | 异步调度可注入测试 |
 | 流式文字队列 | `src/streaming-text.js` | SSE 文字分片 | 可取消的字符级累积文本 | 定时器可注入测试 |
 | 本机 API 服务 | `server/index.mjs` | `/api/*` 请求 | 脱敏后的稳定响应 | 否，网络 I/O |
 | Gemini 适配器 | `server/gemini-client.mjs` | 只读卦象、文本、音频 | SSE 分片、转写、PCM | 否，可注入假 `fetch` 测试 |
@@ -82,3 +86,5 @@ question --问题通过--> ready --起卦--> reading
 - 主项目住宅知识、虚拟人高清素材、档案和商业语音系统。
 
 这些边界保证本仓库足以学习“虚拟人 + 确定性起卦 + RAG 知识问答”的组合方式，又不是商业核心的开源副本。
+
+虚拟人参考项目、未采用 Live2D／VRM 的原因和人物资产边界见 [虚拟人研究与实现说明](VIRTUAL_HUMAN_RESEARCH.md)。

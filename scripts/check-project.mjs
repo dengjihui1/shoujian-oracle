@@ -6,7 +6,7 @@ import process from "node:process";
 const root = new URL("../", import.meta.url);
 const rootPath = fileURLToPath(root);
 const required = [
-  "README.md", "NOTICE.md", "LICENSE", "index.html", "docs/COMPONENT_MAP.md", "docs/LEARNING_GUIDE.md",
+  "README.md", "NOTICE.md", "LICENSE", "index.html", "docs/COMPONENT_MAP.md", "docs/LEARNING_GUIDE.md", "docs/VIRTUAL_HUMAN_RESEARCH.md",
   "docs/API_SETUP.md", "server/index.mjs", "server/gemini-client.mjs", "server/prompt.mjs",
   "server/knowledge-retriever.mjs", "server/rate-limiter.mjs", "knowledge/shoujian-rag.v1.json", "knowledge/README.md",
   "src/oracle-engine.js", "src/question-boundary.js", "src/dialogue-engine.js", "src/shoujian-oracle.js", "src/oracle-view.js",
