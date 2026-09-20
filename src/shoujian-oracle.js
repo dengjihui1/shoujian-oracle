@@ -3,7 +3,7 @@ import { assessQuestion } from "./question-boundary.js";
 import { boundaryReply, followUpReply, readingReply, welcomeReply } from "./dialogue-engine.js";
 import { OracleApiClient } from "./api-client.js";
 import { AudioRecorder, BrowserSpeechRecognizer, blobToBase64 } from "./audio-recorder.js";
-import { playPcmBase64 } from "./audio-player.js";
+import { playPcmBase64, primeAudioPlayback } from "./audio-player.js";
 import { ConversationMemory, recentConversation } from "./conversation-memory.js";
 import { SentenceSegmenter } from "./speech-segmenter.js";
 import { StreamingSpeechQueue } from "./speech-queue.js";
@@ -129,6 +129,7 @@ export class ShoujianOracle extends HTMLElement {
     }
     if (action === "voice") {
       this.voiceReplies = !this.voiceReplies;
+      if (this.voiceReplies) primeAudioPlayback();
       if (!this.voiceReplies) this.cancelSpeech();
       this.render();
     }
@@ -406,7 +407,10 @@ export class ShoujianOracle extends HTMLElement {
 
   updateVoiceLevel(level) {
     const stage = this.shadowRoot?.querySelector(".avatar-stage");
-    if (stage) stage.style.setProperty("--voice-level", String(Math.max(0, Math.min(1, Number(level) || 0))));
+    if (!stage) return;
+    const normalized = Math.max(0, Math.min(1, Number(level) || 0));
+    stage.style.setProperty("--voice-level", String(normalized));
+    stage.style.setProperty("--voice-level-px", `${Math.round(3 + normalized * 16)}px`);
   }
 
   updateVoiceStatus() {
