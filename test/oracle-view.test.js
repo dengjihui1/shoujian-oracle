@@ -14,6 +14,7 @@ function render(overrides = {}) {
     liveTranscriberSupported: true,
     draft: "",
     voiceReplies: false,
+    voiceState: "idle",
     voiceButtonLabel: "语音回答：关",
     ...overrides,
   });
@@ -47,7 +48,16 @@ test("view rejects non-HTTPS evidence links and keeps trusted HTTPS links", () =
 test("unknown stages fall back to the question state", () => {
   const html = render({ stage: "unexpected" });
   assert.match(html, /master-card stage-question/u);
-  assert.match(html, /墨衡小卦 · 候问/u);
+  assert.match(html, /data-avatar-state="idle"/u);
+  assert.match(html, /候问/u);
+});
+
+test("view renders the dedicated two-frame virtual diviner stage", () => {
+  const html = render({ voiceState: "playing" });
+  assert.match(html, /class="avatar-stage" data-avatar-state="speaking"/u);
+  assert.match(html, /moheng-neutral\.webp/u);
+  assert.match(html, /moheng-speaking\.webp/u);
+  assert.match(html, /data-avatar-label>开口</u);
 });
 
 test("busy state disables the composer while keeping cancellation available", () => {

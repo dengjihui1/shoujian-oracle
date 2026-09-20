@@ -7,6 +7,7 @@ import { playPcmBase64 } from "./audio-player.js";
 import { ConversationMemory, recentConversation } from "./conversation-memory.js";
 import { StreamingTextRevealer } from "./streaming-text.js";
 import { renderOracleView } from "./oracle-view.js";
+import { deriveAvatarPresentation } from "./avatar-state.js";
 
 export class ShoujianOracle extends HTMLElement {
   constructor() {
@@ -400,6 +401,15 @@ export class ShoujianOracle extends HTMLElement {
   updateVoiceStatus() {
     const button = this.shadowRoot?.querySelector('[data-action="voice"]');
     if (button) button.textContent = this.voiceButtonLabel();
+    const avatar = deriveAvatarPresentation(this);
+    const stage = this.shadowRoot?.querySelector(".avatar-stage");
+    if (!stage) return;
+    stage.dataset.avatarState = avatar.key;
+    stage.setAttribute("aria-label", `墨衡虚拟人，当前状态：${avatar.label}`);
+    const label = stage.querySelector("[data-avatar-label]");
+    const detail = stage.querySelector("[data-avatar-detail]");
+    if (label) label.textContent = avatar.label;
+    if (detail) detail.textContent = avatar.detail;
   }
 
   voiceButtonLabel() {
@@ -440,6 +450,7 @@ export class ShoujianOracle extends HTMLElement {
       liveTranscriberSupported: this.liveTranscriber.supported,
       draft: this.draft,
       voiceReplies: this.voiceReplies,
+      voiceState: this.voiceState,
       voiceButtonLabel: this.voiceButtonLabel(),
     });
   }
