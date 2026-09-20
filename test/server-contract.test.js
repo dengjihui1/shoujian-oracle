@@ -157,6 +157,32 @@ test("investment divination refusal includes safe chat and reframing routes", as
   });
 });
 
+test("ordinary chat after a cast does not force unrelated reading evidence", async () => {
+  let capturedInstruction = "";
+  const client = {
+    models: { chat: "test-chat" },
+    async chat({ systemInstruction }) {
+      capturedInstruction = systemInstruction;
+      return { text: "基金是集合众多投资者资金、按既定策略投资的一类工具。" };
+    },
+  };
+  const reading = { primary: { number: 1, fullName: "乾为天", lower: { name: "乾", image: "天" }, upper: { name: "乾", image: "天" } }, movingLines: [1], changed: { fullName: "天风姤" } };
+  await withServer(createApp({ client }), async (base) => {
+    const response = await fetch(`${base}/api/chat`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message: "基金是什么？", purpose: "chat", stage: "reading", question: "未来三天先做什么", reading }),
+    });
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.purpose, "chat");
+    assert.equal(body.grounded, false);
+    assert.deepEqual(body.evidence, []);
+    assert.match(body.text, /集合众多投资者资金/u);
+    assert.match(capturedInstruction, /本卦第1卦 乾为天/u);
+  });
+});
+
 test("streaming chat carries trusted Shanghai time and recent conversation context", async () => {
   const client = {
     models: { chat: "test-chat" },

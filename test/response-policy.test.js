@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { assessQuestion } from "../src/question-boundary.js";
-import { crisisSupportReply, divinationBoundaryReply, resolveResponsePolicy } from "../src/response-policy.js";
+import { crisisSupportReply, divinationBoundaryReply, inferConversationPurpose, resolveResponsePolicy } from "../src/response-policy.js";
 
 test("ordinary chat stays open even when it mentions a professional domain", () => {
   const policy = resolveResponsePolicy({ message: "基金是什么？", purpose: "chat", stage: "question" });
@@ -38,4 +38,17 @@ test("immediate-harm divination prioritizes real-world safety", () => {
 
 test("crisis response is deterministic and directly reusable", () => {
   assert.equal(crisisSupportReply(), crisisSupportReply());
+});
+
+test("reading-stage scope keeps oracle follow-ups grounded without trapping ordinary chat", () => {
+  assert.equal(inferConversationPurpose("这卦的动爻怎么理解？", "reading"), "divination");
+  assert.equal(inferConversationPurpose("它和我的原问有什么关系？", "reading"), "divination");
+  assert.equal(inferConversationPurpose("你是谁？", "reading"), "chat");
+  assert.equal(inferConversationPurpose("基金是什么？", "reading"), "chat");
+});
+
+test("an explicitly ordinary question remains chat even when a reading exists", () => {
+  const policy = resolveResponsePolicy({ message: "基金是什么？", purpose: "chat", stage: "reading" });
+  assert.equal(policy.action, "allow");
+  assert.equal(policy.purpose, "chat");
 });

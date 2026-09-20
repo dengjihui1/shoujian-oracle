@@ -1,6 +1,7 @@
 import { castWithCoins } from "./oracle-engine.js";
 import { assessQuestion } from "./question-boundary.js";
 import { boundaryReply, followUpReply, readingReply, welcomeReply } from "./dialogue-engine.js";
+import { inferConversationPurpose } from "./response-policy.js";
 import { OracleApiClient } from "./api-client.js";
 import { AudioRecorder, BrowserSpeechRecognizer, blobToBase64 } from "./audio-recorder.js";
 import { playPcmBase64, primeAudioPlayback } from "./audio-player.js";
@@ -167,7 +168,7 @@ export class ShoujianOracle extends HTMLElement {
         this.question = "";
         this.reading = null;
       } else if (this.cloud) {
-        await this.askCloud(text, history);
+        await this.askCloud(text, history, inferConversationPurpose(text, this.stage));
       } else {
         this.messages.push({ role: "master", text: localReply.text });
       }
@@ -185,7 +186,7 @@ export class ShoujianOracle extends HTMLElement {
     this.persistMemory();
     this.render();
     this.focusLatest();
-    if (this.cloud) await this.askCloud("请只依据程序给出的本卦、动爻和之卦，解释它怎样帮助我重新看原问，并给一个可撤回的小行动。", this.messages.slice(0, -1));
+    if (this.cloud) await this.askCloud("请只依据程序给出的本卦、动爻和之卦，解释它怎样帮助我重新看原问，并给一个可撤回的小行动。", this.messages.slice(0, -1), "divination");
   }
 
   async checkCloud() {
@@ -201,7 +202,7 @@ export class ShoujianOracle extends HTMLElement {
     this.render();
   }
 
-  async askCloud(message, history, purpose = this.stage === "reading" ? "divination" : "chat") {
+  async askCloud(message, history, purpose = "chat") {
     this.busy = true;
     const controller = new AbortController();
     this.chatController = controller;

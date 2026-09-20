@@ -7,7 +7,7 @@ import { GeminiClient, GeminiError, DEFAULT_MODELS } from "./gemini-client.mjs";
 import { buildChatInput, buildSystemInstruction, formatShanghaiDateTime } from "./prompt.mjs";
 import { loadKnowledgeBase } from "./knowledge-retriever.mjs";
 import { assessQuestion } from "../src/question-boundary.js";
-import { resolveResponsePolicy } from "../src/response-policy.js";
+import { inferConversationPurpose, resolveResponsePolicy } from "../src/response-policy.js";
 import { SlidingWindowRateLimiter } from "./rate-limiter.mjs";
 
 const projectRoot = fileURLToPath(new URL("../", import.meta.url));
@@ -130,7 +130,10 @@ function prepareChat(body, knowledgeBase, now) {
   const message = cleanText(body.message, 2_000, "对话内容");
   const stage = ["question", "ready", "reading"].includes(body.stage) ? body.stage : "question";
   const assessment = assessQuestion(message);
-  const policy = resolveResponsePolicy({ message, purpose: body.purpose, stage, assessment });
+  const requestedPurpose = body.purpose === "chat" || body.purpose === "divination"
+    ? body.purpose
+    : inferConversationPurpose(message, stage);
+  const policy = resolveResponsePolicy({ message, purpose: requestedPurpose, stage, assessment });
   if (policy.action === "respond") {
     return {
       response: policy.response,
@@ -145,9 +148,10 @@ function prepareChat(body, knowledgeBase, now) {
     role: item?.role === "user" ? "user" : "master",
     text: String(item?.text ?? "").slice(0, 1_000)
   })) : [];
+  const useReadingEvidence = policy.purpose === "divination";
   const evidence = knowledgeBase.retrieve({
-    query: [message, question].filter(Boolean).join("\n"),
-    reading,
+    query: [message, useReadingEvidence ? question : ""].filter(Boolean).join("\n"),
+    reading: useReadingEvidence ? reading : null,
     limit: 8,
   });
   const serverTime = formatShanghaiDateTime(now());

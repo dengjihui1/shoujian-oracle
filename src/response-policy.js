@@ -27,6 +27,8 @@ const DIVINATION_ALTERNATIVES = Object.freeze({
   },
 });
 
+const READING_FOLLOW_UP = /本卦|此卦|这卦|卦象|卦辞|爻辞|动爻|变爻|之卦|变卦|上卦|下卦|彖传|象传|说卦|起卦|排卦|解卦|占断|原问|刚才的(?:卦|结果)|这个(?:卦|结果)|它.{0,8}(?:怎么理解|什么意思|和.{0,6}关系)/u;
+
 export function crisisSupportReply() {
   return [
     "这件事先不谈起卦。若当事人正面临立即危险，先远离可能造成伤害的物品或地点，去有其他人在场的安全处；在中国大陆请立即拨打 110 或 120，或直接前往最近的急诊。",
@@ -53,7 +55,7 @@ export function divinationBoundaryReply(assessment) {
 }
 
 export function resolveResponsePolicy({ message, purpose = "chat", stage = "question", assessment = assessQuestion(message) }) {
-  const divinationMode = stage !== "question" || purpose === "divination";
+  const divinationMode = stage === "ready" || purpose === "divination";
   const immediateDanger = assessment.issues.some(({ code }) => code === "immediate-harm");
 
   if (!divinationMode && immediateDanger) {
@@ -80,6 +82,12 @@ export function resolveResponsePolicy({ message, purpose = "chat", stage = "ques
     purpose: divinationMode ? "divination" : "chat",
     response: null,
   });
+}
+
+export function inferConversationPurpose(message, stage = "question") {
+  if (stage === "ready") return "divination";
+  if (stage !== "reading") return "chat";
+  return READING_FOLLOW_UP.test(String(message).normalize("NFKC")) ? "divination" : "chat";
 }
 
 function unique(values) {
