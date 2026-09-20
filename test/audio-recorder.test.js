@@ -28,3 +28,15 @@ test("browser speech recognition exposes interim text and resolves final text", 
   assert.equal(recognizer.active, false);
 });
 
+test("browser speech recognition converts provider errors into stable Chinese messages", async () => {
+  class FakeRecognition {
+    constructor() { FakeRecognition.instance = this; }
+    start() {}
+    abort() { this.onend(); }
+  }
+  const recognizer = new BrowserSpeechRecognizer({ RecognitionClass: FakeRecognition });
+  const result = recognizer.start();
+  FakeRecognition.instance.onerror({ error: "no-speech" });
+  await assert.rejects(result, /没有听到清晰语音/u);
+  assert.equal(recognizer.active, false);
+});

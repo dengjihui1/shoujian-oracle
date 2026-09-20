@@ -22,6 +22,7 @@ export class ShoujianOracle extends HTMLElement {
     this.busy = false;
     this.voiceReplies = false;
     this.voiceState = "idle";
+    this.draft = "";
     this.chatController = null;
     this.transcriptionController = null;
     this.speechController = null;
@@ -34,12 +35,14 @@ export class ShoujianOracle extends HTMLElement {
   connectedCallback() {
     this.shadowRoot.addEventListener("click", this.handleClick);
     this.shadowRoot.addEventListener("submit", this.handleSubmit);
+    this.shadowRoot.addEventListener("input", this.handleInput);
     this.checkCloud();
   }
 
   disconnectedCallback() {
     this.shadowRoot.removeEventListener("click", this.handleClick);
     this.shadowRoot.removeEventListener("submit", this.handleSubmit);
+    this.shadowRoot.removeEventListener("input", this.handleInput);
     clearTimeout(this.recordingTimer);
     if (this.recording && this.recordingMode === "recorded") this.recorder.stop()?.catch(() => {});
     this.liveTranscriber.abort();
@@ -56,19 +59,23 @@ export class ShoujianOracle extends HTMLElement {
   }
 
   resetSession() {
+    this.cancelSpeech();
     this.stage = "question";
     this.question = "";
     this.reading = null;
+    this.draft = "";
     this.messages.push({ role: "master", text: "上一卦收好。前面的聊天我还记得，可以继续聊，也可以重新留一件事起卦。" });
     this.persistMemory();
     this.render();
   }
 
   clearMemory() {
+    this.cancelSpeech();
     try { localStorage.removeItem(MEMORY_KEY); } catch { /* storage unavailable */ }
     this.initializeSession();
+    this.draft = "";
     this.render();
-    this.focusLatest();
+    this.focusComposer();
   }
 
   restoreMemory() {
@@ -98,9 +105,16 @@ export class ShoujianOracle extends HTMLElement {
   handleSubmit = async (event) => {
     event.preventDefault();
     const field = this.shadowRoot.querySelector("textarea");
-    const text = field?.value.trim() ?? "";
+    const text = String(field?.value ?? this.draft).trim();
     const mode = event.submitter?.dataset.submitMode ?? "divination";
-    if (text) await this.sendText(text, mode);
+    if (text) {
+      this.draft = "";
+      await this.sendText(text, mode);
+    }
+  };
+
+  handleInput = (event) => {
+    if (event.target.matches?.("textarea")) this.draft = event.target.value;
   };
 
   handleClick = async (event) => {
@@ -160,7 +174,7 @@ export class ShoujianOracle extends HTMLElement {
     }
     this.persistMemory();
     this.render();
-    this.focusLatest();
+    this.focusComposer();
   }
 
   async cast() {
@@ -251,7 +265,7 @@ export class ShoujianOracle extends HTMLElement {
       this.busy = false;
       this.persistMemory();
       this.render();
-      this.focusLatest();
+      this.focusComposer();
     }
     if (speechText && this.voiceReplies) void this.speak(speechText);
   }
@@ -276,10 +290,14 @@ export class ShoujianOracle extends HTMLElement {
         this.recordingMode = "live";
         this.liveTranscriptPromise = this.liveTranscriber.start({
           onText: (text) => {
+            this.draft = text;
             const field = this.shadowRoot.querySelector("textarea");
             if (field) field.value = text;
           }
         }).then((text) => ({ text }), (error) => ({ error }));
+        this.liveTranscriptPromise.then((result) => {
+          if (this.recording && this.recordingMode === "live") this.completeLiveRecognition(result);
+        });
       } else {
         this.recordingMode = "recorded";
         await this.recorder.start();
@@ -328,10 +346,24 @@ export class ShoujianOracle extends HTMLElement {
       if (this.transcriptionController === controller) this.transcriptionController = null;
       this.transcribing = false;
       this.busy = false;
+      if (transcript) this.draft = transcript;
       this.render();
       const field = this.shadowRoot.querySelector("textarea");
-      if (field && transcript) { field.value = transcript; field.focus(); }
+      if (field && transcript) field.focus();
     }
+  }
+
+  completeLiveRecognition(result) {
+    clearTimeout(this.recordingTimer);
+    this.recording = false;
+    if (result.error) {
+      this.messages.push({ role: "master", text: `没能听清：${result.error.message}` });
+      this.persistMemory();
+    } else if (result.text) {
+      this.draft = result.text;
+    }
+    this.render();
+    this.focusComposer();
   }
 
   async speak(text) {
@@ -385,6 +417,16 @@ export class ShoujianOracle extends HTMLElement {
     this.shadowRoot.querySelector("[data-latest]")?.focus();
   }
 
+  focusComposer() {
+    const field = this.shadowRoot.querySelector("textarea:not([disabled])");
+    if (field) {
+      field.focus();
+      field.setSelectionRange(field.value.length, field.value.length);
+    } else {
+      this.focusLatest();
+    }
+  }
+
   render() {
     if (!this.shadowRoot) return;
     const phase = this.stage === "question" ? "候问" : this.stage === "ready" ? "问已收" : "照卦答";
@@ -422,7 +464,7 @@ export class ShoujianOracle extends HTMLElement {
           <form>
             <label for="say">${this.stage === "question" ? this.cloud ? "想问墨衡什么" : "留下一件具体的事" : this.stage === "ready" ? "原问已固定" : "继续问墨衡"}</label>
             <div class="input-row">
-              <textarea id="say" maxlength="500" ${this.stage === "ready" || this.busy ? "disabled" : ""} placeholder="${this.stage === "reading" ? "直接问你真正想知道的，不必套固定问法" : this.cloud ? "可闲聊、问基础问题，也可写下一件事起卦" : "例如：未来三天，我该先验证哪一步？"}"></textarea>
+              <textarea id="say" maxlength="500" ${this.stage === "ready" || this.busy ? "disabled" : ""} placeholder="${this.stage === "reading" ? "直接问你真正想知道的，不必套固定问法" : this.cloud ? "可闲聊、问基础问题，也可写下一件事起卦" : "例如：未来三天，我该先验证哪一步？"}">${escapeHtml(this.draft)}</textarea>
               <div class="submit-actions">
                 ${this.stage === "question" && this.cloud ? `<button type="submit" data-submit-mode="chat" ${this.busy ? "disabled" : ""}>直接问墨衡</button><button class="primary" type="submit" data-submit-mode="divination" ${this.busy ? "disabled" : ""}>以此问起卦</button>` : `<button type="submit" ${this.stage === "ready" || this.busy ? "disabled" : ""}>${this.busy ? "请稍候" : "送问"}</button>`}
               </div>
@@ -435,7 +477,7 @@ export class ShoujianOracle extends HTMLElement {
             ${this.busy && !this.transcribing ? `<button type="button" data-action="cancel-response">停止回答</button>` : ""}
             ${this.cloud ? `<button type="button" data-action="voice" aria-pressed="${this.voiceReplies}">${this.voiceButtonLabel()}</button>` : ""}
           </div>
-          ${this.cloud ? `<div class="memory-tools"><small>本机记忆最近 ${MAX_MEMORY_MESSAGES} 条对话，刷新后仍可继续。</small><button type="button" data-action="clear-memory" ${this.busy ? "disabled" : ""}>清除本机记忆</button></div>` : ""}
+          ${this.cloud ? `<div class="memory-tools"><small>本机记忆最近 ${MAX_MEMORY_MESSAGES} 条对话，刷新后仍可继续。</small><button type="button" data-action="clear-memory" ${this.busy || this.recording ? "disabled" : ""}>清除本机记忆</button></div>` : ""}
           ${this.stage !== "question" ? `<button class="text-button" type="button" data-action="reset" ${this.busy || this.recording ? "disabled" : ""}>另起一问</button>` : !this.cloud ? `<div class="quick"><button type="button" data-quick="我不会问，请给一个例子">我不会问</button><button type="button" data-quick="边界是什么">哪些不能问</button></div>` : ""}
         </section>
 
