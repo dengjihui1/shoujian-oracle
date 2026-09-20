@@ -3,9 +3,26 @@ export async function playPcmBase64(data, { sampleRate = 24_000 } = {}) {
   const wav = pcmToWav(pcm, sampleRate);
   const url = URL.createObjectURL(new Blob([wav], { type: "audio/wav" }));
   const audio = new Audio(url);
-  audio.addEventListener("ended", () => URL.revokeObjectURL(url), { once: true });
-  audio.addEventListener("error", () => URL.revokeObjectURL(url), { once: true });
+  let revoked = false;
+  let finish;
+  const ended = new Promise((resolve) => { finish = resolve; });
+  const release = () => {
+    if (revoked) return;
+    revoked = true;
+    URL.revokeObjectURL(url);
+    finish();
+  };
+  audio.addEventListener("ended", release, { once: true });
+  audio.addEventListener("error", release, { once: true });
   await audio.play();
+  return {
+    ended,
+    stop() {
+      audio.pause();
+      audio.removeAttribute("src");
+      release();
+    }
+  };
 }
 
 export function pcmToWav(pcm, sampleRate = 24_000) {

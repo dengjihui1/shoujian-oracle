@@ -2,7 +2,7 @@ import { LINE_DEFINITIONS, castWithCoins } from "./oracle-engine.js";
 import { assessQuestion } from "./question-boundary.js";
 import { boundaryReply, followUpReply, readingReply, welcomeReply } from "./dialogue-engine.js";
 import { OracleApiClient } from "./api-client.js";
-import { AudioRecorder, blobToBase64 } from "./audio-recorder.js";
+import { AudioRecorder, BrowserSpeechRecognizer, blobToBase64 } from "./audio-recorder.js";
 import { playPcmBase64 } from "./audio-player.js";
 
 const MEMORY_KEY = "shoujian-oracle:conversation:v1";
@@ -14,11 +14,18 @@ export class ShoujianOracle extends HTMLElement {
     this.attachShadow({ mode: "open" });
     this.api = new OracleApiClient();
     this.recorder = new AudioRecorder();
+    this.liveTranscriber = new BrowserSpeechRecognizer();
     this.cloud = false;
     this.knowledge = null;
     this.recording = false;
+    this.transcribing = false;
     this.busy = false;
     this.voiceReplies = false;
+    this.voiceState = "idle";
+    this.chatController = null;
+    this.transcriptionController = null;
+    this.speechController = null;
+    this.audioPlayback = null;
     this.initializeSession();
     this.restoreMemory();
     this.render();
@@ -34,7 +41,11 @@ export class ShoujianOracle extends HTMLElement {
     this.shadowRoot.removeEventListener("click", this.handleClick);
     this.shadowRoot.removeEventListener("submit", this.handleSubmit);
     clearTimeout(this.recordingTimer);
-    if (this.recording) this.recorder.stop().catch(() => {});
+    if (this.recording && this.recordingMode === "recorded") this.recorder.stop()?.catch(() => {});
+    this.liveTranscriber.abort();
+    this.chatController?.abort();
+    this.transcriptionController?.abort();
+    this.cancelSpeech();
   }
 
   initializeSession() {
@@ -76,7 +87,7 @@ export class ShoujianOracle extends HTMLElement {
 
   persistMemory() {
     try {
-      const messages = this.messages.filter((message) => message.text && !message.streaming && !message.error)
+      const messages = this.messages.filter((message) => message.text && !message.streaming && !message.error && !message.cancelled)
         .slice(-MAX_MEMORY_MESSAGES).map(({ role, text, cloud, evidence }) => ({
           role, text: String(text).slice(0, 2_000), cloud: Boolean(cloud), evidence: evidence ?? [],
         }));
@@ -97,15 +108,25 @@ export class ShoujianOracle extends HTMLElement {
     if (action === "cast") await this.cast();
     if (action === "reset") this.resetSession();
     if (action === "clear-memory") this.clearMemory();
+    if (action === "cancel-response") this.cancelResponse();
     if (action === "record") await this.startRecording();
     if (action === "stop-record") await this.stopRecording();
-    if (action === "voice") { this.voiceReplies = !this.voiceReplies; this.render(); }
+    if (action === "cancel-transcription") {
+      this.transcriptionController?.abort();
+      this.liveTranscriber.abort();
+    }
+    if (action === "voice") {
+      this.voiceReplies = !this.voiceReplies;
+      if (!this.voiceReplies) this.cancelSpeech();
+      this.render();
+    }
     const quick = event.target.closest("[data-quick]")?.dataset.quick;
     if (quick) await this.sendText(quick);
   };
 
   async sendText(text, mode = "divination") {
     if (this.busy) return;
+    this.cancelSpeech();
     this.messages.push({ role: "user", text });
     this.persistMemory();
     const history = this.messages.slice(0, -1);
@@ -168,12 +189,15 @@ export class ShoujianOracle extends HTMLElement {
 
   async askCloud(message, history, purpose = this.stage === "reading" ? "divination" : "chat") {
     this.busy = true;
+    const controller = new AbortController();
+    this.chatController = controller;
     const reply = { role: "master", text: "", cloud: true, evidence: [], streaming: true };
     this.messages.push(reply);
     const replyIndex = this.messages.length - 1;
     const reduceMotion = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
     let revealChain = Promise.resolve();
     let streamCancelled = false;
+    let speechText = "";
     this.render();
     try {
       const result = await this.api.chatStream({
@@ -184,6 +208,7 @@ export class ShoujianOracle extends HTMLElement {
         reading: this.reading,
         history: history.filter((item) => item?.text && !item.error).slice(-MAX_MEMORY_MESSAGES),
       }, {
+        signal: controller.signal,
         onMeta: (meta) => {
           reply.evidence = meta.evidence ?? [];
           this.updateStreamingMessage(replyIndex);
@@ -196,7 +221,7 @@ export class ShoujianOracle extends HTMLElement {
           }
           revealChain = revealChain.then(async () => {
             for (const character of [...delta]) {
-              if (streamCancelled) return;
+              if (streamCancelled || controller.signal.aborted) return;
               reply.text += character;
               this.updateStreamingMessage(replyIndex);
               await wait(characterDelay(character));
@@ -205,22 +230,34 @@ export class ShoujianOracle extends HTMLElement {
         },
       });
       await revealChain;
+      if (controller.signal.aborted) throw Object.assign(new Error("已停止"), { name: "AbortError" });
       reply.text = result.text || reply.text;
       reply.evidence = result.evidence ?? reply.evidence;
       reply.streaming = false;
-      if (this.voiceReplies) await this.speak(result.text);
+      speechText = result.text;
     } catch (error) {
       streamCancelled = true;
-      const reason = String(error.message ?? "未知错误").replace(/[。！？!?]+$/u, "");
-      reply.text = `本次回答没有完成：${reason}。没有生成替代结论，请稍后重试。`;
-      reply.error = true;
+      if (error?.name === "AbortError") {
+        reply.text = reply.text ? `${reply.text}\n\n（已停止）` : "已停止本次回答。";
+        reply.cancelled = true;
+      } else {
+        const reason = String(error.message ?? "未知错误").replace(/[。！？!?]+$/u, "");
+        reply.text = `本次回答没有完成：${reason}。没有生成替代结论，请稍后重试。`;
+        reply.error = true;
+      }
       reply.streaming = false;
     } finally {
+      if (this.chatController === controller) this.chatController = null;
       this.busy = false;
       this.persistMemory();
       this.render();
       this.focusLatest();
     }
+    if (speechText && this.voiceReplies) void this.speak(speechText);
+  }
+
+  cancelResponse() {
+    this.chatController?.abort();
   }
 
   updateStreamingMessage(index) {
@@ -235,7 +272,18 @@ export class ShoujianOracle extends HTMLElement {
   async startRecording() {
     if (!this.cloud || this.recording || this.busy) return;
     try {
-      await this.recorder.start();
+      if (this.liveTranscriber.supported) {
+        this.recordingMode = "live";
+        this.liveTranscriptPromise = this.liveTranscriber.start({
+          onText: (text) => {
+            const field = this.shadowRoot.querySelector("textarea");
+            if (field) field.value = text;
+          }
+        }).then((text) => ({ text }), (error) => ({ error }));
+      } else {
+        this.recordingMode = "recorded";
+        await this.recorder.start();
+      }
       this.recording = true;
       this.recordingTimer = setTimeout(() => this.stopRecording(), 45_000);
       this.render();
@@ -251,16 +299,34 @@ export class ShoujianOracle extends HTMLElement {
     clearTimeout(this.recordingTimer);
     this.recording = false;
     this.busy = true;
+    this.transcribing = true;
+    const controller = new AbortController();
+    this.transcriptionController = controller;
     this.render();
     let transcript = "";
     try {
-      const blob = await this.recorder.stop();
-      const result = await this.api.transcribe({ data: await blobToBase64(blob), mimeType: blob.type || "audio/webm" });
-      transcript = result.text;
+      if (this.recordingMode === "live") {
+        this.liveTranscriber.stop();
+        const result = await this.liveTranscriptPromise;
+        if (result.error) throw result.error;
+        transcript = result.text;
+        if (!transcript) throw new Error("没有听到清晰语音");
+      } else {
+        const blob = await this.recorder.stop();
+        const result = await this.api.transcribe(
+          { data: await blobToBase64(blob), mimeType: blob.type || "audio/webm" },
+          { signal: controller.signal }
+        );
+        transcript = result.text;
+      }
     } catch (error) {
-      this.messages.push({ role: "master", text: `没能听清：${error.message}` });
-      this.persistMemory();
+      if (error?.name !== "AbortError") {
+        this.messages.push({ role: "master", text: `没能听清：${error.message}` });
+        this.persistMemory();
+      }
     } finally {
+      if (this.transcriptionController === controller) this.transcriptionController = null;
+      this.transcribing = false;
       this.busy = false;
       this.render();
       const field = this.shadowRoot.querySelector("textarea");
@@ -269,13 +335,50 @@ export class ShoujianOracle extends HTMLElement {
   }
 
   async speak(text) {
+    this.cancelSpeech();
+    const controller = new AbortController();
+    this.speechController = controller;
+    this.voiceState = "generating";
+    this.updateVoiceStatus();
     try {
-      const audio = await this.api.speech(text);
-      await playPcmBase64(audio.data, { sampleRate: audio.sampleRate });
+      const audio = await this.api.speech(text, { signal: controller.signal });
+      if (controller.signal.aborted || this.speechController !== controller || !this.voiceReplies) return;
+      this.voiceState = "playing";
+      this.updateVoiceStatus();
+      const playback = await playPcmBase64(audio.data, { sampleRate: audio.sampleRate });
+      this.audioPlayback = playback;
+      await playback.ended;
     } catch (error) {
-      this.messages.push({ role: "master", text: `语音回答暂时不可用：${error.message}` });
-      this.persistMemory();
+      if (error?.name !== "AbortError") console.warn("Voice reply failed:", error);
+    } finally {
+      if (this.speechController === controller) {
+        this.speechController = null;
+        this.audioPlayback = null;
+        this.voiceState = "idle";
+        this.updateVoiceStatus();
+      }
     }
+  }
+
+  cancelSpeech() {
+    this.speechController?.abort();
+    this.speechController = null;
+    this.audioPlayback?.stop();
+    this.audioPlayback = null;
+    this.voiceState = "idle";
+    this.updateVoiceStatus();
+  }
+
+  updateVoiceStatus() {
+    const button = this.shadowRoot?.querySelector('[data-action="voice"]');
+    if (button) button.textContent = this.voiceButtonLabel();
+  }
+
+  voiceButtonLabel() {
+    if (!this.voiceReplies) return "语音回答：关";
+    if (this.voiceState === "generating") return "语音生成中 · 可继续问";
+    if (this.voiceState === "playing") return "正在播放 · 可继续问";
+    return "语音回答：开";
   }
 
   focusLatest() {
@@ -326,14 +429,17 @@ export class ShoujianOracle extends HTMLElement {
             </div>
           </form>
           <div class="voice-tools" aria-label="语音工具">
-            ${this.cloud && this.recorder.supported ? `<button type="button" data-action="${this.recording ? "stop-record" : "record"}" ${this.busy && !this.recording ? "disabled" : ""}>${this.recording ? "停止并转文字" : "按下说话"}</button>` : ""}
-            ${this.cloud ? `<button type="button" data-action="voice" aria-pressed="${this.voiceReplies}">语音回答：${this.voiceReplies ? "开" : "关"}</button>` : ""}
+            ${this.cloud && (this.liveTranscriber.supported || this.recorder.supported) ? this.transcribing
+              ? `<button type="button" data-action="cancel-transcription">取消转写</button>`
+              : `<button type="button" data-action="${this.recording ? "stop-record" : "record"}" ${this.busy && !this.recording ? "disabled" : ""}>${this.recording ? this.recordingMode === "live" ? "停止并采用文字" : "停止并转文字" : this.liveTranscriber.supported ? "实时语音输入" : "按下说话"}</button>` : ""}
+            ${this.busy && !this.transcribing ? `<button type="button" data-action="cancel-response">停止回答</button>` : ""}
+            ${this.cloud ? `<button type="button" data-action="voice" aria-pressed="${this.voiceReplies}">${this.voiceButtonLabel()}</button>` : ""}
           </div>
           ${this.cloud ? `<div class="memory-tools"><small>本机记忆最近 ${MAX_MEMORY_MESSAGES} 条对话，刷新后仍可继续。</small><button type="button" data-action="clear-memory" ${this.busy ? "disabled" : ""}>清除本机记忆</button></div>` : ""}
           ${this.stage !== "question" ? `<button class="text-button" type="button" data-action="reset" ${this.busy || this.recording ? "disabled" : ""}>另起一问</button>` : !this.cloud ? `<div class="quick"><button type="button" data-quick="我不会问，请给一个例子">我不会问</button><button type="button" data-quick="边界是什么">哪些不能问</button></div>` : ""}
         </section>
 
-        <footer>${this.cloud ? "自由对话会把你提交的文字、最近上下文和必要检索片段发送给 Google Gemini；最近对话只保存在此浏览器本机，可随时清除，服务端不建用户档案。" : "本地模式不上传问题，但只能回答固定意图。配置 Gemini 后可启用普通闲聊、有来源的经传问答、语音转文字和语音回答。"} 演示结果不替代医疗、法律、投资或现实安全判断。</footer>
+        <footer>${this.cloud ? `自由对话会把你提交的文字、最近上下文和必要检索片段发送给 Google Gemini；${this.liveTranscriber.supported ? "实时语音输入由浏览器语音服务处理" : "录音会发送给 Gemini 转写"}。最近对话只保存在此浏览器本机，可随时清除，服务端不建用户档案。` : "本地模式不上传问题，但只能回答固定意图。配置 Gemini 后可启用普通闲聊、有来源的经传问答、语音转文字和语音回答。"} 演示结果不替代医疗、法律、投资或现实安全判断。</footer>
       </main>`;
   }
 }

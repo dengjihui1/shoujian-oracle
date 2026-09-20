@@ -5,15 +5,16 @@ export class OracleApiClient {
   }
 
   status() { return this.#request("/api/status", { method: "GET" }); }
-  transcribe({ data, mimeType }) { return this.#request("/api/transcribe", { method: "POST", body: { data, mimeType } }); }
+  transcribe({ data, mimeType }, { signal } = {}) { return this.#request("/api/transcribe", { method: "POST", body: { data, mimeType }, signal }); }
   chat(payload) { return this.#request("/api/chat", { method: "POST", body: payload }); }
-  speech(text) { return this.#request("/api/speech", { method: "POST", body: { text } }); }
+  speech(text, { signal } = {}) { return this.#request("/api/speech", { method: "POST", body: { text }, signal }); }
 
-  async chatStream(payload, { onMeta, onDelta } = {}) {
+  async chatStream(payload, { onMeta, onDelta, signal } = {}) {
     const response = await this.fetchFn(`${this.baseUrl}/api/chat/stream`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(payload),
+      signal,
     });
     if (!response.ok) {
       let data = {};
@@ -43,11 +44,12 @@ export class OracleApiClient {
     return result;
   }
 
-  async #request(path, { method, body }) {
+  async #request(path, { method, body, signal }) {
     const response = await this.fetchFn(`${this.baseUrl}${path}`, {
       method,
       headers: body ? { "content-type": "application/json" } : undefined,
-      body: body ? JSON.stringify(body) : undefined
+      body: body ? JSON.stringify(body) : undefined,
+      signal,
     });
     let data;
     try { data = await response.json(); } catch { throw new Error("服务返回了无法识别的数据"); }

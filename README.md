@@ -4,7 +4,7 @@
 
 独立的轻量虚拟卦师与经传 RAG 组件。它保留虚拟人主持、问题边界、三钱六爻和 64 卦确定性映射，并加入可追溯的《周易》《彖》《象》《说卦》冻结知识检索；明确不包含住宅分析、纳甲时证、档案、支付与追验等主项目核心。
 
-![版本](https://img.shields.io/badge/version-0.6.0-8e332a)
+![版本](https://img.shields.io/badge/version-0.6.1-8e332a)
 ![许可](https://img.shields.io/badge/license-MIT-d3b27f)
 
 ## 现在能完成什么
@@ -18,7 +18,9 @@
 7. Gemini 回答通过 SSE 真流式传输，再以字符级动画持续写进同一条气泡，不必等待整段完成；
 8. 每轮注入 `Asia/Shanghai` 服务器时钟，日期与时间问题不再交给模型猜测；
 9. 最近 24 条对话保存在当前浏览器本机，刷新后可继续；每次最多把最近 16 条作为 Gemini 上下文，并提供“清除本机记忆”；
-10. 支持麦克风转写和可选语音回答；没有 API 密钥时自动退回本地有限对话，起卦仍然可用。
+10. 支持浏览器实时语音转写，并在不支持时退回 Gemini 单请求内联转写；语音回答在后台生成，不阻塞下一轮输入；
+11. 回答和转写都可以手动停止；新问题会取消上一段尚未播放完的语音，避免会话锁死；
+12. 没有 API 密钥时自动退回本地有限对话，起卦仍然可用。
 
 问题文字不会改变卦象。项目没有账号、遥测或支付；本地模式不上传内容，Gemini 云端模式会把用户主动提交的文字、录音、最近上下文和必要卦象证据发送给 Google。对话记忆只存当前浏览器的 `localStorage`，服务端不建立用户档案。
 
@@ -54,7 +56,8 @@ npm start
 云端链路为：
 
 ```text
-麦克风 → 后端 → Gemini 3.5 Transcribe → 文字
+麦克风 → 浏览器实时转写（支持时）→ 可编辑文字
+麦克风 → Gemini 3.5 Transcribe 单请求内联音频（兼容兜底）→ 可编辑文字
 普通文字 → Gemini 3.5 Flash SSE（繁忙时自动尝试备用模型）→ 字符级呈现的墨衡自然回答
 经传问题或本地卦象 → 冻结知识检索 → Gemini → 带来源的墨衡回答
 墨衡回答 → Gemini 3.1 Flash TTS Preview → 浏览器播放
@@ -74,7 +77,7 @@ npm start
 - `src/shoujian-oracle.js`：Web Component、会话状态和界面；
 - `src/dialogue-engine.js`：有限意图识别与墨衡回答；
 - `src/api-client.js`：浏览器与本机 API 的 JSON/SSE 通信；
-- `src/audio-recorder.js` / `audio-player.js`：录音和 PCM/WAV 播放；
+- `src/audio-recorder.js` / `audio-player.js`：浏览器实时转写、录音兜底和可取消的 PCM/WAV 播放；
 - `src/question-boundary.js`：起卦前问题边界；
 - `src/oracle-engine.js`：三钱六爻与 64 卦纯计算；
 - `server/`：密钥隔离、Gemini 流式生成、Files/Interactions API 和静态服务；

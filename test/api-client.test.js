@@ -52,3 +52,20 @@ test("browser client exposes metadata and text while an SSE answer is arriving",
   assert.equal(result.text, "今天是2026年9月20日。");
   assert.equal(result.purpose, "chat");
 });
+
+test("browser forwards cancellation signals to chat, transcription, and speech", async () => {
+  const signals = [];
+  const fetchFn = async (_url, options) => {
+    signals.push(options.signal);
+    if (signals.length === 1) {
+      return new Response('event: done\ndata: {"text":"完成"}\n\n', { headers: { "content-type": "text/event-stream" } });
+    }
+    return Response.json(signals.length === 2 ? { text: "转写" } : { data: "AQI=" });
+  };
+  const client = new OracleApiClient({ fetchFn });
+  const controllers = [new AbortController(), new AbortController(), new AbortController()];
+  await client.chatStream({ message: "你好" }, { signal: controllers[0].signal });
+  await client.transcribe({ data: "AQI=", mimeType: "audio/webm" }, { signal: controllers[1].signal });
+  await client.speech("你好", { signal: controllers[2].signal });
+  assert.deepEqual(signals, controllers.map(({ signal }) => signal));
+});

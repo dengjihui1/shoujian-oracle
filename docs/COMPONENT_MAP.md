@@ -9,7 +9,8 @@
   ↓
 用户键入或用麦克风提交一个问题
   ↓（可选云端，携带最多 16 条最近上下文）
-Gemini Transcribe：短录音 → 可编辑文字
+浏览器实时 ASR：增量语音 → 可编辑文字
+  └── 不支持时：Gemini 内联音频 → Files API 兜底
   ├── 直接问墨衡 → 普通问题自然回答；经传问题走冻结知识检索
   └── 以此问起卦
   ↓
@@ -38,7 +39,7 @@ Gemini 未配置 → 有限追问：意思 / 动爻 / 算法 / 边界
 | 起卦计算 | `src/oracle-engine.js` | 六个 6/7/8/9 | 本卦、动爻、之卦、审计轨迹 | 是 |
 | 随机适配器 | `castWithCoins()` | `crypto.getRandomValues` | 六个爻值 | 外层有随机，排卦仍纯计算 |
 | 浏览器 API 适配器 | `src/api-client.js` | 文本、录音 | JSON / SSE 事件流 | 否，网络 I/O |
-| 录音与播放 | `src/audio-recorder.js` / `audio-player.js` | 麦克风、PCM | 音频 Blob / WAV | 播放有 I/O，WAV 包装为纯函数 |
+| 录音与播放 | `src/audio-recorder.js` / `audio-player.js` | 麦克风、PCM | 实时文字 / 音频 Blob / 可取消 WAV 播放 | 播放有 I/O，WAV 包装为纯函数 |
 | 本机 API 服务 | `server/index.mjs` | `/api/*` 请求 | 脱敏后的稳定响应 | 否，网络 I/O |
 | Gemini 适配器 | `server/gemini-client.mjs` | 只读卦象、文本、音频 | SSE 分片、转写、PCM | 否，可注入假 `fetch` 测试 |
 | 本机会话记忆 | `src/shoujian-oracle.js` | 已完成对话 | 最近 24 条 `localStorage` 记录 | 否，仅当前浏览器 |

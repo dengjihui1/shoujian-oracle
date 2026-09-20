@@ -34,6 +34,72 @@ export class AudioRecorder {
   }
 }
 
+export class BrowserSpeechRecognizer {
+  constructor({ RecognitionClass = globalThis.SpeechRecognition ?? globalThis.webkitSpeechRecognition } = {}) {
+    this.RecognitionClass = RecognitionClass;
+    this.active = false;
+  }
+
+  get supported() { return typeof this.RecognitionClass === "function"; }
+
+  start({ onText } = {}) {
+    if (!this.supported) return Promise.reject(new Error("当前浏览器不支持实时语音转写"));
+    if (this.active) return Promise.reject(new Error("语音转写已经开始"));
+    const recognition = new this.RecognitionClass();
+    recognition.lang = "zh-CN";
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
+    this.recognition = recognition;
+    this.active = true;
+    this.finalText = "";
+    this.latestText = "";
+
+    this.result = new Promise((resolve, reject) => {
+      let settled = false;
+      const finish = (value, error = null) => {
+        if (settled) return;
+        settled = true;
+        this.active = false;
+        this.recognition = null;
+        error ? reject(error) : resolve(value);
+      };
+      recognition.onresult = (event) => {
+        let interim = "";
+        for (let index = event.resultIndex ?? 0; index < event.results.length; index += 1) {
+          const text = String(event.results[index]?.[0]?.transcript ?? "").trim();
+          if (!text) continue;
+          if (event.results[index].isFinal) this.finalText = `${this.finalText} ${text}`.trim();
+          else interim = `${interim} ${text}`.trim();
+        }
+        this.latestText = `${this.finalText} ${interim}`.trim();
+        onText?.(this.latestText, { final: this.finalText, interim });
+      };
+      recognition.onerror = (event) => {
+        const messages = {
+          "not-allowed": "麦克风权限未开启",
+          "audio-capture": "没有找到可用麦克风",
+          "no-speech": "没有听到清晰语音",
+          network: "浏览器实时转写网络不可用",
+        };
+        finish("", new Error(messages[event.error] ?? "实时语音转写失败"));
+      };
+      recognition.onend = () => finish(this.finalText || this.latestText);
+      try { recognition.start(); } catch (error) { finish("", error); }
+    });
+    return this.result;
+  }
+
+  stop() {
+    if (this.active) this.recognition?.stop();
+    return this.result ?? Promise.resolve("");
+  }
+
+  abort() {
+    if (this.active) this.recognition?.abort();
+  }
+}
+
 export async function blobToBase64(blob) {
   const bytes = new Uint8Array(await blob.arrayBuffer());
   let binary = "";

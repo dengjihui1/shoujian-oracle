@@ -83,7 +83,21 @@ export class GeminiClient {
   }
 
   async transcribe({ bytes, mimeType }) {
-    const file = await this.#upload(bytes, mimeType);
+    const buffer = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+    try {
+      const data = await this.#interaction({
+        model: this.models.transcribe,
+        input: [{ type: "audio", data: Buffer.from(buffer).toString("base64"), mime_type: mimeType }],
+        generation_config: { transcription_config: { language_codes: ["zh-CN"] } }
+      });
+      const text = extractText(data);
+      if (!text) throw new GeminiError("Gemini returned no transcription", { code: "empty_transcript" });
+      return { text, transport: "inline" };
+    } catch (error) {
+      if (!shouldFallbackToFileUpload(error)) throw error;
+    }
+
+    const file = await this.#upload(buffer, mimeType);
     try {
       const data = await this.#interaction({
         model: this.models.transcribe,
@@ -92,7 +106,7 @@ export class GeminiClient {
       });
       const text = extractText(data);
       if (!text) throw new GeminiError("Gemini returned no transcription", { code: "empty_transcript" });
-      return { text, fileUri: file.uri };
+      return { text, fileUri: file.uri, transport: "file" };
     } finally {
       if (file.name) await this.#deleteFile(file.name);
     }
@@ -174,6 +188,10 @@ export class GeminiClient {
 
 function isTransientChatError(error) {
   return error instanceof GeminiError && ["quota_exceeded", "upstream_error", "network_error", "timeout", "empty_text"].includes(error.code);
+}
+
+function shouldFallbackToFileUpload(error) {
+  return error instanceof GeminiError && ["upstream_error", "invalid_response", "empty_transcript"].includes(error.code);
 }
 
 export async function* parseGeminiSse(body) {

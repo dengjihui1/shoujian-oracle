@@ -7,9 +7,29 @@ test("extractors understand wrapped Interactions API responses", () => {
   assert.deepEqual(extractAudio({ interaction: { output_audio: { data: "AQI=", mime_type: "audio/pcm" } } }), { data: "AQI=", mimeType: "audio/pcm" });
 });
 
-test("transcription uploads bytes before creating an interaction", async () => {
+test("transcription sends short audio inline in one request", async () => {
+  const calls = [];
+  const client = new GeminiClient({
+    apiKey: "test-only",
+    fetchFn: async (url, options) => {
+      calls.push({ url, options });
+      return Response.json({ interaction: { output_text: "我想问下一步" } });
+    }
+  });
+  const result = await client.transcribe({ bytes: Uint8Array.from([1, 2, 3]), mimeType: "audio/webm" });
+  assert.equal(result.text, "我想问下一步");
+  assert.equal(result.transport, "inline");
+  assert.equal(calls.length, 1);
+  const body = JSON.parse(calls[0].options.body);
+  assert.equal(body.input[0].type, "audio");
+  assert.equal(body.input[0].data, "AQID");
+  assert.equal(body.input[0].mime_type, "audio/webm");
+});
+
+test("transcription falls back to Files API when inline audio is rejected", async () => {
   const calls = [];
   const responses = [
+    Response.json({ error: { message: "inline audio unsupported" } }, { status: 400 }),
     new Response("", { status: 200, headers: { "x-goog-upload-url": "https://upload.test/session" } }),
     Response.json({ file: { uri: "https://files.test/audio", name: "files/audio-1" } }),
     Response.json({ interaction: { output_text: "我想问下一步" } }),
@@ -18,13 +38,14 @@ test("transcription uploads bytes before creating an interaction", async () => {
   const client = new GeminiClient({ apiKey: "test-only", fetchFn: async (url, options) => { calls.push({ url, options }); return responses.shift(); } });
   const result = await client.transcribe({ bytes: Uint8Array.from([1, 2, 3]), mimeType: "audio/webm" });
   assert.equal(result.text, "我想问下一步");
-  assert.match(calls[0].url, /upload\/v1beta\/files$/u);
-  assert.equal(calls[1].url, "https://upload.test/session");
-  const interaction = JSON.parse(calls[2].options.body);
+  assert.equal(result.transport, "file");
+  assert.match(calls[1].url, /upload\/v1beta\/files$/u);
+  assert.equal(calls[2].url, "https://upload.test/session");
+  const interaction = JSON.parse(calls[3].options.body);
   assert.equal(interaction.model, "gemini-3.5-transcribe");
   assert.equal(interaction.input[0].uri, "https://files.test/audio");
-  assert.match(calls[3].url, /v1beta\/files\/audio-1$/u);
-  assert.equal(calls[3].options.method, "DELETE");
+  assert.match(calls[4].url, /v1beta\/files\/audio-1$/u);
+  assert.equal(calls[4].options.method, "DELETE");
 });
 
 test("chat and speech use configurable current model IDs", async () => {

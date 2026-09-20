@@ -55,11 +55,11 @@
 - 服务端先做长度、类型和问题边界校验；
 - 每轮由服务端注入可信的 `Asia/Shanghai` 当前时间，模型不得自行猜日期；
 - 自由回答使用 Gemini `streamGenerateContent` SSE，浏览器解析 `meta / delta / done / error` 事件；
-- 转写先上传 Files API，再把 URI 交给 Transcribe；
+- 语音优先使用浏览器实时识别并持续更新输入框；不支持时把短音频内联交给 Transcribe，只有格式不兼容才使用 Files API；
 - 提示词把本地计算结果标为只读，模型不能重新排卦，并把本轮 RAG 片段作为唯一经传证据；
 - `fetch` 可以注入，所以测试不需要真实密钥或额度。
 
-再看 `audio-recorder.js` 与 `audio-player.js`，理解 WebM 录音、base64 传输和 PCM 包装 WAV 的边界。
+再看 `audio-recorder.js` 与 `audio-player.js`，理解实时转写、WebM/base64 兼容兜底、PCM 包装 WAV，以及为什么文字会话不能等待 TTS 完成。新问题通过取消令牌淘汰旧音频，避免慢请求把界面锁死。
 
 ### 6. 最后看 UI 状态机
 
