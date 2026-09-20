@@ -47,3 +47,24 @@ test("upstream errors are sanitized and categorized", async () => {
   const client = new GeminiClient({ apiKey: "test-only", fetchFn: async () => Response.json({ error: { message: "bad AIzaSecretValue" } }, { status: 429 }) });
   await assert.rejects(() => client.chat({ input: "x", systemInstruction: "y" }), (error) => error instanceof GeminiError && error.code === "quota_exceeded" && !error.message.includes("AIzaSecretValue"));
 });
+
+test("chat falls back to another model when the primary model is overloaded", async () => {
+  const requestedModels = [];
+  const client = new GeminiClient({
+    apiKey: "test-only",
+    models: { chat: "chat-busy" },
+    chatFallbackModels: ["chat-stable"],
+    fetchFn: async (_url, options) => {
+      const body = JSON.parse(options.body);
+      requestedModels.push(body.model);
+      return body.model === "chat-busy"
+        ? Response.json({ error: { message: "high demand" } }, { status: 503 })
+        : Response.json({ interaction: { output_text: "备用模型回答正常。" } });
+    }
+  });
+
+  const result = await client.chat({ input: "你是谁？", systemInstruction: "自然回答" });
+  assert.equal(result.text, "备用模型回答正常。");
+  assert.equal(result.model, "chat-stable");
+  assert.deepEqual(requestedModels, ["chat-busy", "chat-stable"]);
+});

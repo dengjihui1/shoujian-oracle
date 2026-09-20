@@ -1,10 +1,11 @@
 const DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com";
 
 export const DEFAULT_MODELS = Object.freeze({
-  chat: "gemini-3.8-flash",
+  chat: "gemini-3.5-flash",
   transcribe: "gemini-3.5-transcribe",
   speech: "gemini-3.1-flash-tts-preview"
 });
+const DEFAULT_CHAT_FALLBACKS = Object.freeze(["gemini-3.6-flash"]);
 
 export class GeminiError extends Error {
   constructor(message, { status = 502, code = "gemini_error" } = {}) {
@@ -16,26 +17,36 @@ export class GeminiError extends Error {
 }
 
 export class GeminiClient {
-  constructor({ apiKey, fetchFn = globalThis.fetch, baseUrl = DEFAULT_BASE_URL, models = {}, timeoutMs = 30_000 } = {}) {
+  constructor({ apiKey, fetchFn = globalThis.fetch, baseUrl = DEFAULT_BASE_URL, models = {}, chatFallbackModels = DEFAULT_CHAT_FALLBACKS, timeoutMs = 30_000 } = {}) {
     if (!apiKey) throw new TypeError("Gemini API key is required");
     if (typeof fetchFn !== "function") throw new TypeError("fetch implementation is required");
     this.apiKey = apiKey;
     this.fetchFn = fetchFn;
     this.baseUrl = baseUrl.replace(/\/$/u, "");
     this.models = { ...DEFAULT_MODELS, ...models };
+    this.chatModels = [...new Set([this.models.chat, ...chatFallbackModels].filter(Boolean))];
     this.timeoutMs = timeoutMs;
   }
 
   async chat({ input, systemInstruction }) {
-    const data = await this.#interaction({
-      model: this.models.chat,
-      input,
-      system_instruction: systemInstruction,
-      generation_config: { thinking_level: "low" }
-    });
-    const text = extractText(data);
-    if (!text) throw new GeminiError("Gemini returned no text", { code: "empty_text" });
-    return { text, interactionId: extractInteraction(data)?.id ?? null };
+    let lastError;
+    for (const model of this.chatModels) {
+      try {
+        const data = await this.#interaction({
+          model,
+          input,
+          system_instruction: systemInstruction,
+          generation_config: { thinking_level: "low" }
+        });
+        const text = extractText(data);
+        if (!text) throw new GeminiError("Gemini returned no text", { code: "empty_text" });
+        return { text, interactionId: extractInteraction(data)?.id ?? null, model };
+      } catch (error) {
+        lastError = error;
+        if (!isTransientChatError(error)) throw error;
+      }
+    }
+    throw lastError;
   }
 
   async transcribe({ bytes, mimeType }) {
@@ -126,6 +137,10 @@ export class GeminiClient {
       throw new GeminiError("Gemini request failed", { code: "network_error" });
     }
   }
+}
+
+function isTransientChatError(error) {
+  return error instanceof GeminiError && ["quota_exceeded", "upstream_error", "network_error", "timeout"].includes(error.code);
 }
 
 async function ensureOk(response) {

@@ -1,6 +1,6 @@
 # Gemini API 配置指南
 
-本文对应项目 `0.4.0`。模型和免费额度会变化；下面的模型 ID 已在 2026-09-20 对照 Google 官方文档核验。
+本文对应项目 `0.5.0`。模型和免费额度会变化；下面的模型 ID 已在 2026-09-20 通过当前账号的 Gemini Models API 与真实请求核验。
 
 ## 1. 准备条件
 
@@ -31,7 +31,8 @@ notepad .env
 
 ```dotenv
 GEMINI_API_KEY=你的密钥
-GEMINI_CHAT_MODEL=gemini-3.8-flash
+GEMINI_CHAT_MODEL=gemini-3.5-flash
+GEMINI_CHAT_FALLBACK_MODELS=gemini-3.6-flash
 GEMINI_TRANSCRIBE_MODEL=gemini-3.5-transcribe
 GEMINI_TTS_MODEL=gemini-3.1-flash-tts-preview
 GEMINI_TIMEOUT_MS=60000
@@ -54,11 +55,12 @@ npm start
 打开 `http://127.0.0.1:8000/`，依次检查：
 
 1. 顶部显示“Gemini + 周易 RAG 已连接”，并显示“64 卦 · 8 八卦 · 456 条冻结片段”；
-2. 输入“潜龙勿用是什么意思”，点击“问经传知识”，回答应标为“墨衡 · RAG”并能展开 `ZY-01-LINE-1`；
-3. 提交一个低风险、单一且带期限的问题，点击“以此问起卦”；
-4. 起卦后输入任意相关追问，回答旁显示“墨衡 · RAG”，并能展开本卦、实际动爻和之卦来源；
-5. 点击“按下说话”，说完后点“停止并转文字”，转写应进入输入框供你确认；
-6. 打开“语音回答”，再提问，浏览器应播放回答。
+2. 输入“你是谁”，点击“直接问墨衡”，应得到普通自然回答且不会自动起卦；
+3. 输入“潜龙勿用是什么意思”，点击“直接问墨衡”，回答应标为“墨衡 · RAG”并能展开 `ZY-01-LINE-1`；
+4. 提交一个低风险、单一且带期限的问题，点击“以此问起卦”；
+5. 起卦后输入任意相关追问，回答旁显示“墨衡 · RAG”，并能展开本卦、实际动爻和之卦来源；
+6. 点击“按下说话”，说完后点“停止并转文字”，转写应进入输入框供你确认；
+7. 打开“语音回答”，再提问，浏览器应播放回答。
 
 项目不会把转写内容自动发送为问题，用户可以先检查文字再点“送问”。录音最长 45 秒、上传上限 6 MB；完成转写后，服务会尽力立即删除 Google Files API 中的临时文件。
 
@@ -66,7 +68,7 @@ npm start
 
 | 能力 | 默认模型 | 接口 | 本项目职责 |
 | --- | --- | --- | --- |
-| 自由对话 | `gemini-3.8-flash` | Interactions API | 墨衡人格与卦象解释 |
+| 自由对话 | `gemini-3.5-flash`，备用 `gemini-3.6-flash` | Interactions API | 普通闲聊、墨衡人格与卦象解释；主模型繁忙时自动回退 |
 | 语音转文字 | `gemini-3.5-transcribe` | Files API + Interactions API | 上传短录音并转写 |
 | 文字转语音 | `gemini-3.1-flash-tts-preview` | Interactions API | 返回 24 kHz PCM，浏览器包装成 WAV 播放 |
 
@@ -78,7 +80,7 @@ npm start
 
 - 显示“本地有限对话”：确认文件名确实是 `.env`，重启 `npm start`，并检查变量名。
 - 显示已连接但送问后提示网络错误：密钥已被读取，但 Node 无法连接 Google；确认本机代理正在运行，并填写 `HTTPS_PROXY` 后重启。
-- `quota_exceeded`：免费额度或速率已用完，稍后重试，或在 AI Studio 检查配额与结算状态。
+- `quota_exceeded`：主模型和备用模型都没有可用额度或容量，稍后重试，或在 AI Studio 检查配额与结算状态。
 - 地区不可用：这是 Google 账号或地区限制；项目会保留本地起卦，不能通过代码合法绕过。
 - 麦克风按钮不出现：浏览器不支持录音，或当前没有连接 Gemini；使用 `127.0.0.1`/HTTPS 并允许麦克风。
 - 能转写但没有声音：浏览器可能拦截自动播放；先手动点击页面按钮，再重试语音回答。

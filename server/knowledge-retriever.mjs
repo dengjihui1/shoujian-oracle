@@ -89,7 +89,7 @@ export class OracleKnowledgeBase {
 }
 
 export function formatEvidenceForPrompt(evidence) {
-  if (!evidence.length) return "本轮没有检索到可引用的冻结知识。必须明确说资料不足，不得用模型记忆补造经文或出处。";
+  if (!evidence.length) return "本轮没有检索到经传片段。普通闲聊、身份、能力、使用方式和一般基础概念可以自然回答且不需要装饰性引用；若用户索要具体卦爻原文、经传出处或古人定论，则必须明确说本轮资料不足，不得用模型记忆补造原文或出处。";
   return [
     "以下是本轮唯一允许引用的冻结知识片段。回答涉及古籍原文时必须标出对应的【证据编号】，不得引用列表外材料：",
     ...evidence.map((item) => `【${item.id}】${item.title}\n${item.excerpt}\n来源：${item.sourceTitle} ${item.sourceUrl}`),

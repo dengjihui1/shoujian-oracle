@@ -40,7 +40,7 @@ test("API routes enforce boundary and preserve deterministic reading context", a
     async speech() { return { data: "AQI=", mimeType: "audio/pcm", sampleRate: 24000 }; }
   };
   await withServer(createApp({ client }), async (base) => {
-    const blocked = await fetch(`${base}/api/chat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message: "我是否应该停药？" }) });
+    const blocked = await fetch(`${base}/api/chat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message: "我是否应该停药？", purpose: "divination" }) });
     assert.equal((await blocked.json()).blocked, true);
     assert.equal(calls.length, 0);
 
@@ -66,6 +66,49 @@ test("voice endpoints validate media and return stable browser contracts", async
     assert.deepEqual(await transcribe.json(), { text: "语音问题" });
     const speech = await fetch(`${base}/api/speech`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "墨衡回答" }) });
     assert.deepEqual(await speech.json(), { data: "AQI=", mimeType: "audio/pcm;rate=24000", sampleRate: 24000 });
+  });
+});
+
+test("ordinary identity questions work without a cast or decorative citation", async () => {
+  const client = {
+    models: { chat: "test-chat" },
+    async chat({ systemInstruction }) {
+      assert.match(systemInstruction, /目前还没有程序排出的卦象/u);
+      return { text: "我是墨衡，一个能闲聊、讲《周易》，也能陪你起卦的虚拟卦师。" };
+    },
+  };
+  await withServer(createApp({ client }), async (base) => {
+    const response = await fetch(`${base}/api/chat`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message: "你是谁？", purpose: "chat", stage: "question" }),
+    });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.grounded, false);
+    assert.equal(body.evidence.length, 0);
+    assert.match(body.text, /墨衡/u);
+    assert.equal(body.purpose, "chat");
+  });
+});
+
+test("ordinary basic questions are not rejected by divination keyword rules", async () => {
+  let called = false;
+  const client = {
+    models: { chat: "test-chat" },
+    async chat() { called = true; return { text: "基金是集合投资工具；这里只作基础概念说明，不替你做投资决定。" }; },
+  };
+  await withServer(createApp({ client }), async (base) => {
+    const response = await fetch(`${base}/api/chat`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message: "基金是什么？", purpose: "chat", stage: "question" }),
+    });
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(called, true);
+    assert.equal(body.blocked, undefined);
+    assert.equal(body.purpose, "chat");
   });
 });
 

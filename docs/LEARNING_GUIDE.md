@@ -63,7 +63,7 @@
 
 打开 `src/shoujian-oracle.js`：
 
-- `question` 阶段可“问经传知识”，也可“以此问起卦”；
+- `question` 阶段可“直接问墨衡”进行普通闲聊或经传 RAG，也可“以此问起卦”；
 - `ready` 阶段冻结原问并等待起卦；
 - `reading` 阶段显示结果、自由输入和可展开来源；有 Gemini 时不再用固定追问按钮限制用户；
 - `sendText()` 是对话入口；

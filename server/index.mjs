@@ -66,7 +66,11 @@ async function handleChat(response, client, knowledgeBase, body) {
   const message = cleanText(body.message, 2_000, "对话内容");
   const stage = ["question", "ready", "reading"].includes(body.stage) ? body.stage : "question";
   const assessment = assessQuestion(message);
-  if (assessment.level === "blocked") return json(response, 200, { text: boundaryReply(assessment), blocked: true });
+  const divinationMode = stage !== "question" || body.purpose === "divination";
+  const immediateDanger = assessment.issues.some(({ code }) => code === "immediate-harm");
+  if ((divinationMode && assessment.level === "blocked") || immediateDanger) {
+    return json(response, 200, { text: boundaryReply(assessment), blocked: true });
+  }
   const question = typeof body.question === "string" ? body.question.slice(0, 500) : "";
   const reading = sanitizeReading(body.reading);
   const history = Array.isArray(body.history) ? body.history.slice(-8).map((item) => ({
@@ -83,7 +87,7 @@ async function handleChat(response, client, knowledgeBase, body) {
     systemInstruction: buildSystemInstruction({ stage, question, reading, evidence })
   });
   validateCitations(result.text, evidence);
-  return json(response, 200, { text: result.text, evidence, grounded: evidence.length > 0 });
+  return json(response, 200, { text: result.text, evidence, grounded: evidence.length > 0, purpose: divinationMode ? "divination" : "chat" });
 }
 
 async function handleSpeech(response, client, body) {
@@ -196,12 +200,19 @@ export function clientFromEnv(env = process.env) {
   return new GeminiClient({
     apiKey: env.GEMINI_API_KEY,
     timeoutMs: boundedTimeout(env.GEMINI_TIMEOUT_MS),
+    chatFallbackModels: splitModels(env.GEMINI_CHAT_FALLBACK_MODELS),
     models: {
       chat: env.GEMINI_CHAT_MODEL ?? DEFAULT_MODELS.chat,
       transcribe: env.GEMINI_TRANSCRIBE_MODEL ?? DEFAULT_MODELS.transcribe,
       speech: env.GEMINI_TTS_MODEL ?? DEFAULT_MODELS.speech
     }
   });
+}
+
+function splitModels(value) {
+  return value === undefined
+    ? undefined
+    : String(value).split(",").map((model) => model.trim()).filter(Boolean);
 }
 
 function boundedTimeout(value) {

@@ -8,7 +8,7 @@ export function detectIntent(text) {
   return INTENTS.find((intent) => intent.pattern.test(text))?.id ?? "unknown";
 }
 
-export const welcomeReply = () => "案上只留一件事。你可以问：‘接下来三天，我该先验证哪一步？’我会先验问，再起六爻。";
+export const welcomeReply = () => "先随意坐。你可以问我是谁、会做什么，也可以聊《周易》和日常困惑；真想起卦时，再把一件具体的事交给我。";
 
 export function boundaryReply(assessment) {
   if (assessment.level === "clear") return "此问可收。问题文字不会改变卦象；确认后再掷三钱六次。";
@@ -31,4 +31,3 @@ export function followUpReply(text, reading) {
   if (intent === "help") return { action: "reply", text: "问法尽量包含：你自己、一个动作、一个短期限。例如：‘未来三天，我该先验证方案中的哪一处？’" };
   return { action: "reply", text: "这句我没有可靠的固定答法。你可以问我：‘什么意思’、‘动爻怎么看’、‘怎么算的’或‘边界是什么’。" };
 }
-

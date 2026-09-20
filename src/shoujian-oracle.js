@@ -64,7 +64,7 @@ export class ShoujianOracle extends HTMLElement {
     this.messages.push({ role: "user", text });
     const history = this.messages.slice(0, -1);
     if (this.stage === "question") {
-      if (mode === "knowledge" && this.cloud) {
+      if (mode === "chat" && this.cloud) {
         await this.askCloud(text, history);
       } else {
         const assessment = assessQuestion(text);
@@ -118,11 +118,11 @@ export class ShoujianOracle extends HTMLElement {
     this.render();
   }
 
-  async askCloud(message, history) {
+  async askCloud(message, history, purpose = this.stage === "reading" ? "divination" : "chat") {
     this.busy = true;
     this.render();
     try {
-      const result = await this.api.chat({ message, stage: this.stage, question: this.question, reading: this.reading, history });
+      const result = await this.api.chat({ message, purpose, stage: this.stage, question: this.question, reading: this.reading, history });
       this.messages.push({ role: "master", text: result.text, cloud: true, evidence: result.evidence ?? [] });
       if (this.voiceReplies) await this.speak(result.text);
     } catch (error) {
@@ -195,12 +195,12 @@ export class ShoujianOracle extends HTMLElement {
           <div class="portrait" role="img" aria-label="中式老卦师墨衡，当前仪态：${phase}">
             <span class="hat"></span><span class="face">墨</span><span class="beard"></span><span class="seal">${posture}</span>
           </div>
-           <div><p class="eyebrow">墨衡小卦 · ${phase}</p><h1>有问先收，有据才答</h1><p>先由本机排卦，再由冻结经传知识检索支持自由追问。</p><span class="status ${this.cloud ? "online" : ""}">${cloudLabel}</span><small class="knowledge-status">${knowledgeLabel}</small></div>
+           <div><p class="eyebrow">墨衡小卦 · ${phase}</p><h1>能闲聊，也能有据解卦</h1><p>普通问题直接聊；想占卜时再明确起卦，经传解释会显示检索来源。</p><span class="status ${this.cloud ? "online" : ""}">${cloudLabel}</span><small class="knowledge-status">${knowledgeLabel}</small></div>
         </header>
 
         <section class="dialogue" aria-label="与墨衡的当前对话" aria-live="polite">
           ${this.messages.map((message, index) => `<article class="message ${message.role} ${message.error ? "error" : ""}" ${index === this.messages.length - 1 ? 'tabindex="-1" data-latest' : ""}>
-            <b>${message.role === "master" ? `墨衡${message.cloud ? " · RAG" : ""}` : "你"}</b><p>${escapeHtml(message.text)}</p>${evidenceDetails(message.evidence)}
+            <b>${message.role === "master" ? `墨衡${message.evidence?.length ? " · RAG" : message.cloud ? " · 云端" : ""}` : "你"}</b><p>${escapeHtml(message.text)}</p>${evidenceDetails(message.evidence)}
           </article>`).join("")}
         </section>
 
@@ -216,11 +216,11 @@ export class ShoujianOracle extends HTMLElement {
           </div>` : ""}
           ${this.stage === "reading" && this.cloud ? `<p class="rag-invitation">现在可自由追问：原文、动爻、上下卦关系、不同理解，或它如何映照你的原问。墨衡会显示本轮检索到的经传依据。</p>` : ""}
           <form>
-            <label for="say">${this.stage === "question" ? "留下一件具体的事" : this.stage === "ready" ? "原问已固定" : "继续问墨衡"}</label>
+            <label for="say">${this.stage === "question" ? this.cloud ? "想问墨衡什么" : "留下一件具体的事" : this.stage === "ready" ? "原问已固定" : "继续问墨衡"}</label>
             <div class="input-row">
-              <textarea id="say" maxlength="500" ${this.stage === "ready" || this.busy ? "disabled" : ""} placeholder="${this.stage === "reading" ? "直接问你真正想知道的，不必套固定问法" : this.cloud ? "可问经传知识，也可写下一件事起卦" : "例如：未来三天，我该先验证哪一步？"}"></textarea>
+              <textarea id="say" maxlength="500" ${this.stage === "ready" || this.busy ? "disabled" : ""} placeholder="${this.stage === "reading" ? "直接问你真正想知道的，不必套固定问法" : this.cloud ? "可闲聊、问基础问题，也可写下一件事起卦" : "例如：未来三天，我该先验证哪一步？"}"></textarea>
               <div class="submit-actions">
-                ${this.stage === "question" && this.cloud ? `<button type="submit" data-submit-mode="knowledge" ${this.busy ? "disabled" : ""}>问经传知识</button><button class="primary" type="submit" data-submit-mode="divination" ${this.busy ? "disabled" : ""}>以此问起卦</button>` : `<button type="submit" ${this.stage === "ready" || this.busy ? "disabled" : ""}>${this.busy ? "请稍候" : "送问"}</button>`}
+                ${this.stage === "question" && this.cloud ? `<button type="submit" data-submit-mode="chat" ${this.busy ? "disabled" : ""}>直接问墨衡</button><button class="primary" type="submit" data-submit-mode="divination" ${this.busy ? "disabled" : ""}>以此问起卦</button>` : `<button type="submit" ${this.stage === "ready" || this.busy ? "disabled" : ""}>${this.busy ? "请稍候" : "送问"}</button>`}
               </div>
             </div>
           </form>
@@ -231,7 +231,7 @@ export class ShoujianOracle extends HTMLElement {
           ${this.stage !== "question" ? `<button class="text-button" type="button" data-action="reset" ${this.busy || this.recording ? "disabled" : ""}>另起一问</button>` : !this.cloud ? `<div class="quick"><button type="button" data-quick="我不会问，请给一个例子">我不会问</button><button type="button" data-quick="边界是什么">哪些不能问</button></div>` : ""}
         </section>
 
-        <footer>${this.cloud ? "RAG 模式只把你提交的文字、必要卦象上下文和本轮检索片段发送给 Google Gemini；本项目自身不持久化内容。" : "本地模式不上传问题，但只能回答固定意图。配置 Gemini 后可启用有来源的自由对话、语音转文字和语音回答。"} 演示结果不替代医疗、法律、投资或现实安全判断。</footer>
+        <footer>${this.cloud ? "自由对话会把你提交的文字发送给 Google Gemini；涉及经传或当前卦象时还会附带本轮检索片段。本项目自身不持久化内容。" : "本地模式不上传问题，但只能回答固定意图。配置 Gemini 后可启用普通闲聊、有来源的经传问答、语音转文字和语音回答。"} 演示结果不替代医疗、法律、投资或现实安全判断。</footer>
       </main>`;
   }
 }
