@@ -51,6 +51,36 @@ test("cancelling speech aborts pending synthesis and returns to idle", async () 
   assert.deepEqual(states, ["generating", "idle"]);
 });
 
+test("prefetch window does not synthesize the whole answer ahead of playback", async () => {
+  const synthesized = [];
+  let releaseFirstPlayback;
+  let releaseSecondPlayback;
+  const firstPlaybackEnded = new Promise((resolve) => { releaseFirstPlayback = resolve; });
+  const secondPlaybackEnded = new Promise((resolve) => { releaseSecondPlayback = resolve; });
+  const queue = new StreamingSpeechQueue({
+    async synthesize(text) {
+      synthesized.push(text);
+      return text;
+    },
+    async play(audio) {
+      const ended = audio === "一。" ? firstPlaybackEnded : audio === "二。" ? secondPlaybackEnded : Promise.resolve();
+      return { ended, stop() {} };
+    },
+  });
+  queue.enqueue("一。");
+  queue.enqueue("二。");
+  queue.enqueue("三。");
+  queue.enqueue("四。");
+  await tick();
+  assert.deepEqual(synthesized, ["一。", "二。"]);
+  releaseFirstPlayback();
+  await tick();
+  assert.deepEqual(synthesized, ["一。", "二。", "三。"]);
+  releaseSecondPlayback();
+  await queue.close();
+  assert.deepEqual(synthesized, ["一。", "二。", "三。", "四。"]);
+});
+
 function tick() {
   return new Promise((resolve) => setImmediate(resolve));
 }

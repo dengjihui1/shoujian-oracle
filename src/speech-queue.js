@@ -51,7 +51,9 @@ export class StreamingSpeechQueue {
   #pumpSynthesis() {
     if (this.cancelled) return;
     while (this.activeSyntheses < this.prefetch) {
-      const item = this.items.find((candidate) => candidate.status === "pending");
+      const item = this.items
+        .slice(this.playIndex, this.playIndex + this.prefetch)
+        .find((candidate) => candidate.status === "pending");
       if (!item) break;
       item.status = "synthesizing";
       item.controller = new AbortController();
@@ -93,6 +95,7 @@ export class StreamingSpeechQueue {
         if (!item) break;
         if (item.status === "failed") {
           this.playIndex += 1;
+          this.#pumpSynthesis();
           continue;
         }
         if (item.status !== "ready") break;
@@ -112,6 +115,7 @@ export class StreamingSpeechQueue {
           this.onLevel(0);
         }
         this.playIndex += 1;
+        this.#pumpSynthesis();
       }
     } finally {
       this.playbackPumping = false;
