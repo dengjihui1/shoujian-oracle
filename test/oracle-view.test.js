@@ -60,6 +60,13 @@ test("view renders the dedicated two-frame virtual diviner stage", () => {
   assert.match(html, /data-avatar-label>开口</u);
 });
 
+test("view makes a speech failure visible without disabling text chat", () => {
+  const html = render({ voiceReplies: true, voiceError: "当前额度不足", voiceButtonLabel: "语音暂不可用 · 文字仍可用" });
+  assert.match(html, /data-avatar-state="error"/u);
+  assert.match(html, /语音暂不可用：当前额度不足/u);
+  assert.doesNotMatch(html, /data-submit-mode="chat" disabled/u);
+});
+
 test("busy state disables the composer while keeping cancellation available", () => {
   const html = render({ busy: true });
   assert.match(html, /<textarea[^>]*disabled/u);

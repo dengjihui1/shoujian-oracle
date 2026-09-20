@@ -26,6 +26,7 @@ export class ShoujianOracle extends HTMLElement {
     this.busy = false;
     this.voiceReplies = false;
     this.voiceState = "idle";
+    this.voiceError = "";
     this.draft = "";
     this.chatController = null;
     this.transcriptionController = null;
@@ -389,7 +390,11 @@ export class ShoujianOracle extends HTMLElement {
         this.updateVoiceStatus();
       },
       onLevel: (level) => this.updateVoiceLevel(level),
-      onError: (error) => console.warn("Voice sentence failed:", error),
+      onError: (error) => {
+        console.warn("Voice sentence failed:", error);
+        if (!this.voiceError) this.voiceError = String(error?.message ?? "语音服务暂不可用");
+        this.updateVoiceStatus();
+      },
       prefetch: 2,
     });
     this.speechQueue = queue;
@@ -401,6 +406,7 @@ export class ShoujianOracle extends HTMLElement {
     this.speechQueue = null;
     queue?.cancel();
     this.voiceState = "idle";
+    this.voiceError = "";
     this.updateVoiceLevel(0);
     this.updateVoiceStatus();
   }
@@ -425,10 +431,16 @@ export class ShoujianOracle extends HTMLElement {
     const detail = stage.querySelector("[data-avatar-detail]");
     if (label) label.textContent = avatar.label;
     if (detail) detail.textContent = avatar.detail;
+    const notice = this.shadowRoot.querySelector("[data-voice-notice]");
+    if (notice) {
+      notice.hidden = !this.voiceError;
+      notice.textContent = this.voiceError ? `语音暂不可用：${this.voiceError}。文字回答仍可继续。` : "";
+    }
   }
 
   voiceButtonLabel() {
     if (!this.voiceReplies) return "语音回答：关";
+    if (this.voiceError) return "语音暂不可用 · 文字仍可用";
     if (this.voiceState === "generating") return "语音生成中 · 可继续问";
     if (this.voiceState === "playing") return "正在播放 · 可继续问";
     return "语音回答：开";
@@ -466,6 +478,7 @@ export class ShoujianOracle extends HTMLElement {
       draft: this.draft,
       voiceReplies: this.voiceReplies,
       voiceState: this.voiceState,
+      voiceError: this.voiceError,
       voiceButtonLabel: this.voiceButtonLabel(),
     });
   }

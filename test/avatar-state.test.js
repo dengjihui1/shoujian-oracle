@@ -15,3 +15,8 @@ test("avatar presentation follows the divination stage while idle", () => {
   assert.equal(deriveAvatarPresentation({ stage: "ready" }).key, "casting");
   assert.equal(deriveAvatarPresentation({ stage: "reading" }).key, "reading");
 });
+
+test("avatar exposes a recoverable voice failure after active speech stops", () => {
+  assert.equal(deriveAvatarPresentation({ voiceError: "quota" }).key, "error");
+  assert.equal(deriveAvatarPresentation({ voiceError: "quota", voiceState: "generating" }).key, "preparing");
+});
