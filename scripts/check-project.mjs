@@ -8,12 +8,21 @@ const rootPath = fileURLToPath(root);
 const required = [
   "README.md", "NOTICE.md", "LICENSE", "index.html", "docs/COMPONENT_MAP.md", "docs/LEARNING_GUIDE.md",
   "docs/API_SETUP.md", "server/index.mjs", "server/gemini-client.mjs", "server/prompt.mjs",
+  "server/knowledge-retriever.mjs", "knowledge/shoujian-rag.v1.json", "knowledge/README.md",
   "src/oracle-engine.js", "src/question-boundary.js", "src/dialogue-engine.js", "src/shoujian-oracle.js",
   "src/api-client.js", "src/audio-recorder.js", "src/audio-player.js"
 ];
 
 for (const relativePath of required) {
   await readFile(new URL(relativePath, root), "utf8");
+}
+
+const knowledge = JSON.parse(await readFile(new URL("knowledge/shoujian-rag.v1.json", root), "utf8"));
+if (knowledge.schema !== "shoujian.oracle-rag.v1"
+  || knowledge.hexagrams?.length !== 64
+  || knowledge.trigrams?.length !== 8
+  || knowledge.hexagrams.some((record) => record.lines?.length !== 6)) {
+  throw new Error("frozen RAG knowledge package is incomplete");
 }
 
 const secretLike = [/AIza[0-9A-Za-z_-]{20,}/u, /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/u];
@@ -42,4 +51,4 @@ for (const file of files.filter((path) => /\.(?:js|mjs|html|md|json)$/i.test(pat
   }
 }
 
-if (!process.exitCode) console.log(`project check passed: ${files.length} files, zero core-project coupling`);
+if (!process.exitCode) console.log(`project check passed: ${files.length} files, 64-hexagram RAG package, zero proprietary core-project coupling`);

@@ -2,9 +2,9 @@
 
 ![Jihui](assets/brand/jihui-wordmark.png)
 
-从“巡宅”中有选择地抽出的轻量虚拟卦师组件。它保留虚拟人主持、问题边界、三钱六爻、64 卦确定性映射和有限追问；明确不包含住宅分析、完整古籍、纳甲时证、档案、支付与追验等主项目核心。
+独立的轻量虚拟卦师与经传 RAG 组件。它保留虚拟人主持、问题边界、三钱六爻和 64 卦确定性映射，并加入可追溯的《周易》《彖》《象》《说卦》冻结知识检索；明确不包含住宅分析、纳甲时证、档案、支付与追验等主项目核心。
 
-![版本](https://img.shields.io/badge/version-0.3.0-8e332a)
+![版本](https://img.shields.io/badge/version-0.4.0-8e332a)
 ![许可](https://img.shields.io/badge/license-MIT-d3b27f)
 
 ## 现在能完成什么
@@ -12,8 +12,9 @@
 1. 墨衡以虚拟人身份迎客，引导用户把问题缩成一件具体的小事；
 2. 公开字符规则拦截医疗、投资、法律、人身安全等高风险问题；
 3. 问题通过后，浏览器本机模拟三钱六掷并机械排出本卦、动爻和之卦；
-4. 配置 Gemini 后，可以用麦克风说话、自由追问卦象，并让墨衡以语音回答；
-5. 没有 API 密钥时自动退回本地有限对话，起卦和基础功能仍然可用。
+4. 配置 Gemini 后，可以不先起卦直接自由问经传知识，也可以对当前本卦、动爻和之卦自由追问；
+5. 每轮回答由服务端从 456 条冻结片段中检索最多 8 条证据，回答下方可展开原文、层次、源号和维基文库页面；
+6. 支持麦克风转写和可选语音回答；没有 API 密钥时自动退回本地有限对话，起卦仍然可用。
 
 问题文字不会改变卦象。项目没有账号、遥测或支付；本地模式不上传内容，Gemini 云端模式会把用户主动提交的文字、录音和必要卦象上下文发送给 Google。
 
@@ -22,11 +23,11 @@
 | 主项目来源 | 本项目保留 | 明确排除 |
 | --- | --- | --- |
 | `MohengGuide` / `mohengPosture` | 人物主持、阶段仪态、边界语气 | 主项目八步宅案状态与本机语音系统 |
-| `mohengConsultation` | 为什么、来源、边界式追问 | 宅盘结构化案据和完整案门 |
+| `mohengConsultation` | 主持方式与本地降级思想 | 宅盘结构化案据和完整案门 |
 | `oracleQuestionBoundary` | 7 类公开字规 | 问契签名、验期、准绳与追验 |
 | `iching` | 6/7/8/9、八卦、文王序 64 卦映射 | 古籍全文、爻辞、纳甲、六亲、旬空、六神 |
 
-完整映射见 [组件抽取与流程图](docs/COMPONENT_MAP.md)，学习顺序见 [代码学习指南](docs/LEARNING_GUIDE.md)。
+经传数据另从中文维基文库公开来源建立独立知识包，不复制主项目住宅知识。完整映射见 [组件抽取与流程图](docs/COMPONENT_MAP.md)，学习顺序见 [代码学习指南](docs/LEARNING_GUIDE.md)。
 
 ## 本地运行（无需 API）
 
@@ -41,7 +42,8 @@ npm start
 1. 在 [Google AI Studio](https://aistudio.google.com/app/apikey) 创建 Gemini API 密钥；
 2. 复制 `.env.example` 为 `.env`；
 3. 只在本机 `.env` 的 `GEMINI_API_KEY` 后填写密钥；
-4. 再运行 `npm start`，页面状态应显示“Gemini 自由对话已连接”。
+4. 若网络不能直连 Google，在 `.env` 填写 `HTTPS_PROXY=http://127.0.0.1:你的代理端口`；
+5. 再运行 `npm start`，页面状态应显示“Gemini + 周易 RAG 已连接”。
 
 不要把真实密钥写进前端、提交到 GitHub，或发送到聊天中。完整配置、模型选择、免费层限制和故障排查见 [API 配置指南](docs/API_SETUP.md)。
 
@@ -49,7 +51,7 @@ npm start
 
 ```text
 麦克风 → 后端 → Gemini 3.5 Transcribe → 文字
-文字 + 本地卦象 → Gemini 3.8 Flash → 墨衡回答
+文字 + 本地卦象 → 冻结知识检索 → Gemini 3.8 Flash → 带来源的墨衡回答
 墨衡回答 → Gemini 3.1 Flash TTS Preview → 浏览器播放
 ```
 
@@ -71,6 +73,8 @@ npm start
 - `src/question-boundary.js`：起卦前问题边界；
 - `src/oracle-engine.js`：三钱六爻与 64 卦纯计算；
 - `server/`：密钥隔离、Gemini Files/Interactions API 和静态服务；
+- `server/knowledge-retriever.mjs`：本卦强绑定与自由问题检索；
+- `knowledge/shoujian-rag.v1.json`：64 卦、384 爻与 8 个说卦取象冻结知识；
 - `test/`：上述三层的确定性测试。
 
 ## 验证
@@ -80,7 +84,7 @@ npm test
 npm run check
 ```
 
-需要 Node.js 20 或更高版本，无需安装第三方依赖。测试不会调用真实 Gemini，也不会消耗额度。
+需要 Node.js 24 或更高版本，无需安装第三方依赖。测试不会调用真实 Gemini，也不会消耗额度。
 
 ## 内容边界
 
@@ -88,4 +92,4 @@ npm run check
 
 ## License
 
-[MIT](LICENSE)。抽取来源与改动说明见 [NOTICE.md](NOTICE.md)。
+代码使用 [MIT](LICENSE)。冻结经传数据的维基文库编辑层及适用改编按 CC BY-SA 4.0；详见[知识包来源与许可](knowledge/README.md)和[抽取说明](NOTICE.md)。

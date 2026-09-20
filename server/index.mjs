@@ -5,14 +5,16 @@ import { fileURLToPath } from "node:url";
 import process from "node:process";
 import { GeminiClient, GeminiError, DEFAULT_MODELS } from "./gemini-client.mjs";
 import { buildChatInput, buildSystemInstruction } from "./prompt.mjs";
+import { loadKnowledgeBase } from "./knowledge-retriever.mjs";
 import { assessQuestion } from "../src/question-boundary.js";
 import { boundaryReply } from "../src/dialogue-engine.js";
 
 const projectRoot = fileURLToPath(new URL("../", import.meta.url));
 const AUDIO_TYPES = new Set(["audio/webm", "audio/ogg", "audio/mp4", "audio/mpeg", "audio/wav", "audio/x-wav"]);
 const BODY_LIMIT = 8 * 1024 * 1024;
+const defaultKnowledgeBase = await loadKnowledgeBase();
 
-export function createApp({ client = null, rootPath = projectRoot, now = Date.now } = {}) {
+export function createApp({ client = null, knowledgeBase = defaultKnowledgeBase, rootPath = projectRoot, now = Date.now } = {}) {
   const requests = new Map();
   const apiEnabled = Boolean(client);
 
@@ -23,21 +25,28 @@ export function createApp({ client = null, rootPath = projectRoot, now = Date.no
       if (url.pathname.startsWith("/api/")) {
         if (!allowRequest(request.socket.remoteAddress ?? "unknown", requests, now)) return json(response, 429, { error: "rate_limited", message: "请求太频繁，请稍后再试。" });
         if (request.method === "GET" && url.pathname === "/api/status") {
-          return json(response, 200, { cloud: apiEnabled, provider: apiEnabled ? "Google Gemini" : null, models: apiEnabled ? client.models : null });
+          return json(response, 200, {
+            cloud: apiEnabled,
+            provider: apiEnabled ? "Google Gemini" : null,
+            models: apiEnabled ? client.models : null,
+            knowledge: knowledgeBase.summary,
+          });
         }
         if (!apiEnabled) return json(response, 503, { error: "cloud_disabled", message: "未配置 Gemini，当前使用本地有限对话。" });
         if (request.method !== "POST") return json(response, 405, { error: "method_not_allowed", message: "请求方法不受支持。" });
         const body = await readJsonBody(request);
-        if (url.pathname === "/api/transcribe") return handleTranscribe(response, client, body);
-        if (url.pathname === "/api/chat") return handleChat(response, client, body);
-        if (url.pathname === "/api/speech") return handleSpeech(response, client, body);
+        if (url.pathname === "/api/transcribe") return await handleTranscribe(response, client, body);
+        if (url.pathname === "/api/chat") return await handleChat(response, client, knowledgeBase, body);
+        if (url.pathname === "/api/speech") return await handleSpeech(response, client, body);
         return json(response, 404, { error: "not_found", message: "接口不存在。" });
       }
       return serveStatic(response, url.pathname, rootPath);
     } catch (error) {
       const status = error instanceof GeminiError ? error.status : error.status ?? 500;
       const code = error instanceof GeminiError ? error.code : error.code ?? "server_error";
-      const message = status >= 500 && !(error instanceof GeminiError) ? "服务暂时不可用。" : error.message;
+      const message = status >= 500 && !(error instanceof GeminiError) && error.expose !== true
+        ? "服务暂时不可用。"
+        : error.message;
       return json(response, status, { error: code, message });
     }
   };
@@ -53,7 +62,7 @@ async function handleTranscribe(response, client, body) {
   return json(response, 200, { text: result.text });
 }
 
-async function handleChat(response, client, body) {
+async function handleChat(response, client, knowledgeBase, body) {
   const message = cleanText(body.message, 2_000, "对话内容");
   const stage = ["question", "ready", "reading"].includes(body.stage) ? body.stage : "question";
   const assessment = assessQuestion(message);
@@ -64,11 +73,17 @@ async function handleChat(response, client, body) {
     role: item?.role === "user" ? "user" : "master",
     text: String(item?.text ?? "").slice(0, 500)
   })) : [];
+  const evidence = knowledgeBase.retrieve({
+    query: [message, question].filter(Boolean).join("\n"),
+    reading,
+    limit: 8,
+  });
   const result = await client.chat({
     input: buildChatInput(message, history),
-    systemInstruction: buildSystemInstruction({ stage, question, reading })
+    systemInstruction: buildSystemInstruction({ stage, question, reading, evidence })
   });
-  return json(response, 200, { text: result.text });
+  validateCitations(result.text, evidence);
+  return json(response, 200, { text: result.text, evidence, grounded: evidence.length > 0 });
 }
 
 async function handleSpeech(response, client, body) {
@@ -98,6 +113,16 @@ function cleanText(value, maxLength, label) {
   const text = value.trim();
   if (text.length > maxLength) throw httpError(413, "text_too_long", `${label}过长。`);
   return text;
+}
+
+function validateCitations(text, evidence) {
+  const allowed = new Set(evidence.map(({ id }) => id));
+  const cited = [...String(text).matchAll(/【([A-Z0-9-]+)】/gu)].map((match) => match[1]);
+  if (allowed.size > 0 && cited.length === 0) {
+    throw httpError(502, "ungrounded_reply", "模型没有标注本轮检索来源，回答已被拒绝。请重试。");
+  }
+  const unknown = cited.filter((id) => !allowed.has(id));
+  if (unknown.length) throw httpError(502, "ungrounded_reply", "模型引用了本轮未检索到的来源，回答已被拒绝。请重试。");
 }
 
 async function readJsonBody(request) {
@@ -153,7 +178,7 @@ function json(response, status, value) {
   response.end(JSON.stringify(value));
 }
 
-function httpError(status, code, message) { return Object.assign(new Error(message), { status, code }); }
+function httpError(status, code, message) { return Object.assign(new Error(message), { status, code, expose: true }); }
 
 export async function loadEnv(path = resolve(projectRoot, ".env")) {
   try {
@@ -170,12 +195,18 @@ export function clientFromEnv(env = process.env) {
   if (!env.GEMINI_API_KEY) return null;
   return new GeminiClient({
     apiKey: env.GEMINI_API_KEY,
+    timeoutMs: boundedTimeout(env.GEMINI_TIMEOUT_MS),
     models: {
       chat: env.GEMINI_CHAT_MODEL ?? DEFAULT_MODELS.chat,
       transcribe: env.GEMINI_TRANSCRIBE_MODEL ?? DEFAULT_MODELS.transcribe,
       speech: env.GEMINI_TTS_MODEL ?? DEFAULT_MODELS.speech
     }
   });
+}
+
+function boundedTimeout(value) {
+  const parsed = Number.parseInt(value ?? "60000", 10);
+  return Number.isFinite(parsed) ? Math.max(10_000, Math.min(parsed, 120_000)) : 60_000;
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

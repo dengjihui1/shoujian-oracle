@@ -1,16 +1,16 @@
 {
   "name": "shoujian-oracle",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
-  "description": "A selective extraction of a virtual host, bounded dialogue, question guard, and deterministic divination engine.",
+  "description": "A grounded Zhouyi RAG dialogue system with deterministic hexagram casting and a Gemini virtual diviner.",
   "scripts": {
-    "start": "node server/index.mjs",
+    "start": "node --env-file-if-exists=.env --use-env-proxy server/index.mjs",
     "test": "node --test",
     "check": "node scripts/check-project.mjs"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=24"
   },
   "license": "MIT"
 }
