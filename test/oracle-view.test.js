@@ -1,0 +1,65 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { renderOracleView } from "../src/oracle-view.js";
+
+function render(overrides = {}) {
+  return renderOracleView({
+    stage: "question",
+    cloud: true,
+    messages: [],
+    busy: false,
+    recording: false,
+    transcribing: false,
+    recorderSupported: true,
+    liveTranscriberSupported: true,
+    draft: "",
+    voiceReplies: false,
+    voiceButtonLabel: "语音回答：关",
+    ...overrides,
+  });
+}
+
+test("view escapes messages and composer drafts", () => {
+  const html = render({
+    messages: [{ role: "master", text: '<img src=x onerror="alert(1)">' }],
+    draft: "</textarea><script>alert(2)</script>",
+  });
+  assert.doesNotMatch(html, /<img src=x/u);
+  assert.doesNotMatch(html, /<script>alert/u);
+  assert.match(html, /&lt;img src=x onerror=&quot;alert\(1\)&quot;&gt;/u);
+  assert.match(html, /&lt;\/textarea&gt;&lt;script&gt;alert\(2\)&lt;\/script&gt;/u);
+});
+
+test("view rejects non-HTTPS evidence links and keeps trusted HTTPS links", () => {
+  const html = render({ messages: [{
+    role: "master",
+    text: "有据可查",
+    evidence: [
+      { id: "bad", title: "危险", layer: "test", excerpt: "x", sourceUrl: "javascript:alert(1)" },
+      { id: "good", title: "可信", layer: "test", excerpt: "y", sourceUrl: "https://example.com/source?a=1&b=2" },
+    ],
+  }] });
+  assert.match(html, /href="#"/u);
+  assert.match(html, /href="https:\/\/example\.com\/source\?a=1&amp;b=2"/u);
+  assert.doesNotMatch(html, /href="javascript:/u);
+});
+
+test("unknown stages fall back to the question state", () => {
+  const html = render({ stage: "unexpected" });
+  assert.match(html, /master-card stage-question/u);
+  assert.match(html, /墨衡小卦 · 候问/u);
+});
+
+test("busy state disables the composer while keeping cancellation available", () => {
+  const html = render({ busy: true });
+  assert.match(html, /<textarea[^>]*disabled/u);
+  assert.match(html, /data-submit-mode="chat" disabled/u);
+  assert.match(html, /data-action="cancel-response"/u);
+});
+
+test("streaming messages expose the progressive cursor class", () => {
+  const html = render({ messages: [{ role: "master", text: "正在回答", streaming: true }] });
+  assert.match(html, /message master\s+streaming/u);
+  assert.match(html, /\.message\.streaming p::after/u);
+  assert.match(html, /content: "▍"/u);
+});
