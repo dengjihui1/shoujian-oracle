@@ -61,7 +61,7 @@
 
 再看 `audio-recorder.js` 与 `audio-player.js`，理解实时转写、WebM/base64 兼容兜底、PCM 包装 WAV，以及为什么文字会话不能等待 TTS 完成。新问题通过取消令牌淘汰旧音频，避免慢请求把界面锁死。
 
-### 6. 最后看 UI 状态机
+### 6. 最后看 UI 状态机与视图拆分
 
 打开 `src/shoujian-oracle.js`：
 
@@ -70,15 +70,17 @@
 - `reading` 阶段显示结果、自由输入和可展开来源；有 Gemini 时不再用固定追问按钮限制用户；
 - `sendText()` 是对话入口；
 - `askCloud()` 在同一条气泡里消费流式分片并逐字符揭示；
-- `restoreMemory()` / `persistMemory()` 只在浏览器本机保留最近 24 条完成对话，每次最多发送最近 16 条上下文；
+- `restoreMemory()` / `persistMemory()` 通过 `conversation-memory.js` 只在浏览器本机保留最近 24 条完成对话，并从六爻快照恢复相同卦象；
 - `cast()` 只负责连接随机适配器与纯计算层；
-- `render()` 把当前状态投影为 Shadow DOM。
+- `render()` 只收集状态，`oracle-view.js` 负责转义并投影为 Shadow DOM；
+- `streaming-text.js` 把网络分片变成可取消的字符级显示，并在积压过多时自动提速；
+- 录音、转写、文字回答和后台 TTS 使用分离的取消令牌，录音期间禁止并发提交文字。
 
 ## 可练习的小改动
 
 1. 为知识检索增加新的可解释同义词，但保留本卦和动爻的强绑定；
 2. 将随机起卦换成用户手动录入六个 6/7/8/9；
-3. 给 `question → ready → reading` 写一个纯状态机模块；
+3. 给 `question → ready → reading` 写一个纯状态机模块，并保持现有会话快照兼容；
 4. 给 API 客户端增加重试按钮，但不要自动重放可能计费的请求；
 5. 写浏览器测试，确认原问通过后不能在起卦前被悄悄替换。
 

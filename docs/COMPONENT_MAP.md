@@ -34,15 +34,18 @@ Gemini 未配置 → 有限追问：意思 / 动爻 / 算法 / 边界
 | 组件 | 文件 | 输入 | 输出 | 是否纯函数 |
 | --- | --- | --- | --- | --- |
 | 虚拟人外壳 | `src/shoujian-oracle.js` | 点击、文本、会话状态 | 对话和卦象界面 | 否，负责 UI 状态 |
+| 安全视图 | `src/oracle-view.js` | 当前只读状态 | Shadow DOM、卦卡、证据链接 | 是，返回转义后的 HTML |
 | 对话路由 | `src/dialogue-engine.js` | 用户追问、当前卦象 | 固定意图与回答 | 是 |
 | 问题边界 | `src/question-boundary.js` | 原问文本 | `clear/rewrite/blocked` | 是 |
 | 起卦计算 | `src/oracle-engine.js` | 六个 6/7/8/9 | 本卦、动爻、之卦、审计轨迹 | 是 |
 | 随机适配器 | `castWithCoins()` | `crypto.getRandomValues` | 六个爻值 | 外层有随机，排卦仍纯计算 |
 | 浏览器 API 适配器 | `src/api-client.js` | 文本、录音 | JSON / SSE 事件流 | 否，网络 I/O |
 | 录音与播放 | `src/audio-recorder.js` / `audio-player.js` | 麦克风、PCM | 实时文字 / 音频 Blob / 可取消 WAV 播放 | 播放有 I/O，WAV 包装为纯函数 |
+| 流式文字队列 | `src/streaming-text.js` | SSE 文字分片 | 可取消的字符级累积文本 | 定时器可注入测试 |
 | 本机 API 服务 | `server/index.mjs` | `/api/*` 请求 | 脱敏后的稳定响应 | 否，网络 I/O |
 | Gemini 适配器 | `server/gemini-client.mjs` | 只读卦象、文本、音频 | SSE 分片、转写、PCM | 否，可注入假 `fetch` 测试 |
-| 本机会话记忆 | `src/shoujian-oracle.js` | 已完成对话 | 最近 24 条 `localStorage` 记录 | 否，仅当前浏览器 |
+| 本机会话记忆 | `src/conversation-memory.js` | 已完成对话、阶段、原问、六爻 | 最近 24 条与可恢复会话快照 | 否，仅当前浏览器 |
+| 滑动窗口限流 | `server/rate-limiter.mjs` | IP、服务端时间 | 是否允许本轮 API 请求 | 是，内部状态可注入时间测试 |
 | 冻结知识检索器 | `server/knowledge-retriever.mjs` | 自由问题、当前卦象 | 最多 8 条白名单证据 | 检索为确定性 |
 | 经传知识包 | `knowledge/shoujian-rag.v1.json` | 64 卦、384 爻、8 个取象 | 456 条可引用片段 | 只读数据 |
 
@@ -58,7 +61,7 @@ question --问题通过--> ready --起卦--> reading
 - `question`：可以自由闲聊、问身份与一般基础问题、问经传知识，或明确选择把当前文字作为起卦原问；
 - `ready`：原问已经固定，只允许起卦或重置，防止起卦前后偷偷换题；
 - `reading`：展示结果并允许自由追问，检索层强制优先纳入本卦、实际动爻、之卦和上下卦；
-- 卦象与阶段状态只在当前页面内存中；最近 24 条已完成对话写入当前浏览器 `localStorage`，刷新后恢复并可手动清除。每次云端请求最多发送最近 16 条、只读卦象和本轮检索片段；服务端不建用户档案。
+- 最近 24 条已完成对话、阶段、原问和六爻快照写入当前浏览器 `localStorage`；刷新后由纯计算层从六爻重建同一卦，并可手动清除。错误、取消、未完成回答及没有有效回答的孤立问题不会进入后续上下文。每次云端请求最多发送最近 16 条、只读卦象和本轮检索片段；服务端不建用户档案。
 
 ## 四、抽取边界
 

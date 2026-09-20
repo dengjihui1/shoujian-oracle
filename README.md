@@ -4,7 +4,7 @@
 
 独立的轻量虚拟卦师与经传 RAG 组件。它保留虚拟人主持、问题边界、三钱六爻和 64 卦确定性映射，并加入可追溯的《周易》《彖》《象》《说卦》冻结知识检索；明确不包含住宅分析、纳甲时证、档案、支付与追验等主项目核心。
 
-![版本](https://img.shields.io/badge/version-0.6.1-8e332a)
+![版本](https://img.shields.io/badge/version-0.7.0-8e332a)
 ![许可](https://img.shields.io/badge/license-MIT-d3b27f)
 
 ## 现在能完成什么
@@ -17,9 +17,9 @@
 6. 涉及经传或当前卦象时，服务端从 456 条冻结片段中检索最多 8 条证据，回答下方可展开原文、层次、源号和维基文库页面；
 7. Gemini 回答通过 SSE 真流式传输，再以字符级动画持续写进同一条气泡，不必等待整段完成；
 8. 每轮注入 `Asia/Shanghai` 服务器时钟，日期与时间问题不再交给模型猜测；
-9. 最近 24 条对话保存在当前浏览器本机，刷新后可继续；每次最多把最近 16 条作为 Gemini 上下文，并提供“清除本机记忆”；
+9. 最近 24 条已完成对话、当前原问和程序卦象保存在当前浏览器本机；刷新后恢复同一阶段与同一卦，每次最多把最近 16 条作为 Gemini 上下文；
 10. 支持浏览器实时语音转写，并在不支持时退回 Gemini 单请求内联转写；语音回答在后台生成，不阻塞下一轮输入；
-11. 回答和转写都可以手动停止；新问题会取消上一段尚未播放完的语音，避免会话锁死；
+11. 回答和转写都可以手动停止；录音、转写和文字提交互斥，新问题会取消上一段尚未播放完的语音，避免会话锁死；
 12. 没有 API 密钥时自动退回本地有限对话，起卦仍然可用。
 
 问题文字不会改变卦象。项目没有账号、遥测或支付；本地模式不上传内容，Gemini 云端模式会把用户主动提交的文字、录音、最近上下文和必要卦象证据发送给 Google。对话记忆只存当前浏览器的 `localStorage`，服务端不建立用户档案。
@@ -74,13 +74,16 @@ npm start
 
 ## 文件入口
 
-- `src/shoujian-oracle.js`：Web Component、会话状态和界面；
+- `src/shoujian-oracle.js`：Web Component 与会话／语音生命周期编排；
+- `src/oracle-view.js`：Shadow DOM 视图、卦卡、证据展示和输出转义；
+- `src/conversation-memory.js`：完成轮次过滤、最近上下文与可恢复会话快照；
+- `src/streaming-text.js`：可取消、积压自适应的字符级显示队列；
 - `src/dialogue-engine.js`：有限意图识别与墨衡回答；
 - `src/api-client.js`：浏览器与本机 API 的 JSON/SSE 通信；
 - `src/audio-recorder.js` / `audio-player.js`：浏览器实时转写、录音兜底和可取消的 PCM/WAV 播放；
 - `src/question-boundary.js`：起卦前问题边界；
 - `src/oracle-engine.js`：三钱六爻与 64 卦纯计算；
-- `server/`：密钥隔离、Gemini 流式生成、Files/Interactions API 和静态服务；
+- `server/`：密钥隔离、Gemini 流式生成、Files/Interactions API、限流和静态服务；
 - `server/knowledge-retriever.mjs`：本卦强绑定与自由问题检索；
 - `knowledge/shoujian-rag.v1.json`：64 卦、384 爻与 8 个说卦取象冻结知识；
 - `test/`：上述三层的确定性测试。
