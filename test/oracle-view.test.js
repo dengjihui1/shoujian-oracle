@@ -63,3 +63,16 @@ test("streaming messages expose the progressive cursor class", () => {
   assert.match(html, /\.message\.streaming p::after/u);
   assert.match(html, /content: "▍"/u);
 });
+
+test("recording locks text submission but leaves the stop-recording action available", () => {
+  const html = render({ recording: true, recordingMode: "live" });
+  assert.match(html, /<textarea[^>]*disabled/u);
+  assert.match(html, /data-submit-mode="chat" disabled/u);
+  assert.match(html, /data-action="stop-record"/u);
+  assert.doesNotMatch(html, /data-action="stop-record" disabled/u);
+});
+
+test("ready stage prevents voice input that cannot be submitted", () => {
+  const html = render({ stage: "ready" });
+  assert.match(html, /data-action="record" disabled/u);
+});

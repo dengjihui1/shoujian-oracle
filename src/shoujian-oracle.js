@@ -135,7 +135,7 @@ export class ShoujianOracle extends HTMLElement {
   };
 
   async sendText(text, mode = "divination") {
-    if (this.busy) return;
+    if (this.busy || this.recording || this.transcribing) return;
     this.cancelSpeech();
     this.messages.push({ role: "user", text });
     this.persistMemory();
@@ -174,7 +174,7 @@ export class ShoujianOracle extends HTMLElement {
   }
 
   async cast() {
-    if (this.stage !== "ready") return;
+    if (this.stage !== "ready" || this.busy || this.recording || this.transcribing) return;
     this.reading = castWithCoins();
     this.stage = "reading";
     this.messages.push({ role: "master", text: readingReply(this.reading) });
@@ -201,7 +201,7 @@ export class ShoujianOracle extends HTMLElement {
     this.busy = true;
     const controller = new AbortController();
     this.chatController = controller;
-    const reply = { role: "master", text: "", cloud: true, evidence: [], streaming: true };
+    const reply = { role: "master", text: "墨衡正在斟酌…", cloud: true, evidence: [], streaming: true };
     this.messages.push(reply);
     const replyIndex = this.messages.length - 1;
     const reduceMotion = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
@@ -214,6 +214,7 @@ export class ShoujianOracle extends HTMLElement {
     });
     this.activeRevealer = revealer;
     let speechText = "";
+    let receivedText = false;
     this.render();
     try {
       const result = await this.api.chatStream({
@@ -230,7 +231,10 @@ export class ShoujianOracle extends HTMLElement {
           this.updateStreamingMessage(replyIndex);
         },
         onDelta: (delta) => {
-          if (!controller.signal.aborted) revealer.enqueue(delta);
+          if (!controller.signal.aborted) {
+            receivedText = true;
+            revealer.enqueue(delta);
+          }
         },
       });
       await revealer.finish();
@@ -242,7 +246,7 @@ export class ShoujianOracle extends HTMLElement {
     } catch (error) {
       revealer.cancel();
       if (error?.name === "AbortError") {
-        reply.text = reply.text ? `${reply.text}\n\n（已停止）` : "已停止本次回答。";
+        reply.text = receivedText && reply.text ? `${reply.text}\n\n（已停止）` : "已停止本次回答。";
         reply.cancelled = true;
       } else {
         const reason = String(error.message ?? "未知错误").replace(/[。！？!?]+$/u, "");
@@ -276,7 +280,7 @@ export class ShoujianOracle extends HTMLElement {
   }
 
   async startRecording() {
-    if (!this.cloud || this.recording || this.busy) return;
+    if (!this.cloud || this.stage === "ready" || this.recording || this.busy || this.transcribing) return;
     try {
       if (this.liveTranscriber.supported) {
         this.recordingMode = "live";

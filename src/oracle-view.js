@@ -12,6 +12,8 @@ export function renderOracleView(state) {
   const messages = Array.isArray(state.messages) ? state.messages : [];
   const liveSupported = Boolean(state.liveTranscriberSupported);
   const recorderSupported = Boolean(state.recorderSupported);
+  const interactionLocked = Boolean(state.busy || state.recording || state.transcribing);
+  const composerLocked = stage === "ready" || interactionLocked;
 
   return `${styles}
     <main class="shell">
@@ -40,21 +42,21 @@ export function renderOracleView(state) {
         <form>
           <label for="say">${stage === "question" ? state.cloud ? "想问墨衡什么" : "留下一件具体的事" : stage === "ready" ? "原问已固定" : "继续问墨衡"}</label>
           <div class="input-row">
-            <textarea id="say" maxlength="500" ${stage === "ready" || state.busy ? "disabled" : ""} placeholder="${stage === "reading" ? "直接问你真正想知道的，不必套固定问法" : state.cloud ? "可闲聊、问基础问题，也可写下一件事起卦" : "例如：未来三天，我该先验证哪一步？"}">${escapeHtml(state.draft)}</textarea>
+            <textarea id="say" maxlength="500" ${composerLocked ? "disabled" : ""} placeholder="${stage === "reading" ? "直接问你真正想知道的，不必套固定问法" : state.cloud ? "可闲聊、问基础问题，也可写下一件事起卦" : "例如：未来三天，我该先验证哪一步？"}">${escapeHtml(state.draft)}</textarea>
             <div class="submit-actions">
-              ${stage === "question" && state.cloud ? `<button type="submit" data-submit-mode="chat" ${state.busy ? "disabled" : ""}>直接问墨衡</button><button class="primary" type="submit" data-submit-mode="divination" ${state.busy ? "disabled" : ""}>以此问起卦</button>` : `<button type="submit" ${stage === "ready" || state.busy ? "disabled" : ""}>${state.busy ? "请稍候" : "送问"}</button>`}
+              ${stage === "question" && state.cloud ? `<button type="submit" data-submit-mode="chat" ${interactionLocked ? "disabled" : ""}>直接问墨衡</button><button class="primary" type="submit" data-submit-mode="divination" ${interactionLocked ? "disabled" : ""}>以此问起卦</button>` : `<button type="submit" ${composerLocked ? "disabled" : ""}>${interactionLocked ? "请稍候" : "送问"}</button>`}
             </div>
           </div>
         </form>
         <div class="voice-tools" aria-label="语音工具">
           ${state.cloud && (liveSupported || recorderSupported) ? state.transcribing
             ? `<button type="button" data-action="cancel-transcription">取消转写</button>`
-            : `<button type="button" data-action="${state.recording ? "stop-record" : "record"}" ${state.busy && !state.recording ? "disabled" : ""}>${state.recording ? state.recordingMode === "live" ? "停止并采用文字" : "停止并转文字" : liveSupported ? "实时语音输入" : "按下说话"}</button>` : ""}
+            : `<button type="button" data-action="${state.recording ? "stop-record" : "record"}" ${(stage === "ready" || state.busy) && !state.recording ? "disabled" : ""}>${state.recording ? state.recordingMode === "live" ? "停止并采用文字" : "停止并转文字" : liveSupported ? "实时语音输入" : "按下说话"}</button>` : ""}
           ${state.busy && !state.transcribing ? `<button type="button" data-action="cancel-response">停止回答</button>` : ""}
           ${state.cloud ? `<button type="button" data-action="voice" aria-pressed="${Boolean(state.voiceReplies)}">${escapeHtml(state.voiceButtonLabel)}</button>` : ""}
         </div>
-        ${state.cloud ? `<div class="memory-tools"><small>本机记忆最近 ${PERSISTED_MEMORY_MESSAGES} 条对话，刷新后仍可继续。</small><button type="button" data-action="clear-memory" ${state.busy || state.recording ? "disabled" : ""}>清除本机记忆</button></div>` : ""}
-        ${stage !== "question" ? `<button class="text-button" type="button" data-action="reset" ${state.busy || state.recording ? "disabled" : ""}>另起一问</button>` : !state.cloud ? `<div class="quick"><button type="button" data-quick="我不会问，请给一个例子">我不会问</button><button type="button" data-quick="边界是什么">哪些不能问</button></div>` : ""}
+        ${state.cloud ? `<div class="memory-tools"><small>本机记忆最近 ${PERSISTED_MEMORY_MESSAGES} 条对话，刷新后仍可继续。</small><button type="button" data-action="clear-memory" ${interactionLocked ? "disabled" : ""}>清除本机记忆</button></div>` : ""}
+        ${stage !== "question" ? `<button class="text-button" type="button" data-action="reset" ${interactionLocked ? "disabled" : ""}>另起一问</button>` : !state.cloud ? `<div class="quick"><button type="button" data-quick="我不会问，请给一个例子">我不会问</button><button type="button" data-quick="边界是什么">哪些不能问</button></div>` : ""}
       </section>
 
       <footer>${state.cloud ? `自由对话会把你提交的文字、最近上下文和必要检索片段发送给 Google Gemini；${liveSupported ? "实时语音输入由浏览器语音服务处理" : "录音会发送给 Gemini 转写"}。最近对话只保存在此浏览器本机，可随时清除，服务端不建用户档案。` : "本地模式不上传问题，但只能回答固定意图。配置 Gemini 后可启用普通闲聊、有来源的经传问答、语音转文字和语音回答。"} 演示结果不替代医疗、法律、投资或现实安全判断。</footer>
@@ -141,4 +143,3 @@ const styles = `<style>
   @media(max-width:520px){ .shell{padding:18px;border-radius:16px}.master-card{grid-template-columns:78px 1fr}.portrait{width:74px;height:86px}.input-row{grid-template-columns:1fr}.line{grid-template-columns:1fr;gap:2px}dl{grid-template-columns:1fr}.message{max-width:95%} }
   @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
 </style>`;
-

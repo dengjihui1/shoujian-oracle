@@ -24,7 +24,7 @@ test("conversation memory persists only completed bounded messages", () => {
     { role: "user", text: "第二问" },
     { role: "master", text: "回答", cloud: true, evidence: [{ id: "A" }] },
   ]);
-  assert.deepEqual(memory.load().map(({ text }) => text), ["第一问", "第二问", "回答"]);
+  assert.deepEqual(memory.load().map(({ text }) => text), ["欢迎", "第二问", "回答"]);
   assert.equal(memory.load()[2].cloud, true);
   memory.clear();
   assert.equal(storage.inspect(), null);
@@ -37,6 +37,18 @@ test("recent conversation uses the request window and ignores incomplete turns",
   assert.equal(recent.length, 16);
   assert.equal(recent[0].text, "m4");
   assert.equal(recent.at(-1).text, "m19");
+});
+
+test("cancelled or unanswered user turns do not leak into later model context", () => {
+  const recent = recentConversation([
+    { role: "master", text: "欢迎" },
+    { role: "user", text: "写一篇很长的文章" },
+    { role: "master", text: "只显示了一点", cancelled: true },
+    { role: "user", text: "一加一等于几" },
+    { role: "master", text: "等于二" },
+    { role: "user", text: "尚未回答的问题" },
+  ]);
+  assert.deepEqual(recent.map(({ text }) => text), ["欢迎", "一加一等于几", "等于二"]);
 });
 
 test("corrupt browser storage fails closed", () => {

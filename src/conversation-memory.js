@@ -85,16 +85,33 @@ export function recentConversation(messages, limit = REQUEST_CONTEXT_MESSAGES) {
 
 function sanitizeMessages(messages, limit, { persistentOnly = false } = {}) {
   if (!Array.isArray(messages)) return [];
-  return messages
-    .filter((message) => !persistentOnly || (message?.text && !message.streaming && !message.error && !message.cancelled))
-    .slice(-limit)
-    .map((message) => ({
+  const normalized = messages.map((message) => ({
       role: message?.role === "user" ? "user" : "master",
       text: String(message?.text ?? "").slice(0, 2_000),
       cloud: Boolean(message?.cloud),
       evidence: Array.isArray(message?.evidence) ? message.evidence.slice(0, 8) : [],
-    }))
-    .filter(({ text }) => text);
+      incomplete: Boolean(message?.streaming || message?.error || message?.cancelled),
+    }));
+  const selected = persistentOnly ? completedMessages(normalized) : normalized.filter(({ text }) => text);
+  return selected.slice(-limit).map(({ incomplete: _incomplete, ...message }) => message);
+}
+
+function completedMessages(messages) {
+  const completed = [];
+  let pendingUser = null;
+  for (const message of messages) {
+    if (!message.text || message.incomplete) continue;
+    if (message.role === "user") {
+      pendingUser = message;
+      continue;
+    }
+    if (pendingUser) {
+      completed.push(pendingUser);
+      pendingUser = null;
+    }
+    completed.push(message);
+  }
+  return completed;
 }
 
 function safeLocalStorage() {
