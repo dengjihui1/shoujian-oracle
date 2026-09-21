@@ -53,6 +53,22 @@ test("browser client exposes metadata and text while an SSE answer is arriving",
   assert.equal(result.purpose, "chat");
 });
 
+test("browser replaces a partial stream when the server recovers it", async () => {
+  const sse = [
+    'event: meta\ndata: {"evidence":[],"grounded":false,"purpose":"chat"}',
+    'event: delta\ndata: {"text":"半截"}',
+    'event: replace\ndata: {"text":"恢复后的完整回答。","recovered":true}',
+    'event: done\ndata: {"text":"恢复后的完整回答。","recovered":true}',
+    "",
+  ].join("\n\n");
+  const replacements = [];
+  const client = new OracleApiClient({ fetchFn: async () => new Response(sse, { headers: { "content-type": "text/event-stream" } }) });
+  const result = await client.chatStream({ message: "你好" }, { onReplace: (text) => replacements.push(text) });
+  assert.deepEqual(replacements, ["恢复后的完整回答。"]) ;
+  assert.equal(result.text, "恢复后的完整回答。");
+  assert.equal(result.recovered, true);
+});
+
 test("browser forwards cancellation signals to chat, transcription, and speech", async () => {
   const signals = [];
   const fetchFn = async (_url, options) => {

@@ -237,6 +237,32 @@ test("streaming divination appends the same reference note as JSON chat", async 
   });
 });
 
+test("an interrupted stream is recovered with a complete replacement answer", async () => {
+  const client = {
+    models: { chat: "test-chat" },
+    async *chatStream() {
+      yield { text: "半截回答", model: "test-chat" };
+      throw Object.assign(new Error("proxy reset"), { status: 502, code: "network_error" });
+    },
+    async chat({ signal }) {
+      assert.equal(signal.aborted, false);
+      return { text: "完整回答。" };
+    },
+  };
+  await withServer(createApp({ client }), async (base) => {
+    const replacements = [];
+    const api = new OracleApiClient({ baseUrl: base });
+    const result = await api.chatStream({
+      message: "随便聊聊",
+      purpose: "chat",
+      stage: "question",
+    }, { onReplace: (text) => replacements.push(text) });
+    assert.deepEqual(replacements, ["完整回答。"]) ;
+    assert.equal(result.text, "完整回答。");
+    assert.equal(result.recovered, true);
+  });
+});
+
 test("disconnecting a streaming browser aborts the upstream model request", async () => {
   let markAborted;
   const aborted = new Promise((resolve) => { markAborted = resolve; });

@@ -43,3 +43,15 @@ test("reduced motion reveals each network chunk immediately", async () => {
   assert.equal(characterDelay("。", 0), 36);
 });
 
+test("streaming text can replace a partial answer during recovery", async () => {
+  const seen = [];
+  const revealer = new StreamingTextRevealer({
+    reducedMotion: true,
+    onText: (text) => seen.push(text),
+  });
+  revealer.enqueue("半截");
+  revealer.replace("完整回答");
+  await revealer.finish();
+  assert.deepEqual(seen, ["半截", "", "完整回答"]);
+  assert.equal(revealer.text, "完整回答");
+});

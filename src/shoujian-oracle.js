@@ -216,8 +216,8 @@ export class ShoujianOracle extends HTMLElement {
       },
     });
     this.activeRevealer = revealer;
-    const speechQueue = this.voiceReplies ? this.createSpeechQueue() : null;
-    const speechSegmenter = speechQueue ? new SentenceSegmenter() : null;
+    let speechQueue = this.voiceReplies ? this.createSpeechQueue() : null;
+    let speechSegmenter = speechQueue ? new SentenceSegmenter() : null;
     let receivedText = false;
     this.render();
     try {
@@ -239,6 +239,17 @@ export class ShoujianOracle extends HTMLElement {
             receivedText = true;
             revealer.enqueue(delta);
             for (const sentence of speechSegmenter?.push(delta) ?? []) speechQueue.enqueue(sentence);
+          }
+        },
+        onReplace: (text) => {
+          if (controller.signal.aborted) return;
+          receivedText = true;
+          revealer.replace(text);
+          if (speechQueue) {
+            speechQueue.cancel();
+            speechQueue = this.createSpeechQueue();
+            speechSegmenter = new SentenceSegmenter();
+            for (const sentence of speechSegmenter.push(text)) speechQueue.enqueue(sentence);
           }
         },
       });

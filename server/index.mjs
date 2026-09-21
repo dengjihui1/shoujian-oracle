@@ -122,12 +122,36 @@ async function handleChatStream(response, client, knowledgeBase, body, now) {
     if (suffix) sse(response, "delta", { text: suffix });
     sse(response, "done", { text: finalText });
   } catch (error) {
-    const exposed = publicStreamError(error);
-    sse(response, "error", exposed);
+    if (fullText && canRecoverInterruptedStream(error, client, upstreamController.signal)) {
+      try {
+        const recovered = await client.chat({
+          input: prepared.input,
+          systemInstruction: prepared.systemInstruction,
+          signal: upstreamController.signal,
+        });
+        validateCitations(recovered.text, prepared.evidence);
+        const finalText = withDivinationDisclaimer(recovered.text, prepared.purpose);
+        sse(response, "replace", { text: finalText, recovered: true });
+        sse(response, "done", { text: finalText, recovered: true });
+        error = null;
+      } catch (recoveryError) {
+        error = recoveryError;
+      }
+    }
+    if (error) {
+      const exposed = publicStreamError(error);
+      sse(response, "error", exposed);
+    }
   } finally {
     clearInterval(heartbeat);
   }
   response.end();
+}
+
+function canRecoverInterruptedStream(error, client, signal) {
+  return !signal.aborted
+    && typeof client?.chat === "function"
+    && ["quota_exceeded", "upstream_error", "network_error", "timeout", "empty_text"].includes(error?.code);
 }
 
 function prepareChat(body, knowledgeBase, now) {

@@ -29,7 +29,7 @@ export class GeminiClient {
     this.timeoutMs = timeoutMs;
   }
 
-  async chat({ input, systemInstruction }) {
+  async chat({ input, systemInstruction, signal }) {
     let lastError;
     for (const model of this.chatModels) {
       try {
@@ -38,7 +38,7 @@ export class GeminiClient {
           input,
           system_instruction: systemInstruction,
           generation_config: { thinking_level: "low" }
-        });
+        }, signal);
         const text = extractText(data);
         if (!text) throw new GeminiError("Gemini returned no text", { code: "empty_text" });
         return { text, interactionId: extractInteraction(data)?.id ?? null, model };
@@ -167,11 +167,12 @@ export class GeminiClient {
     } catch { /* best-effort cleanup; transcription result remains usable */ }
   }
 
-  async #interaction(body) {
+  async #interaction(body, signal) {
     const response = await this.#fetch(`${this.baseUrl}/v1beta/interactions`, {
       method: "POST",
       headers: { "x-goog-api-key": this.apiKey, "content-type": "application/json" },
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
+      signal,
     });
     return readJson(response);
   }

@@ -23,6 +23,14 @@ export class StreamingTextRevealer {
     if (!this.draining) this.draining = this.#drain();
   }
 
+  replace(value) {
+    if (this.cancelled) return;
+    this.queue.length = 0;
+    this.text = "";
+    this.onText(this.text);
+    this.enqueue(value);
+  }
+
   async finish() {
     while (this.draining) await this.draining;
     return this.text;
@@ -53,4 +61,3 @@ export function characterDelay(character, backlog = 0) {
 function wait(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
-

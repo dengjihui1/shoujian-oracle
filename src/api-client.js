@@ -9,7 +9,7 @@ export class OracleApiClient {
   chat(payload) { return this.#request("/api/chat", { method: "POST", body: payload }); }
   speech(text, { signal } = {}) { return this.#request("/api/speech", { method: "POST", body: { text }, signal }); }
 
-  async chatStream(payload, { onMeta, onDelta, signal } = {}) {
+  async chatStream(payload, { onMeta, onDelta, onReplace, signal } = {}) {
     const response = await this.fetchFn(`${this.baseUrl}/api/chat/stream`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -32,6 +32,9 @@ export class OracleApiClient {
         const text = String(message.data.text ?? "");
         result.text += text;
         onDelta?.(text, result.text);
+      } else if (message.event === "replace") {
+        result.text = String(message.data.text ?? "");
+        onReplace?.(result.text, message.data);
       } else if (message.event === "error") {
         throw browserError(message.data.error, message.data.message, 502);
       } else if (message.event === "done") {

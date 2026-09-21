@@ -24,7 +24,7 @@ test("speech normalization skips the repeated visible divination disclaimer", ()
   );
 });
 
-test("default segmenter starts an unpunctuated sentence before 96 characters", () => {
+test("default segmenter starts an unpunctuated sentence at 72 characters", () => {
   const segmenter = new SentenceSegmenter();
   const [first] = segmenter.push("甲".repeat(76));
   assert.equal(first.length, 72);
