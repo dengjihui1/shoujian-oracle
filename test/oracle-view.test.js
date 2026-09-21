@@ -114,3 +114,12 @@ test("cloud UI uses Moheng branding and presents divination as broadly available
   assert.match(html, /生意、感情、健康、学业或任何困惑/u);
   assert.match(html, /以此问起卦 · 仅供参考/u);
 });
+
+test("a failed cloud turn exposes a user-triggered retry without locking chat", () => {
+  const html = render({
+    canRetryResponse: true,
+    messages: [{ role: "master", text: "本次回答没有完成", error: true }],
+  });
+  assert.match(html, /data-action="retry-response">重试本次回答/u);
+  assert.doesNotMatch(html, /<textarea[^>]*disabled/u);
+});

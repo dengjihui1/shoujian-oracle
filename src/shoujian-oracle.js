@@ -32,6 +32,7 @@ export class ShoujianOracle extends HTMLElement {
     this.chatController = null;
     this.transcriptionController = null;
     this.speechQueue = null;
+    this.retryRequest = null;
     this.initializeSession();
     this.restoreMemory();
     this.render();
@@ -67,6 +68,7 @@ export class ShoujianOracle extends HTMLElement {
 
   resetSession() {
     this.cancelSpeech();
+    this.retryRequest = null;
     this.stage = "question";
     this.question = "";
     this.reading = null;
@@ -78,6 +80,7 @@ export class ShoujianOracle extends HTMLElement {
 
   clearMemory() {
     this.cancelSpeech();
+    this.retryRequest = null;
     this.memory.clear();
     this.initializeSession();
     this.draft = "";
@@ -123,6 +126,11 @@ export class ShoujianOracle extends HTMLElement {
     if (action === "reset") this.resetSession();
     if (action === "clear-memory") this.clearMemory();
     if (action === "cancel-response") this.cancelResponse();
+    if (action === "retry-response" && this.retryRequest && !this.busy) {
+      const retry = this.retryRequest;
+      this.retryRequest = null;
+      await this.askCloud(retry.message, retry.history, retry.purpose);
+    }
     if (action === "record") await this.startRecording();
     if (action === "stop-record") await this.stopRecording();
     if (action === "cancel-transcription") {
@@ -142,6 +150,7 @@ export class ShoujianOracle extends HTMLElement {
   async sendText(text, mode = "divination") {
     if (this.busy || this.recording || this.transcribing) return;
     this.cancelSpeech();
+    this.retryRequest = null;
     this.messages.push({ role: "user", text });
     this.persistMemory();
     const history = this.messages.slice(0, -1);
@@ -258,6 +267,7 @@ export class ShoujianOracle extends HTMLElement {
       reply.text = result.text || reply.text;
       reply.evidence = result.evidence ?? reply.evidence;
       reply.streaming = false;
+      this.retryRequest = null;
       for (const sentence of speechSegmenter?.flush() ?? []) speechQueue.enqueue(sentence);
       speechQueue?.close();
     } catch (error) {
@@ -266,10 +276,12 @@ export class ShoujianOracle extends HTMLElement {
       if (error?.name === "AbortError") {
         reply.text = receivedText && reply.text ? `${reply.text}\n\n（已停止）` : "已停止本次回答。";
         reply.cancelled = true;
+        this.retryRequest = null;
       } else {
         const reason = String(error.message ?? "未知错误").replace(/[。！？!?]+$/u, "");
         reply.text = `本次回答没有完成：${reason}。没有生成替代结论，请稍后重试。`;
         reply.error = true;
+        this.retryRequest = { message, history, purpose };
       }
       reply.streaming = false;
     } finally {
@@ -489,6 +501,7 @@ export class ShoujianOracle extends HTMLElement {
       voiceReplies: this.voiceReplies,
       voiceState: this.voiceState,
       voiceError: this.voiceError,
+      canRetryResponse: Boolean(this.retryRequest),
       voiceButtonLabel: this.voiceButtonLabel(),
     });
   }

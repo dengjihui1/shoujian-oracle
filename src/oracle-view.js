@@ -54,6 +54,7 @@ export function renderOracleView(state) {
               </div>
             </form>
             <div class="voice-tools" aria-label="语音工具">
+              ${state.canRetryResponse && !interactionLocked ? `<button type="button" data-action="retry-response">重试本次回答</button>` : ""}
               ${state.cloud && (liveSupported || recorderSupported) ? state.transcribing
                 ? `<button type="button" data-action="cancel-transcription">取消转写</button>`
                 : `<button type="button" data-action="${state.recording ? "stop-record" : "record"}" ${(stage === "ready" || state.busy) && !state.recording ? "disabled" : ""}>${state.recording ? state.recordingMode === "live" ? "停止并采用文字" : "停止并转文字" : liveSupported ? "实时语音输入" : "按下说话"}</button>` : ""}
