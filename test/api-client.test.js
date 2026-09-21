@@ -33,7 +33,7 @@ test("browser receives a stable Chinese message for upstream failures", async ()
 
   await assert.rejects(
     () => client.chat({ message: "潜龙勿用是什么意思？" }),
-    (error) => error.code === "upstream_error" && error.message === "Gemini 服务暂时不可用，请稍后重试"
+    (error) => error.code === "upstream_error" && error.message === "云端服务暂时不可用，请稍后重试"
   );
 });
 

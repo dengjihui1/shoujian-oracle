@@ -14,7 +14,9 @@ export function divinationBoundaryReply(assessment) {
   const immediateDanger = assessment.issues.some(({ code }) => code === "immediate-harm");
   if (immediateDanger) return `人身安全不能交给卦象决定。\n\n${crisisSupportReply()}`;
   const notes = assessment.issues.map(({ reply }) => reply).join(" ");
-  return ["此问可以起卦。问题文字不会改变卦象；确认后再掷三钱六次。", assessment.level === "advisory" ? DIVINATION_DISCLAIMER : "", notes].filter(Boolean).join(" ");
+  const labels = [...new Set(assessment.issues.map(({ label }) => label))].join("、");
+  const advisory = assessment.level === "advisory" ? `这属于${labels}类问卦，我会照常解卦，但只给观察角度。 ${DIVINATION_DISCLAIMER}` : "";
+  return ["此问可以起卦。问题文字不会改变卦象；确认后再掷三钱六次。", advisory, notes].filter(Boolean).join(" ");
 }
 
 export function resolveResponsePolicy({ message, purpose = "chat", stage = "question", assessment = assessQuestion(message) }) {

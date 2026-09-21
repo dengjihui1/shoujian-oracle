@@ -3,9 +3,9 @@ const CLOSING_PUNCTUATION = /[”’」』】）)\]]/u;
 const SOFT_PUNCTUATION = /[，,、：:]/u;
 
 export class SentenceSegmenter {
-  constructor({ maxChars = 96, minSplitChars = 36 } = {}) {
-    this.maxChars = Math.max(40, Number(maxChars) || 96);
-    this.minSplitChars = Math.min(this.maxChars - 8, Math.max(20, Number(minSplitChars) || 36));
+  constructor({ maxChars = 72, minSplitChars = 28 } = {}) {
+    this.maxChars = Math.max(40, Number(maxChars) || 72);
+    this.minSplitChars = Math.min(this.maxChars - 8, Math.max(20, Number(minSplitChars) || 28));
     this.buffer = "";
   }
 
@@ -51,6 +51,7 @@ export function normalizeSpeechText(value) {
     .replace(/【[A-Z][A-Z0-9_-]{1,48}】/giu, "")
     .replace(/https?:\/\/\S+/giu, "")
     .replace(/(?:^|\n)\s{0,3}(?:#{1,6}|[-*+]\s)/gu, " ")
+    .replace(/卦象仅供传统文化体验与自我反思参考，不作为[^。！？]*[。！？]?/gu, " ")
     .replace(/[*_`~]/gu, "")
     .replace(/\s+/gu, " ")
     .trim();

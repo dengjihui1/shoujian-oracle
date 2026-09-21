@@ -8,7 +8,7 @@ const AVATAR_SPEAKING = new URL("../assets/avatar/moheng-speaking.webp", import.
 export function renderOracleView(state) {
   const stage = ["question", "ready", "reading"].includes(state.stage) ? state.stage : "question";
   const phase = stage === "question" ? "候问" : stage === "ready" ? "问已收" : "照卦答";
-  const cloudLabel = state.cloud ? "Gemini + 周易 RAG 已连接" : "本地有限对话";
+  const cloudLabel = state.cloud ? "墨衡云端 · 周易 RAG 已连接" : "本地有限对话";
   const knowledgeLabel = state.knowledge
     ? `${Number(state.knowledge.hexagrams) || 0} 卦 · ${Number(state.knowledge.trigrams) || 0} 八卦 · ${Number(state.knowledge.fragments) || 0} 条冻结片段`
     : "知识库状态未知";
@@ -22,7 +22,7 @@ export function renderOracleView(state) {
   return `${styles}
     <main class="shell">
       <header class="master-card stage-${stage}">
-        <div><p class="eyebrow">守简 · 墨衡虚拟卦师</p><h1>面对面问墨衡</h1><p>能闲聊，也能有据解卦。只有你明确选择时，才会固定原问并起卦。</p></div>
+        <div><p class="eyebrow">守简 · 墨衡虚拟卦师</p><h1>面对面问墨衡</h1><p>什么都能聊，任何主题都可问卦；卦象只作参考，不替你决定。</p></div>
         <div class="system-state"><span class="status ${state.cloud ? "online" : ""}">${cloudLabel}</span><small class="knowledge-status">${knowledgeLabel}</small></div>
       </header>
 
@@ -47,9 +47,9 @@ export function renderOracleView(state) {
             <form>
               <label for="say">${stage === "question" ? state.cloud ? "想问墨衡什么" : "留下一件具体的事" : stage === "ready" ? "原问已固定" : "继续问墨衡"}</label>
               <div class="input-row">
-                <textarea id="say" maxlength="500" ${composerLocked ? "disabled" : ""} placeholder="${stage === "reading" ? "直接追问，不必套固定问法" : state.cloud ? "可闲聊、问基础问题，也可写下一件事起卦" : "例如：未来三天，我该先验证哪一步？"}">${escapeHtml(state.draft)}</textarea>
+                <textarea id="say" maxlength="500" ${composerLocked ? "disabled" : ""} placeholder="${stage === "reading" ? "直接追问，也可以随时换回普通聊天" : state.cloud ? "生意、感情、健康、学业或任何困惑，都可以直接说" : "例如：未来三天，我该先验证哪一步？"}">${escapeHtml(state.draft)}</textarea>
                 <div class="submit-actions">
-                  ${stage === "question" && state.cloud ? `<button type="submit" data-submit-mode="chat" ${interactionLocked ? "disabled" : ""}>直接问墨衡</button><button class="primary" type="submit" data-submit-mode="divination" ${interactionLocked ? "disabled" : ""}>以此问起卦</button>` : `<button type="submit" ${composerLocked ? "disabled" : ""}>${interactionLocked ? "请稍候" : "送问"}</button>`}
+                  ${stage === "question" && state.cloud ? `<button type="submit" data-submit-mode="chat" ${interactionLocked ? "disabled" : ""}>直接问墨衡</button><button class="primary" type="submit" data-submit-mode="divination" ${interactionLocked ? "disabled" : ""}>以此问起卦 · 仅供参考</button>` : `<button type="submit" ${composerLocked ? "disabled" : ""}>${interactionLocked ? "请稍候" : "送问"}</button>`}
                 </div>
               </div>
             </form>

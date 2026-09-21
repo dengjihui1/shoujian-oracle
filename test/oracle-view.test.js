@@ -106,3 +106,11 @@ test("visible footer stays concise while the reading card carries the reference 
   assert.doesNotMatch(html, /文字、最近上下文/u);
   assert.doesNotMatch(html, /发送给 Google Gemini/u);
 });
+
+test("cloud UI uses Moheng branding and presents divination as broadly available", () => {
+  const html = render();
+  assert.match(html, /墨衡云端 · 周易 RAG 已连接/u);
+  assert.match(html, /任何主题都可问卦/u);
+  assert.match(html, /生意、感情、健康、学业或任何困惑/u);
+  assert.match(html, /以此问起卦 · 仅供参考/u);
+});

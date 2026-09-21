@@ -262,10 +262,10 @@ function sse(response, event, value) {
 function publicStreamError(error) {
   const code = error?.code ?? "server_error";
   const messages = {
-    quota_exceeded: "Gemini 当前配额或服务容量不足，请稍后再试。",
-    timeout: "Gemini 回答超时，请稍后重试。",
-    network_error: "Gemini 网络连接暂时不可用，请稍后重试。",
-    upstream_error: "Gemini 服务暂时不可用，请稍后重试。",
+    quota_exceeded: "云端模型当前配额或服务容量不足，请稍后再试。",
+    timeout: "云端回答超时，请稍后重试。",
+    network_error: "云端网络连接暂时不可用，请稍后重试。",
+    upstream_error: "云端服务暂时不可用，请稍后重试。",
     ungrounded_reply: error?.message,
   };
   return { error: code, message: messages[code] ?? "本次回答没有完成，请稍后重试。" };

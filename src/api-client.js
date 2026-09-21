@@ -103,8 +103,8 @@ function browserError(code, fallback, status) {
 }
 
 function browserErrorMessage(code, fallback) {
-  if (code === "quota_exceeded") return "Gemini 当前配额或服务容量不足，请稍后再试";
-  if (code === "timeout") return "Gemini 回答超时，请稍后重试";
-  if (code === "network_error" || code === "upstream_error") return "Gemini 服务暂时不可用，请稍后重试";
+  if (code === "quota_exceeded") return "云端模型当前配额或服务容量不足，请稍后再试";
+  if (code === "timeout") return "云端回答超时，请稍后重试";
+  if (code === "network_error" || code === "upstream_error") return "云端服务暂时不可用，请稍后重试";
   return fallback ?? "云端服务暂时不可用";
 }

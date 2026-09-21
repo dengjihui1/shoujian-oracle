@@ -17,6 +17,19 @@ test("speech normalization removes RAG markers, markdown, and URLs", () => {
   );
 });
 
+test("speech normalization skips the repeated visible divination disclaimer", () => {
+  assert.equal(
+    normalizeSpeechText("卦象仅供传统文化体验与自我反思参考，不作为投资、医疗、法律或其他现实决定的唯一依据。"),
+    ""
+  );
+});
+
+test("default segmenter starts an unpunctuated sentence before 96 characters", () => {
+  const segmenter = new SentenceSegmenter();
+  const [first] = segmenter.push("甲".repeat(76));
+  assert.equal(first.length, 72);
+});
+
 test("overlong text prefers a nearby Chinese comma", () => {
   const segmenter = new SentenceSegmenter({ maxChars: 40, minSplitChars: 20 });
   const text = `前段${"甲".repeat(22)}，后段${"乙".repeat(22)}`;
