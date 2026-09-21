@@ -14,9 +14,9 @@
   ├── 直接问墨衡 → 普通问题自然回答；经传问题走冻结知识检索
   └── 以此问起卦
   ↓
-问题边界检查 ── blocked → 墨衡说明为什么不能起卦
-  │              rewrite → 引导缩成一件可观察的小事
-  ↓ clear
+问题边界检查 ── blocked → 即时人身危险：停止起卦并给现实危机支持
+  │              advisory → 允许起卦并附领域参考说明
+  ↓ clear / advisory
 固定当前原问
   ↓
 浏览器本机三钱六掷
@@ -25,7 +25,7 @@
   ↓
 本卦、实际动爻、之卦与上下卦强制进入知识检索
   ↓
-Gemini 已配置 → SSE 流式自由追问 + 字符级显示 + 来源展开
+Gemini 已配置 → SSE 流式自由追问 + 字符级显示 + 中途断流恢复 + 来源展开
   └── 可选语音：完整句切分 → 最多预取 2 句 TTS → 顺序播放 → 音量驱动墨衡嘴型
 Gemini 未配置 → 有限追问：意思 / 动爻 / 算法 / 边界
 ```
@@ -38,7 +38,7 @@ Gemini 未配置 → 有限追问：意思 / 动爻 / 算法 / 边界
 | 虚拟人状态 | `src/avatar-state.js` | 录音、转写、回答、语音与卦象阶段 | 九种人物表现状态 | 是 |
 | 安全视图 | `src/oracle-view.js` | 当前只读状态 | Shadow DOM、卦卡、证据链接 | 是，返回转义后的 HTML |
 | 对话路由 | `src/dialogue-engine.js` | 用户追问、当前卦象 | 固定意图与回答 | 是 |
-| 问题边界 | `src/question-boundary.js` | 原问文本 | `clear/rewrite/blocked` | 是 |
+| 问题边界 | `src/question-boundary.js` | 原问文本 | `clear/advisory/blocked` | 是 |
 | 响应策略 | `src/response-policy.js` | 文本、聊天/起卦目的、阶段与边界评估 | 放行、危机支持或带替代路径的起卦边界 | 是 |
 | 起卦计算 | `src/oracle-engine.js` | 六个 6/7/8/9 | 本卦、动爻、之卦、审计轨迹 | 是 |
 | 随机适配器 | `castWithCoins()` | `crypto.getRandomValues` | 六个爻值 | 外层有随机，排卦仍纯计算 |
@@ -57,9 +57,9 @@ Gemini 未配置 → 有限追问：意思 / 动爻 / 算法 / 边界
 ## 三、会话状态机
 
 ```text
-question --问题通过--> ready --起卦--> reading
+question --clear / advisory--> ready --起卦--> reading
    ↑                       │              │
-   └────问题需重写─────────┘              ├──追问→ reading
+   └──即时人身危险：危机支持───────────────┤
    └──────────────另起一问────────────────┘
 ```
 
