@@ -36,23 +36,29 @@ test("API routes enforce boundary and preserve deterministic reading context", a
   const calls = [];
   const client = {
     models: { chat: "test-chat", transcribe: "test-stt", speech: "test-tts" },
-    async chat(payload) { calls.push(payload); return { text: "先核对眼前条件【ZY-01-OVERVIEW】。" }; },
+    async chat(payload) {
+      calls.push(payload);
+      return { text: calls.length === 1 ? "先把症状和用药情况记录清楚。" : "先核对眼前条件【ZY-01-OVERVIEW】。" };
+    },
     async transcribe() { return { text: "转写完成" }; },
     async speech() { return { data: "AQI=", mimeType: "audio/pcm", sampleRate: 24000 }; }
   };
   await withServer(createApp({ client }), async (base) => {
-    const blocked = await fetch(`${base}/api/chat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message: "我是否应该停药？", purpose: "divination" }) });
-    assert.equal((await blocked.json()).blocked, true);
-    assert.equal(calls.length, 0);
+    const advisory = await fetch(`${base}/api/chat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message: "我是否应该停药？", purpose: "divination" }) });
+    const advisoryBody = await advisory.json();
+    assert.equal(advisoryBody.blocked, undefined);
+    assert.match(advisoryBody.text, /仅供传统文化体验与自我反思参考/u);
+    assert.equal(calls.length, 1);
 
     const reading = { primary: { number: 1, fullName: "乾为天", lower: { name: "乾", image: "天" }, upper: { name: "乾", image: "天" } }, movingLines: [1], changed: { fullName: "天风姤" } };
     const chat = await fetch(`${base}/api/chat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message: "这卦和我的问题有什么关系", stage: "reading", question: "未来三天先做什么", reading }) });
     const chatBody = await chat.json();
-    assert.equal(chatBody.text, "先核对眼前条件【ZY-01-OVERVIEW】。");
+    assert.match(chatBody.text, /^先核对眼前条件【ZY-01-OVERVIEW】。/u);
+    assert.match(chatBody.text, /仅供传统文化体验与自我反思参考/u);
     assert.equal(chatBody.grounded, true);
     assert.deepEqual(chatBody.evidence.slice(0, 2).map(({ id }) => id), ["ZY-01-OVERVIEW", "ZY-01-LINE-1"]);
-    assert.match(calls[0].systemInstruction, /本卦第1卦 乾为天/u);
-    assert.match(calls[0].systemInstruction, /【ZY-01-OVERVIEW】/u);
+    assert.match(calls[1].systemInstruction, /本卦第1卦 乾为天/u);
+    assert.match(calls[1].systemInstruction, /【ZY-01-OVERVIEW】/u);
   });
 });
 
@@ -136,24 +142,24 @@ test("immediate-harm chat uses crisis support instead of a divination refusal", 
   });
 });
 
-test("investment divination refusal includes safe chat and reframing routes", async () => {
+test("investment and business divination are allowed with a deterministic reference note", async () => {
   let called = false;
   const client = {
     models: { chat: "test-chat" },
-    async chat() { called = true; return { text: "should not be called" }; },
+    async chat() { called = true; return { text: "卦象提示先看现金流、合同和退出条件。" }; },
   };
   await withServer(createApp({ client }), async (base) => {
     const response = await fetch(`${base}/api/chat`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ message: "未来三天我是否应该买这只股票？", purpose: "divination", stage: "question" }),
+      body: JSON.stringify({ message: "这门生意和投资是否值得继续？", purpose: "divination", stage: "question" }),
     });
     const body = await response.json();
-    assert.equal(called, false);
-    assert.equal(body.blocked, true);
-    assert.equal(body.safety, "divination-boundary");
-    assert.match(body.text, /直接问我/u);
-    assert.match(body.text, /若想继续起卦/u);
+    assert.equal(called, true);
+    assert.equal(body.blocked, undefined);
+    assert.equal(body.purpose, "divination");
+    assert.match(body.text, /现金流/u);
+    assert.match(body.text, /仅供传统文化体验与自我反思参考/u);
   });
 });
 
@@ -206,6 +212,28 @@ test("streaming chat carries trusted Shanghai time and recent conversation conte
     }, { onDelta: (text) => deltas.push(text) });
     assert.deepEqual(deltas, ["你叫", "小明。今天是2026年9月20日。"]);
     assert.equal(result.text, "你叫小明。今天是2026年9月20日。");
+  });
+});
+
+test("streaming divination appends the same reference note as JSON chat", async () => {
+  const client = {
+    models: { chat: "test-chat" },
+    async *chatStream() {
+      yield { text: "先看市场与", model: "test-chat" };
+      yield { text: "现金流。", model: "test-chat" };
+    },
+  };
+  await withServer(createApp({ client }), async (base) => {
+    const deltas = [];
+    const api = new OracleApiClient({ baseUrl: base });
+    const result = await api.chatStream({
+      message: "这门生意如何？",
+      purpose: "divination",
+      stage: "question",
+    }, { onDelta: (text) => deltas.push(text) });
+    assert.equal(deltas.slice(0, 2).join(""), "先看市场与现金流。");
+    assert.match(deltas.at(-1), /仅供传统文化体验与自我反思参考/u);
+    assert.match(result.text, /仅供传统文化体验与自我反思参考/u);
   });
 });
 

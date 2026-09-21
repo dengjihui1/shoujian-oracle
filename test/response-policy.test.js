@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { assessQuestion } from "../src/question-boundary.js";
-import { crisisSupportReply, divinationBoundaryReply, inferConversationPurpose, resolveResponsePolicy } from "../src/response-policy.js";
+import { crisisSupportReply, divinationBoundaryReply, inferConversationPurpose, resolveResponsePolicy, withDivinationDisclaimer } from "../src/response-policy.js";
 
 test("ordinary chat stays open even when it mentions a professional domain", () => {
   const policy = resolveResponsePolicy({ message: "基金是什么？", purpose: "chat", stage: "question" });
@@ -20,13 +20,13 @@ test("immediate-harm chat receives practical crisis support without divination w
   assert.match(policy.response.text, /具体计划、工具或正在实施/u);
 });
 
-test("investment divination stops the decision but offers two safe continuations", () => {
+test("investment divination remains available with an explicit reference note", () => {
   const assessment = assessQuestion("未来三天我是否应该买这只股票？");
   const text = divinationBoundaryReply(assessment);
-  assert.match(text, /不能由卦象替你作现实决定/u);
-  assert.match(text, /直接问我/u);
-  assert.match(text, /若想继续起卦/u);
-  assert.match(text, /风险信息/u);
+  assert.equal(assessment.level, "advisory");
+  assert.match(text, /此问可以起卦/u);
+  assert.match(text, /仅供传统文化体验与自我反思参考/u);
+  assert.match(text, /不承诺涨跌或收益/u);
 });
 
 test("immediate-harm divination prioritizes real-world safety", () => {
@@ -51,4 +51,19 @@ test("an explicitly ordinary question remains chat even when a reading exists", 
   const policy = resolveResponsePolicy({ message: "基金是什么？", purpose: "chat", stage: "reading" });
   assert.equal(policy.action, "allow");
   assert.equal(policy.purpose, "chat");
+});
+
+test("advisory divination is allowed while immediate harm still receives direct support", () => {
+  const business = resolveResponsePolicy({ message: "这门生意是否值得继续？", purpose: "divination", stage: "question" });
+  assert.equal(business.action, "allow");
+  assert.equal(business.purpose, "divination");
+  const danger = resolveResponsePolicy({ message: "我想伤害自己", purpose: "divination", stage: "question" });
+  assert.equal(danger.action, "respond");
+});
+
+test("divination answers receive one deterministic disclaimer without affecting chat", () => {
+  const answer = withDivinationDisclaimer("先看眼前条件。", "divination");
+  assert.match(answer, /卦象仅供传统文化体验与自我反思参考/u);
+  assert.equal(withDivinationDisclaimer(answer, "divination"), answer);
+  assert.equal(withDivinationDisclaimer("普通聊天。", "chat"), "普通聊天。");
 });

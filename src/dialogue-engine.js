@@ -18,7 +18,7 @@ export function boundaryReply(assessment) {
 
 export function readingReply(reading) {
   const change = reading.changed ? `，${reading.movingLines.join("、")}爻动，之卦为${reading.changed.fullName}` : "，此卦无动爻";
-  return `本卦第${reading.primary.number}卦：${reading.primary.fullName}${change}。先取下卦之意：${reading.primary.lower.cue}。这只是整理问题的角度，不是现实结果的保证。`;
+  return `本卦第${reading.primary.number}卦：${reading.primary.fullName}${change}。先取下卦之意：${reading.primary.lower.cue}。卦象仅供传统文化体验与自我反思参考，不替你决定现实行动。`;
 }
 
 export function followUpReply(text, reading) {

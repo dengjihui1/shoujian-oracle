@@ -9,10 +9,12 @@ test("question stage supports ordinary conversation without inventing a reading"
   assert.match(prompt, /不需要装饰性引用/u);
 });
 
-test("prompt keeps professional-domain conversation open while refusing decisions", () => {
+test("prompt interprets professional-domain casts without issuing professional directives", () => {
   const prompt = buildSystemInstruction({ stage: "question", reading: null, evidence: [] });
   assert.match(prompt, /不要因为出现专业领域关键词就拒绝整段对话/u);
-  assert.match(prompt, /安全路径/u);
+  assert.match(prompt, /无论问生意、投资、健康、法律、感情、学业或长期命运/u);
+  assert.match(prompt, /不能下达停药、买卖、诉讼等专业指令/u);
+  assert.match(prompt, /卦象仅供参考/u);
 });
 
 test("server time is formatted in Asia/Shanghai and injected as the trusted date", () => {

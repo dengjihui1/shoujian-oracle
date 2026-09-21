@@ -151,11 +151,9 @@ export class ShoujianOracle extends HTMLElement {
       } else {
         const assessment = assessQuestion(text);
         this.messages.push({ role: "master", text: boundaryReply(assessment) });
-        if (assessment.level === "clear") {
+        if (assessment.level !== "blocked") {
           this.question = text;
           this.stage = "ready";
-        } else if (assessment.level === "rewrite" && this.cloud) {
-          await this.askCloud("请帮我把刚才的问题收窄成一个可观察、可行动、带短期限的问题。", history);
         }
       }
     } else if (this.stage === "ready") {

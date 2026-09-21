@@ -67,7 +67,7 @@ export function renderOracleView(state) {
         </div>
       </div>
 
-      <footer>${state.cloud ? `云端对话会把你主动提交的文字、最近上下文和必要检索片段发送给 Google Gemini；${liveSupported ? "实时语音输入由浏览器语音服务处理" : "录音会发送给 Gemini 转写"}。记忆只保存在本机浏览器。` : "本地模式不上传问题，但只能回答固定意图。配置 Gemini 后可启用自由对话与语音。"} 这是传统文化体验，不替代医疗、法律、投资或现实安全判断。</footer>
+      <footer>守简问卦 · 传统文化体验 · 卦象仅供参考</footer>
     </main>`;
 }
 
@@ -107,6 +107,7 @@ function readingCard(reading, question) {
     <div class="reading-title"><span>${escapeHtml(reading.primary?.symbol)}</span><div><small>第 ${Number(reading.primary?.number) || 0} 卦</small><h2>${escapeHtml(reading.primary?.fullName)}</h2></div></div>
     <ol aria-label="六爻，自上而下显示">${lines}</ol>
     <dl><div><dt>下卦</dt><dd>${escapeHtml(reading.primary?.lower?.symbol)}${escapeHtml(reading.primary?.lower?.name)} · ${escapeHtml(reading.primary?.lower?.image)}</dd></div><div><dt>上卦</dt><dd>${escapeHtml(reading.primary?.upper?.symbol)}${escapeHtml(reading.primary?.upper?.name)} · ${escapeHtml(reading.primary?.upper?.image)}</dd></div><div><dt>之卦</dt><dd>${escapeHtml(reading.changed?.fullName ?? "无")}</dd></div></dl>
+    <p class="reading-disclaimer">卦象仅供传统文化体验与自我反思参考，不作为现实决定的唯一依据。</p>
   </section>`;
 }
 
@@ -162,7 +163,7 @@ const styles = `<style>
   .message.error { border-color: #a85248; background: #7a2c2422; } .message.streaming p::after { content: "▍"; margin-left: 2px; color: #d2a15b; animation: cursor-blink .8s steps(1) infinite; }
   .rag-evidence { margin-top: 10px; border-top: 1px solid #66513b; padding-top: 8px; font: 12px/1.55 system-ui,sans-serif; } .rag-evidence summary { color: #d0ac76; cursor: pointer; } .rag-evidence ol { display: grid; gap: 10px; margin: 10px 0 0; padding-left: 20px; } .rag-evidence a { color: #e0be86; } .rag-evidence small { display: block; color: #918574; } .rag-evidence blockquote { margin: 5px 0 0; padding-left: 9px; color: #c8beae; border-left: 2px solid #71573a; white-space: pre-line; }
   .reading { padding: 16px; background: #09080772; border: 1px solid #604932; border-radius: 16px; } .question { margin: 0 0 12px; color: #bca889; } .reading-title { display: flex; gap: 14px; align-items: center; } .reading-title > span { font-size: 44px; color: #d2b782; } h2 { margin: 2px 0 0; font-size: 24px; }
-  .reading ol { display: grid; gap: 5px; padding: 13px; list-style: none; background: #05050566; border-radius: 12px; } .line { display: grid; grid-template-columns: 1fr auto; gap: 12px; } .line span { color: #d2b782; font: 800 21px/1 monospace; } .line small { color: #918574; font: 12px/1.4 system-ui,sans-serif; } .line.moving span,.line.moving small { color: #e5705e; }
+  .reading ol { display: grid; gap: 5px; padding: 13px; list-style: none; background: #05050566; border-radius: 12px; } .line { display: grid; grid-template-columns: 1fr auto; gap: 12px; } .line span { color: #d2b782; font: 800 21px/1 monospace; } .line small { color: #918574; font: 12px/1.4 system-ui,sans-serif; } .line.moving span,.line.moving small { color: #e5705e; } .reading-disclaimer { margin: 12px 0 0; color: #a99b87; font: 11px/1.6 system-ui,sans-serif; }
   dl { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin: 0; } dl div { padding: 9px; text-align: center; background: #ffffff08; border-radius: 9px; } dt { color: #9d8f7b; font: 12px system-ui,sans-serif; } dd { margin: 4px 0 0; }
   .controls { display: grid; gap: 12px; padding: 16px; background: #0a0908a8; border: 1px solid #4d4031; border-radius: 18px; } label { display: block; margin-bottom: 7px; color: #d9bd91; font-weight: 700; } .input-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
   textarea { min-height: 78px; resize: vertical; padding: 11px 13px; color: #f3ead8; background: #050505c9; border: 1px solid #6c5942; border-radius: 12px; } button { min-height: 44px; padding: 9px 16px; color: #f8ead0; background: #593a29; border: 1px solid #826244; border-radius: 999px; cursor: pointer; } button:hover:not(:disabled) { border-color:#c0925e; translate:0 -1px; } button:disabled { opacity: .48; cursor: not-allowed; } .primary { width: 100%; background: #8e332a; border-color: #bb6b5d; font-weight: 700; } .text-button { justify-self: center; background: transparent; border: 0; color: #c5aa7e; text-decoration: underline; }

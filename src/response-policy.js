@@ -1,33 +1,7 @@
 import { assessQuestion } from "./question-boundary.js";
 
-const DIVINATION_ALTERNATIVES = Object.freeze({
-  financial: {
-    direct: "你仍可直接问我：该从哪些维度核对这项资金决策的风险？",
-    reframe: "若想继续起卦，可改问：未来三天，我该先核对这项决策中的哪类风险信息？",
-  },
-  medical: {
-    direct: "你仍可直接问我：就诊前该整理哪些症状、用药和检查信息？",
-    reframe: "若想继续起卦，可改问：这三天，我该先整理哪项信息去和医生沟通？",
-  },
-  legal: {
-    direct: "你仍可直接问我：咨询专业人士前，该整理哪些文件、时间线和问题？",
-    reframe: "若想继续起卦，可改问：这三天，我该先补齐哪项可核实的材料？",
-  },
-  privacy: {
-    direct: "你可以直接和我梳理已经发生、能够核实的事实。",
-    reframe: "若想继续起卦，可改问：未来七天，我该观察什么事实来判断这段关系是否值得继续投入？",
-  },
-  unbounded: {
-    direct: "你也可以先告诉我眼下最困扰你的那一件事，我会陪你拆小。",
-    reframe: "可改成：未来七天，我该先验证哪一件具体的事？",
-  },
-  compound: {
-    direct: "你也可以把几个选项直接列出来，我先帮你拆分比较维度。",
-    reframe: "若想继续起卦，请只保留一个动作、一个短期限和一个可观察问题。",
-  },
-});
-
 const READING_FOLLOW_UP = /本卦|此卦|这卦|卦象|卦辞|爻辞|动爻|变爻|之卦|变卦|上卦|下卦|彖传|象传|说卦|起卦|排卦|解卦|占断|原问|刚才的(?:卦|结果)|这个(?:卦|结果)|它.{0,8}(?:怎么理解|什么意思|和.{0,6}关系)/u;
+export const DIVINATION_DISCLAIMER = "卦象仅供传统文化体验与自我反思参考，不作为投资、医疗、法律或其他现实决定的唯一依据。";
 
 export function crisisSupportReply() {
   return [
@@ -37,21 +11,10 @@ export function crisisSupportReply() {
 }
 
 export function divinationBoundaryReply(assessment) {
-  if (assessment.level === "clear") return "此问可收。问题文字不会改变卦象；确认后再掷三钱六次。";
-
   const immediateDanger = assessment.issues.some(({ code }) => code === "immediate-harm");
   if (immediateDanger) return `人身安全不能交给卦象决定。\n\n${crisisSupportReply()}`;
-
-  const prefix = assessment.level === "blocked"
-    ? "这一问不能由卦象替你作现实决定。"
-    : "这一问可以继续，但要先收窄。";
-  const reasons = assessment.issues.map(({ reply }) => reply).join(" ");
-  const alternatives = unique(assessment.issues.flatMap(({ code }) => {
-    const option = DIVINATION_ALTERNATIVES[code];
-    return option ? [option.direct, option.reframe] : [];
-  })).join(" ");
-
-  return [prefix, reasons, alternatives].filter(Boolean).join(" ");
+  const notes = assessment.issues.map(({ reply }) => reply).join(" ");
+  return ["此问可以起卦。问题文字不会改变卦象；确认后再掷三钱六次。", assessment.level === "advisory" ? DIVINATION_DISCLAIMER : "", notes].filter(Boolean).join(" ");
 }
 
 export function resolveResponsePolicy({ message, purpose = "chat", stage = "question", assessment = assessQuestion(message) }) {
@@ -67,7 +30,7 @@ export function resolveResponsePolicy({ message, purpose = "chat", stage = "ques
     });
   }
 
-  if (divinationMode && assessment.level !== "clear") {
+  if (divinationMode && assessment.level === "blocked") {
     return Object.freeze({
       action: "respond",
       kind: "divination-boundary",
@@ -84,12 +47,14 @@ export function resolveResponsePolicy({ message, purpose = "chat", stage = "ques
   });
 }
 
+export function withDivinationDisclaimer(text, purpose) {
+  const clean = String(text ?? "").trim();
+  if (purpose !== "divination" || !clean || /仅供.{0,20}参考/u.test(clean)) return clean;
+  return `${clean}\n\n${DIVINATION_DISCLAIMER}`;
+}
+
 export function inferConversationPurpose(message, stage = "question") {
   if (stage === "ready") return "divination";
   if (stage !== "reading") return "chat";
   return READING_FOLLOW_UP.test(String(message).normalize("NFKC")) ? "divination" : "chat";
-}
-
-function unique(values) {
-  return [...new Set(values)];
 }

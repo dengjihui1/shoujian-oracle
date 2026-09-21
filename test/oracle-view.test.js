@@ -93,3 +93,16 @@ test("ready stage prevents voice input that cannot be submitted", () => {
   const html = render({ stage: "ready" });
   assert.match(html, /data-action="record" disabled/u);
 });
+
+test("visible footer stays concise while the reading card carries the reference note", () => {
+  const reading = {
+    lines: [7, 8, 7, 8, 7, 8],
+    primary: { number: 1, symbol: "䷀", fullName: "乾为天", lower: { symbol: "☰", name: "乾", image: "天" }, upper: { symbol: "☰", name: "乾", image: "天" } },
+    changed: null,
+  };
+  const html = render({ stage: "reading", question: "这门生意如何？", reading });
+  assert.match(html, /守简问卦 · 传统文化体验 · 卦象仅供参考/u);
+  assert.match(html, /class="reading-disclaimer"/u);
+  assert.doesNotMatch(html, /文字、最近上下文/u);
+  assert.doesNotMatch(html, /发送给 Google Gemini/u);
+});

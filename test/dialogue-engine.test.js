@@ -13,8 +13,8 @@ test("reading reply uses computed result rather than question text", () => {
   assert.match(readingReply(reading), /第42卦/); assert.match(followUpReply("怎么算的", reading).text, /六爻自下而上/);
 });
 test("restart intent is an explicit state transition", () => assert.equal(followUpReply("我想再问一件事", reading).action, "restart"));
-test("local divination boundary includes a useful next path", () => {
+test("local divination accepts investment questions with a reference note", () => {
   const reply = boundaryReply(assessQuestion("未来三天我是否应该买这只股票？"));
-  assert.match(reply, /不能由卦象替你作现实决定/u);
-  assert.match(reply, /直接问我/u);
+  assert.match(reply, /此问可以起卦/u);
+  assert.match(reply, /仅供传统文化体验与自我反思参考/u);
 });

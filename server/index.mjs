@@ -7,7 +7,7 @@ import { GeminiClient, GeminiError, DEFAULT_MODELS } from "./gemini-client.mjs";
 import { buildChatInput, buildSystemInstruction, formatShanghaiDateTime } from "./prompt.mjs";
 import { loadKnowledgeBase } from "./knowledge-retriever.mjs";
 import { assessQuestion } from "../src/question-boundary.js";
-import { inferConversationPurpose, resolveResponsePolicy } from "../src/response-policy.js";
+import { inferConversationPurpose, resolveResponsePolicy, withDivinationDisclaimer } from "../src/response-policy.js";
 import { SlidingWindowRateLimiter } from "./rate-limiter.mjs";
 
 const projectRoot = fileURLToPath(new URL("../", import.meta.url));
@@ -70,8 +70,9 @@ async function handleChat(response, client, knowledgeBase, body, now) {
   if (prepared.response) return json(response, 200, prepared.response);
   const result = await client.chat({ input: prepared.input, systemInstruction: prepared.systemInstruction });
   validateCitations(result.text, prepared.evidence);
+  const text = withDivinationDisclaimer(result.text, prepared.purpose);
   return json(response, 200, {
-    text: result.text,
+    text,
     evidence: prepared.evidence,
     grounded: prepared.evidence.length > 0,
     purpose: prepared.purpose,
@@ -116,7 +117,10 @@ async function handleChatStream(response, client, knowledgeBase, body, now) {
       sse(response, "delta", { text: chunk.text });
     }
     validateCitations(fullText, prepared.evidence);
-    sse(response, "done", { text: fullText });
+    const finalText = withDivinationDisclaimer(fullText, prepared.purpose);
+    const suffix = finalText.slice(fullText.length);
+    if (suffix) sse(response, "delta", { text: suffix });
+    sse(response, "done", { text: finalText });
   } catch (error) {
     const exposed = publicStreamError(error);
     sse(response, "error", exposed);
