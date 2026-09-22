@@ -7,6 +7,7 @@
   "scripts": {
     "start": "node --env-file-if-exists=.env --use-env-proxy server/index.mjs",
     "test": "node --test",
+    "eval:rag": "node scripts/evaluate-rag.mjs",
     "check": "node scripts/check-project.mjs"
   },
   "engines": {

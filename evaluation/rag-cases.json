@@ -1,0 +1,34 @@
+{
+  "schema": "shoujian.rag-eval.v1",
+  "quality": {
+    "minimumRecallAt4": 1,
+    "minimumNegativePrecision": 1
+  },
+  "latencyBudgetMs": {
+    "mean": 25,
+    "p95": 60
+  },
+  "cases": [
+    { "id": "qian-line-1", "query": "潜龙勿用是什么意思？", "expectedAny": ["ZY-01-LINE-1"], "maxRank": 1 },
+    { "id": "qian-line-5", "query": "乾卦九五飞龙在天怎么理解？", "expectedAny": ["ZY-01-LINE-5"], "maxRank": 1 },
+    { "id": "kun-line-1", "query": "坤卦履霜坚冰至说的是什么？", "expectedAny": ["ZY-02-LINE-1"], "maxRank": 1 },
+    { "id": "tongren-overview", "query": "同人于野，亨出自哪一卦？", "expectedAny": ["ZY-13-OVERVIEW"], "maxRank": 1 },
+    { "id": "qian-overview", "query": "谦卦君子有终的卦辞和大象是什么？", "expectedAny": ["ZY-15-OVERVIEW"], "maxRank": 1 },
+    { "id": "daguo-overview", "query": "泽风大过的卦辞是什么？", "expectedAny": ["ZY-28-OVERVIEW"], "maxRank": 1 },
+    { "id": "li-line-5", "query": "离卦六五爻辞是什么？", "expectedAny": ["ZY-30-LINE-5"], "maxRank": 1 },
+    { "id": "shuogua-qian", "query": "《说卦》里乾为什么代表马和首？", "expectedAny": ["SG-QIAN"], "maxRank": 1 },
+    { "id": "shuogua-kun", "query": "《说卦》取象中坤为什么是地和母？", "expectedAny": ["SG-KUN"], "maxRank": 1 },
+    { "id": "shuogua-xun", "query": "八卦取象里巽为什么代表风和木？", "expectedAny": ["SG-XUN"], "maxRank": 1 },
+    {
+      "id": "reading-forces-evidence",
+      "query": "这个卦和我的原问有什么关系？",
+      "reading": { "primary": { "number": 4 }, "movingLines": [3, 5], "changed": { "fullName": "天风姤" } },
+      "expectedAll": ["ZY-04-OVERVIEW", "ZY-04-LINE-3", "ZY-04-LINE-5", "ZY-44-OVERVIEW"],
+      "maxRank": 5
+    },
+    { "id": "negative-chip", "query": "量子芯片制程怎么设计？", "expectedEmpty": true },
+    { "id": "negative-weather", "query": "今天北京天气如何？", "expectedEmpty": true },
+    { "id": "negative-cooking", "query": "番茄炒蛋应该先放盐还是后放盐？", "expectedEmpty": true },
+    { "id": "negative-code", "query": "JavaScript 如何实现二分查找？", "expectedEmpty": true }
+  ]
+}

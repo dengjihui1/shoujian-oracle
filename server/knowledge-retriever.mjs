@@ -37,6 +37,7 @@ export class OracleKnowledgeBase {
     const boundedLimit = Math.max(1, Math.min(Number.isInteger(limit) ? limit : 8, 10));
     const normalizedQuery = normalize(query);
     const grams = queryGrams(normalizedQuery);
+    const trigramIntent = /(?:说卦|取象|八卦|象征|为何.*为|为什么.*为)/u.test(normalizedQuery);
     const readingSignals = readReadingSignals(reading, this.hexagrams);
     const scored = [];
 
@@ -56,6 +57,10 @@ export class OracleKnowledgeBase {
         score += 900; reasons.push("上下卦");
       }
       if (normalizedQuery) {
+        if (fragment.kind === "trigram" && trigramIntent
+          && fragment.aliases.some((alias) => alias.length >= 2 && normalizedQuery.includes(alias))) {
+          score += 1_200; reasons.push("说卦取象");
+        }
         for (const alias of fragment.aliases) {
           if (alias.length >= 2 && normalizedQuery.includes(alias)) { score += alias.length * 90; reasons.push("明示名词"); }
         }
@@ -138,7 +143,15 @@ function buildFragments(data, sources) {
       excerpt: boundedText(trigram.chapters.filter(Boolean).join("\n")),
       source,
       trigramId: trigram.id,
-      aliases: [normalize(`${trigram.name}卦`), normalize(trigram.id), ...trigram.terms.map(({ term }) => normalize(term))],
+      aliases: [
+        normalize(`${trigram.name}卦`),
+        normalize(trigram.id),
+        ...trigram.terms.flatMap(({ term }) => [
+          normalize(term),
+          normalize(`${trigram.name}为${term}`),
+          normalize(`${trigram.name}${term}`),
+        ]),
+      ],
       order: order++,
     }));
   }

@@ -50,3 +50,14 @@ test("ordinary numbers do not accidentally match a numbered hexagram", () => {
   const evidence = knowledge.retrieve({ query: "请用大约300字介绍你自己，以及你能做什么。" });
   assert.deepEqual(evidence, []);
 });
+
+test("explicit Shuogua questions prioritize the matching trigram evidence", () => {
+  const cases = [
+    ["《说卦》里乾为什么代表马和首？", "SG-QIAN"],
+    ["《说卦》取象中坤为什么是地和母？", "SG-KUN"],
+    ["八卦取象里巽为什么代表风和木？", "SG-XUN"],
+  ];
+  for (const [query, expected] of cases) {
+    assert.equal(knowledge.retrieve({ query })[0]?.id, expected);
+  }
+});
