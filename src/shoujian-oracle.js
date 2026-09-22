@@ -15,6 +15,7 @@ import { deriveAvatarPresentation } from "./avatar-state.js";
 import { ConversationViewport } from "./conversation-scroll.js";
 import { isComposerSendShortcut, preferredComposerSubmitter } from "./composer-keys.js";
 import { answerIntakeQuestion, confirmIntakeSummary, createDivinationIntake, currentIntakeQuestion, prepareIntakeReview, skipIntakeQuestion } from "./divination-intake.js";
+import { VoiceConversationController } from "./voice-conversation.js";
 
 export class ShoujianOracle extends HTMLElement {
   constructor() {
@@ -43,6 +44,20 @@ export class ShoujianOracle extends HTMLElement {
     this.conversationViewport = new ConversationViewport();
     this.conversationRevision = 0;
     this.renderedConversationRevision = -1;
+    this.voiceConversationSnapshot = {
+      active: false,
+      state: "off",
+      autoSubmit: false,
+      transcript: "",
+      error: "",
+      metrics: {},
+    };
+    this.voiceConversation = new VoiceConversationController({
+      recognizer: this.liveTranscriber,
+      submit: (text) => this.sendVoiceConversationText(text),
+      interruptOutput: () => this.cancelResponse(),
+      onUpdate: (snapshot) => this.handleVoiceConversationUpdate(snapshot),
+    });
     this.initializeSession();
     this.restoreMemory();
     this.render();
@@ -68,6 +83,7 @@ export class ShoujianOracle extends HTMLElement {
     this.recording = false;
     this.transcribing = false;
     this.liveTranscriber.abort();
+    this.voiceConversation.stop();
     this.cancelResponse();
     this.transcriptionController?.abort();
     this.cancelSpeech();
@@ -85,6 +101,7 @@ export class ShoujianOracle extends HTMLElement {
   }
 
   resetSession() {
+    this.stopVoiceConversation();
     this.cancelSpeech();
     this.retryRequest = null;
     this.stage = "question";
@@ -100,6 +117,7 @@ export class ShoujianOracle extends HTMLElement {
   }
 
   clearMemory() {
+    this.stopVoiceConversation();
     this.cancelSpeech();
     this.retryRequest = null;
     this.memory.clear();
@@ -138,6 +156,7 @@ export class ShoujianOracle extends HTMLElement {
     const text = String(field?.value ?? this.draft).trim();
     const mode = event.submitter?.dataset.submitMode ?? "divination";
     if (text) {
+      if (this.voiceConversationSnapshot.active) this.stopVoiceConversation();
       this.draft = "";
       await this.sendText(text, mode);
     }
@@ -186,6 +205,12 @@ export class ShoujianOracle extends HTMLElement {
       this.transcriptionController?.abort();
       this.liveTranscriber.abort();
     }
+    if (action === "voice-conversation") {
+      if (this.voiceConversationSnapshot.active) this.stopVoiceConversation();
+      else this.startVoiceConversation();
+    }
+    if (action === "voice-conversation-retry") this.voiceConversation.interruptAndListen();
+    if (action === "voice-interrupt") this.voiceConversation.interruptAndListen();
     if (action === "voice") {
       this.voiceReplies = !this.voiceReplies;
       if (this.voiceReplies) primeAudioPlayback();
@@ -363,6 +388,7 @@ export class ShoujianOracle extends HTMLElement {
         },
         onDelta: (delta) => {
           if (!controller.signal.aborted) {
+            if (!receivedText) this.voiceConversation.markFirstToken();
             receivedText = true;
             revealer.enqueue(delta);
             for (const sentence of speechSegmenter?.push(delta) ?? []) speechQueue.enqueue(sentence);
@@ -430,6 +456,7 @@ export class ShoujianOracle extends HTMLElement {
 
   async startRecording() {
     if (!this.cloud || this.stage === "ready" || this.recording || this.busy || this.transcribing) return;
+    if (this.voiceConversationSnapshot.active) this.stopVoiceConversation();
     try {
       if (this.liveTranscriber.supported) {
         this.recordingMode = "live";
@@ -533,6 +560,7 @@ export class ShoujianOracle extends HTMLElement {
         if (this.speechQueue !== queue) return;
         this.voiceState = state;
         if (state === "idle") this.speechQueue = null;
+        this.voiceConversation.markSpeechState(state);
         this.updateVoiceStatus();
       },
       onLevel: (level) => this.updateVoiceLevel(level),
@@ -558,6 +586,7 @@ export class ShoujianOracle extends HTMLElement {
     this.speechQueue = null;
     queue?.cancel();
     this.voiceState = "idle";
+    this.voiceConversation?.markSpeechState("idle");
     this.voiceError = "";
     this.updateVoiceLevel(0);
     this.updateVoiceStatus();
@@ -588,6 +617,39 @@ export class ShoujianOracle extends HTMLElement {
       notice.hidden = !this.voiceError;
       notice.textContent = this.voiceError ? `语音暂不可用：${this.voiceError}。文字回答仍可继续。` : "";
     }
+  }
+
+  startVoiceConversation() {
+    if (!this.cloud || !this.liveTranscriber.supported || this.busy || this.stage === "ready" || this.intake?.status === "review") return;
+    this.voiceReplies = true;
+    this.voiceError = "";
+    primeAudioPlayback();
+    try {
+      this.voiceConversation.start({ autoSubmit: true });
+    } catch (error) {
+      this.voiceError = String(error?.message ?? "连续语音对话暂不可用");
+      this.render();
+    }
+  }
+
+  stopVoiceConversation() {
+    if (!this.voiceConversationSnapshot.active) return;
+    this.voiceConversation.stop();
+    this.voiceReplies = false;
+    this.cancelSpeech();
+    this.render();
+  }
+
+  async sendVoiceConversationText(text) {
+    this.draft = "";
+    const mode = this.stage === "question" ? "chat" : "divination";
+    await this.sendText(text, mode);
+  }
+
+  handleVoiceConversationUpdate(snapshot) {
+    this.voiceConversationSnapshot = snapshot;
+    if (snapshot.state === "listening") this.draft = snapshot.transcript;
+    this.render();
   }
 
   voiceButtonLabel() {
@@ -657,6 +719,11 @@ export class ShoujianOracle extends HTMLElement {
       showJumpToLatest: this.conversationViewport.unread,
       voiceButtonLabel: this.voiceButtonLabel(),
       voiceModeButtonLabel: this.voiceModeButtonLabel(),
+      voiceConversationActive: this.voiceConversationSnapshot.active,
+      voiceConversationState: this.voiceConversationSnapshot.state,
+      voiceConversationTranscript: this.voiceConversationSnapshot.transcript,
+      voiceConversationError: this.voiceConversationSnapshot.error,
+      voiceConversationMetrics: this.voiceConversationSnapshot.metrics,
     });
     this.renderedConversationRevision = this.conversationRevision;
     this.conversationViewport.restore(this.shadowRoot.querySelector(".dialogue"), viewportSnapshot, { contentChanged });

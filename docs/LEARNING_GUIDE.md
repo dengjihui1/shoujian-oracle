@@ -74,6 +74,8 @@
 - `server/speech-cache.mjs` 怎样合并相同在途句子，并用哈希键和 LRU / TTL 控制缓存边界。
 - `server/google-cloud-tts-client.mjs` 怎样隔离 Cloud 凭证、固定普通话音色参数，并把 Google 的 LINEAR16 WAV 容器还原成现有播放器需要的裸 PCM；对应测试不需要真实 Cloud 账号。
 
+接着单独看 `voice-conversation.js`：它不处理 HTML，也不调用 Gemini，而是把识别器、提交回调和打断回调编排成 `off → listening → heard → thinking → speaking`。自动提交只在用户明确开始语音对话后开启；final 使用短停顿、interim 使用较长停顿，提交前停止识别，TTS 回到 idle 且文字轮次完成后才恢复倾听。`epoch` 用来忽略被打断旧轮次的迟到结果，三项指标只记录当前轮次。
+
 ### 6. 最后看 UI 状态机与视图拆分
 
 打开 `src/shoujian-oracle.js`：
@@ -93,6 +95,7 @@
 - `composer-keys.js` 隔离 Enter、Shift+Enter 与中文输入法组字契约，Enter 默认走普通聊天而不是误起卦；
 - `speech-segmenter.js` 与 `speech-queue.js` 让首句不必等待整篇回答，并限制最多两句并发预取；
 - 录音、转写、文字回答和后台 TTS 使用分离的取消边界，录音期间禁止并发提交文字。
+- `voice-conversation.js` 把连续轮流说话从 Web Component 中拆出；Web Component 只把 ASR、`sendText()`、SSE 首字和 TTS 状态接到它的端口。
 
 再看 `server/knowledge-routing.mjs`：普通问答会丢弃弱相关误召回；经传问题保留冻结证据，漏引或错引只允许一次受约束修复，第二次仍失败则返回自然说明。这样“自由问答”和“古籍可追溯”不再用同一条僵硬规则互相伤害。
 
@@ -104,6 +107,7 @@
 4. 给最终失败的回答增加由用户点击触发的重试按钮；自动恢复只处理已经开始但中途断开的同一轮回答；
 5. 写浏览器测试，确认原问通过后不能在起卦前被悄悄替换。
 6. 给 `divination-intake.js` 增加一个新的可解释问题类型，同时写“原问已有该信息时不得重复问”的反例。
+7. 用假识别器给 `voice-conversation.js` 增加“识别器自然结束、无清晰文字、旧轮次迟到”测试，再在真实设备记录 P50 / P95。
 
 不要把住宅知识、主项目案卷或支付能力作为练习复制进来；它们属于另一个产品边界。新增经传数据必须登记来源、修订、许可和结构改动。
 

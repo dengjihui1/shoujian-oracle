@@ -4,7 +4,7 @@
 
 独立的轻量虚拟卦师与经传 RAG 组件。它保留虚拟人主持、问题边界、三钱六爻和 64 卦确定性映射，并加入可追溯的《周易》《彖》《象》《说卦》冻结知识检索；明确不包含住宅分析、纳甲时证、档案、支付与追验等主项目核心。
 
-![版本](https://img.shields.io/badge/version-0.15.0-8e332a)
+![版本](https://img.shields.io/badge/version-0.16.0-8e332a)
 ![许可](https://img.shields.io/badge/license-MIT-d3b27f)
 
 ## 现在能完成什么
@@ -28,6 +28,8 @@
 17. 固定 RAG 评测集同时守住命中、负例和检索延迟，明确爻位与《说卦》问题不再携带大批无关片段。
 18. 对话在底部时自动跟随流式内容，用户上翻时保持原位并显示“回到最新”；`Enter` 发送、`Shift+Enter` 换行，中文输入法组字不会误发。
 19. 选择起卦后先进入 2–4 项情境访谈；可跳过、提前整理并编辑问卦摘要，只有确认摘要后才随机排卦，不索取生辰八字，文字不会影响六爻结果。
+20. 支持独立“实时语音对话”：用户明确开启后，interim 转写实时可见，定稿或停顿自动送问；回答首个完整短句即进入朗读，朗读时暂停收音，并可“打断并说话”。
+21. 页面记录本轮 ASR 定稿、首字和首声延迟；识别、模型或 TTS 失败后仍保留文字输入。该模式是可靠轮流对话与显式打断，不宣称真正全双工。
 
 问题文字不会改变卦象。项目没有账号、遥测或支付；本地模式不上传内容，云端模式会把用户主动提交的文字、录音、最近上下文和必要卦象证据发送给已配置的供应商。对话记忆只存当前浏览器的 `localStorage`，服务端不建立用户档案。
 
@@ -40,7 +42,7 @@
 | `oracleQuestionBoundary` | 7 类公开字规 | 问契签名、验期、准绳与追验 |
 | `iching` | 6/7/8/9、八卦、文王序 64 卦映射 | 古籍全文、爻辞、纳甲、六亲、旬空、六神 |
 
-经传数据另从中文维基文库公开来源建立独立知识包，不复制主项目住宅知识。语音 API 的真实边界、Google Cloud 配置和 RAG 构建全过程见 [语音 API 与 RAG 架构说明](docs/VOICE_RAG_ARCHITECTURE.md)；从上游 Cactus 提取了什么、拒绝照搬什么见 [Cactus 模块拆解](docs/CACTUS_MODULE_EXTRACTION.md)；完整映射见 [组件抽取与流程图](docs/COMPONENT_MAP.md)，逐模块说明见 [守简模块池](docs/MODULE_POOL.md)，发布验收见 [0.15.0 质量基线](docs/QUALITY_BASELINE.md)。
+经传数据另从中文维基文库公开来源建立独立知识包，不复制主项目住宅知识。语音 API 的真实边界、Google Cloud 配置和 RAG 构建全过程见 [语音 API 与 RAG 架构说明](docs/VOICE_RAG_ARCHITECTURE.md)；从上游 Cactus 提取了什么、拒绝照搬什么见 [Cactus 模块拆解](docs/CACTUS_MODULE_EXTRACTION.md)；完整映射见 [组件抽取与流程图](docs/COMPONENT_MAP.md)，逐模块说明见 [守简模块池](docs/MODULE_POOL.md)，发布验收见 [0.16.0 质量基线](docs/QUALITY_BASELINE.md)。
 
 用户实测确认的交互、RAG 降级、问卦访谈和直接语音对话改进，统一记录在 [下一阶段任务池](docs/USER_FEEDBACK_BACKLOG.md)；任务状态以该文件和实际测试为准。
 
@@ -67,6 +69,7 @@ npm start
 
 ```text
 麦克风 → 浏览器实时转写（支持时）→ 可编辑文字
+实时语音对话 → 定稿 / 停顿自动提交 → 回答期间暂停识别 → 首句朗读结束后恢复倾听
 麦克风 → Gemini 3.5 Transcribe 单请求内联音频（兼容兜底）→ 可编辑文字
 普通文字 → Gemini 3.1 Flash Lite SSE（普通 / RAG 场景路由；半途断流恢复）→ 字符级呈现
 经传问题或本地卦象 → 冻结知识检索 → 引用白名单校验 → 带来源回答
@@ -91,6 +94,7 @@ Gemini 失败 → 可选 OpenAI-compatible 供应商池 → 短时熔断与自�
 - `src/conversation-memory.js`：完成轮次过滤、最近上下文与可恢复会话快照；
 - `src/streaming-text.js`：可取消、积压自适应的字符级显示队列；
 - `src/conversation-scroll.js` / `composer-keys.js`：智能跟随、未读提示和输入法安全的键盘发送契约；
+- `src/voice-conversation.js`：显式开启、自动送问、回声隔离、打断恢复与 ASR / 首字 / 首声指标状态机；
 - `src/avatar-state.js`：虚拟人的九种可测试状态与优先级；
 - `src/speech-segmenter.js`：面向中文流式文本的分句、长句切分与引用标记清理；
 - `src/speech-queue.js`：最多两句预取、严格顺序播放和可立即淘汰的 TTS 队列；

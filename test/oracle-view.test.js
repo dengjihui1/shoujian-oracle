@@ -18,6 +18,11 @@ function render(overrides = {}) {
     voiceButtonLabel: "语音回答：关",
     voiceModeButtonLabel: "切换到云端音色",
     fastVoiceSupported: true,
+    voiceConversationActive: false,
+    voiceConversationState: "off",
+    voiceConversationTranscript: "",
+    voiceConversationError: "",
+    voiceConversationMetrics: {},
     ...overrides,
   });
 }
@@ -173,4 +178,40 @@ test("intake review is editable and must be confirmed before casting", () => {
   });
   assert.match(ready, /问卦摘要已冻结/u);
   assert.match(ready, /data-action="cast"/u);
+});
+
+test("supported browsers expose explicit automatic voice conversation", () => {
+  const html = render();
+  assert.match(html, /实时语音对话/u);
+  assert.match(html, /开始语音对话（自动发送）/u);
+  assert.match(html, /不是后台偷录，也不宣称全双工/u);
+});
+
+test("active voice conversation reports transcript, latency and interruption", () => {
+  const html = render({
+    voiceReplies: true,
+    voiceConversationActive: true,
+    voiceConversationState: "speaking",
+    voiceConversationTranscript: "我想换个角度问",
+    voiceConversationMetrics: { asrFinalMs: 612, firstTokenMs: 840, firstAudioMs: 1_420 },
+  });
+  assert.match(html, /结束语音对话/u);
+  assert.match(html, /打断并说话/u);
+  assert.match(html, /我想换个角度问/u);
+  assert.match(html, /ASR 定稿/u);
+  assert.match(html, /612 ms/u);
+  assert.match(html, /1\.4 s/u);
+  assert.doesNotMatch(html, /data-action="record"/u);
+  assert.doesNotMatch(html, /data-action="voice"/u);
+});
+
+test("voice conversation failure keeps text composer enabled and offers retry", () => {
+  const html = render({
+    voiceConversationActive: true,
+    voiceConversationState: "error",
+    voiceConversationError: "麦克风权限未开启",
+  });
+  assert.match(html, /麦克风权限未开启/u);
+  assert.match(html, /data-action="voice-conversation-retry"/u);
+  assert.doesNotMatch(html, /<textarea[^>]*disabled/u);
 });

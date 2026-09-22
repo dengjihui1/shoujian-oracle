@@ -12,6 +12,7 @@ index.html
       ├─ P05 流式文字显示
       ├─ P12 对话视口跟随 ├─ P13 键盘提交契约
       ├─ P14 问卦情境访谈 / 摘要确认
+      ├─ P15 语音对话状态机
       ├─ P06 浏览器 API 客户端 ─────────────┐
       ├─ P07 录音 / 浏览器实时识别          │
       └─ P08 分句 → P09 TTS 队列 → P10 PCM 播放 / P11 浏览器语音 │
@@ -45,6 +46,7 @@ Q01 行为测试 + Q02 项目体检 + Q03 RAG 评测 覆盖全部模块
 | P12 | 对话视口跟随 | `src/conversation-scroll.js` | 稳定 | `test/conversation-scroll.test.js` |
 | P13 | 输入键盘契约 | `src/composer-keys.js` | 稳定 | `test/composer-keys.test.js` |
 | P14 | 问卦情境访谈 | `src/divination-intake.js` | 稳定 | `test/divination-intake.test.js`、会话记忆与视图测试 |
+| P15 | 直接语音对话状态机 | `src/voice-conversation.js` | 代码稳定，待真实设备指标 | `test/voice-conversation.test.js`、人物与视图测试 |
 | D01 | 起卦问题边界 | `src/question-boundary.js` | 稳定 | `test/question-boundary.test.js` |
 | D02 | 场景响应策略 | `src/response-policy.js` | 稳定 | `test/response-policy.test.js` |
 | D03 | 无云端降级对话 | `src/dialogue-engine.js` | 稳定 | `test/dialogue-engine.test.js` |
@@ -75,7 +77,7 @@ Q01 行为测试 + Q02 项目体检 + Q03 RAG 评测 覆盖全部模块
 - 文件：`src/shoujian-oracle.js`
 - 单一职责：把用户事件、三阶段会话、云端流、记忆、录音和 TTS 串成一个可取消生命周期；不负责生成 HTML、计算卦象规则或直接调用 Gemini。
 - 输入 / 输出：键盘、按钮、麦克风事件与 API 分片 → 组件状态、消息、卦象和渲染调用。
-- 依赖：P02–P10、D01、D03、D04。
+- 依赖：P02–P11、P15、D01、D03、D04。
 - 正常路径：自由对话；明确选择起卦；`question → intake → ready → reading`；卦后自由追问。
 - 失败与降级：流式中途断开会尝试恢复完整回答并原位替换；恢复仍失败才结束当前回复；TTS 失败不锁文字；取消会中止当前请求并淘汰旧音频；无云端退回 D03。
 - 测试：通过各子模块单测和 `test/server-contract.test.js` 间接覆盖；目前最值得补的是浏览器级组件集成测试。
@@ -87,7 +89,7 @@ Q01 行为测试 + Q02 项目体检 + Q03 RAG 评测 覆盖全部模块
 - 单一职责：把只读状态投影为 Shadow DOM HTML 和样式。
 - 输入 / 输出：组件状态 → 已转义的页面、来源链接、卦卡、虚拟人舞台和无障碍标签。
 - 依赖：P03、A01；不发网络请求。
-- 正常路径：按阶段展示双入口、卦卡、消息、来源和九种人物状态。
+- 正常路径：按阶段展示双入口、卦卡、消息、来源、语音对话面板和人物状态。
 - 失败与降级：所有用户文本转义；来源只允许 HTTPS；未知阶段退回 `question`。
 - 测试：`test/oracle-view.test.js`。
 - 练习：把内联样式拆成 Constructable Stylesheet，并做视觉回归截图。
@@ -95,10 +97,10 @@ Q01 行为测试 + Q02 项目体检 + Q03 RAG 评测 覆盖全部模块
 ### P03 虚拟人状态选择
 
 - 文件：`src/avatar-state.js`
-- 单一职责：按优先级把交互状态映射成九种人物表现。
+- 单一职责：按优先级把普通输入、语音对话和卦象阶段映射成人物表现。
 - 输入 / 输出：录音、转写、生成、播放、错误和卦象阶段 → `key / label / detail`。
 - 依赖：无，纯函数。
-- 优先级：倾听 → 辨音 → 开口 → 润声 → 失声 → 推演 → 问已收 / 照卦 / 静候。
+- 优先级：语音对话的倾听 / 听清 / 打断 / 开口 / 推演 → 单次录音 → 辨音 → TTS → 失声 → 卦象阶段。
 - 失败与降级：语音失败显示“失声”，但更高优先级的活动状态仍可覆盖它。
 - 测试：`test/avatar-state.test.js`。
 - 练习：加入可测试的“被用户打断”过渡态，而不是只加 CSS 动画。
@@ -215,6 +217,17 @@ Q01 行为测试 + Q02 项目体检 + Q03 RAG 评测 覆盖全部模块
 - 依赖：无；纯状态转换。P04 只负责序列化并兼容旧快照，D04 只在摘要确认后的 `ready` 阶段运行。
 - 失败与降级：每项均可跳过，用户可随时提前整理；不索取生辰八字；损坏状态拒绝恢复并退回普通候问。
 - 测试：`test/divination-intake.test.js`、`test/conversation-memory.test.js`、`test/oracle-view.test.js` 与真实页面全流程。
+
+### P15 直接语音对话状态机
+
+- 文件：`src/voice-conversation.js`
+- 单一职责：把浏览器连续识别、停顿收束、自动提交、回答 / 朗读期回声隔离、显式打断和恢复倾听编排成独立状态机；不生成 HTML、不访问网络、不改变卦象。
+- 输入 / 输出：可注入识别器、提交与取消回调、SSE 首字和 TTS 状态 → `off / listening / heard / thinking / speaking / interrupted / error` 快照。
+- 正常路径：用户明确点击带“自动发送”的入口后才启动；final 采用短停顿，interim 采用较长停顿；识别停止后送问；文字轮次完成且 TTS idle 后自动恢复倾听。
+- 失败与降级：`epoch` 丢弃旧轮迟到事件；打断同时取消旧回答、合成与播放；识别失败保留文字输入并提供重新听；不宣称全双工。
+- 指标：每轮记录 ASR 定稿、提交后首字、提交后首声；仓库只提供单轮可视值，P50 / P95 需要真实设备样本。
+- 测试：`test/voice-conversation.test.js`、`test/oracle-view.test.js`、`test/avatar-state.test.js`。
+- 练习：把真实设备指标导出为本机 JSON，仍不上传服务器或保存原始音频。
 
 ## 四、领域与安全池
 
@@ -442,4 +455,4 @@ Q01 行为测试 + Q02 项目体检 + Q03 RAG 评测 覆盖全部模块
 
 “待补”不等于当前功能不可用；它表示要从本地教学组件升级为面向公众的长期服务时，还需要完成的工程层。
 
-当前自动化、真实云端链路和浏览器人工验收结果见 [0.15.0 质量基线](QUALITY_BASELINE.md)。
+当前自动化、真实云端链路和浏览器人工验收结果见 [0.16.0 质量基线](QUALITY_BASELINE.md)。

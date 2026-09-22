@@ -9,9 +9,16 @@ const PRESENTATIONS = Object.freeze({
   intake: { key: "intake", label: "理问", detail: "先把所问的时间、选项与现实约束理清" },
   casting: { key: "casting", label: "问已收", detail: "原问已定，待掷三钱" },
   reading: { key: "reading", label: "照卦", detail: "可继续追问本卦与经传依据" },
+  heard: { key: "heard", label: "听清", detail: "这句话已经定稿，正在送问" },
+  interrupted: { key: "interrupted", label: "转听", detail: "旧回答已停，正重新听你说" },
 });
 
 export function deriveAvatarPresentation(state = {}) {
+  if (state.voiceConversationState === "listening") return PRESENTATIONS.listening;
+  if (state.voiceConversationState === "heard") return PRESENTATIONS.heard;
+  if (state.voiceConversationState === "interrupted") return PRESENTATIONS.interrupted;
+  if (state.voiceConversationState === "speaking") return PRESENTATIONS.speaking;
+  if (state.voiceConversationState === "thinking") return PRESENTATIONS.thinking;
   if (state.recording) return PRESENTATIONS.listening;
   if (state.transcribing) return PRESENTATIONS.transcribing;
   if (state.voiceState === "playing") return PRESENTATIONS.speaking;

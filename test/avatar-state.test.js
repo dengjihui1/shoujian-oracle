@@ -21,3 +21,10 @@ test("avatar exposes a recoverable voice failure after active speech stops", () 
   assert.equal(deriveAvatarPresentation({ voiceError: "quota" }).key, "error");
   assert.equal(deriveAvatarPresentation({ voiceError: "quota", voiceState: "generating" }).key, "preparing");
 });
+
+test("continuous voice conversation drives the visible avatar state", () => {
+  assert.equal(deriveAvatarPresentation({ voiceConversationState: "listening", busy: true }).key, "listening");
+  assert.equal(deriveAvatarPresentation({ voiceConversationState: "heard" }).key, "heard");
+  assert.equal(deriveAvatarPresentation({ voiceConversationState: "interrupted" }).key, "interrupted");
+  assert.equal(deriveAvatarPresentation({ voiceConversationState: "speaking" }).key, "speaking");
+});

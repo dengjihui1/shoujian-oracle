@@ -58,14 +58,15 @@ export function renderOracleView(state) {
               </div>
               <small class="composer-hint">Enter 发送 · Shift+Enter 换行</small>
             </form>`}
+            ${state.cloud && liveSupported ? voiceConversationPanel(state, stage, intakeReview) : ""}
             <div class="voice-tools" aria-label="语音工具">
               ${state.canRetryResponse && !interactionLocked ? `<button type="button" data-action="retry-response">重试本次回答</button>` : ""}
-              ${state.cloud && (liveSupported || recorderSupported) ? state.transcribing
+              ${state.cloud && !state.voiceConversationActive && (liveSupported || recorderSupported) ? state.transcribing
                 ? `<button type="button" data-action="cancel-transcription">取消转写</button>`
                 : `<button type="button" data-action="${state.recording ? "stop-record" : "record"}" ${(stage === "ready" || intakeReview || state.busy) && !state.recording ? "disabled" : ""}>${state.recording ? state.recordingMode === "live" ? "停止并采用文字" : "停止并转文字" : liveSupported ? "实时语音输入" : "按下说话"}</button>` : ""}
               ${state.busy && !state.transcribing ? `<button type="button" data-action="cancel-response">停止回答</button>` : ""}
-              ${state.cloud ? `<button type="button" data-action="voice" aria-pressed="${Boolean(state.voiceReplies)}">${escapeHtml(state.voiceButtonLabel)}</button>` : ""}
-              ${state.cloud && state.voiceReplies && state.fastVoiceSupported ? `<button type="button" data-action="voice-mode" aria-label="切换语音模式">${escapeHtml(state.voiceModeButtonLabel)}</button>` : ""}
+              ${state.cloud && !state.voiceConversationActive ? `<button type="button" data-action="voice" aria-pressed="${Boolean(state.voiceReplies)}">${escapeHtml(state.voiceButtonLabel)}</button>` : ""}
+              ${state.cloud && state.voiceReplies && state.fastVoiceSupported && !state.voiceConversationActive ? `<button type="button" data-action="voice-mode" aria-label="切换语音模式">${escapeHtml(state.voiceModeButtonLabel)}</button>` : ""}
             </div>
             ${state.cloud ? `<p class="voice-notice" data-voice-notice role="status" ${state.voiceError ? "" : "hidden"}>${state.voiceError ? `语音暂不可用：${escapeHtml(state.voiceError)}。文字回答仍可继续。` : ""}</p>` : ""}
             ${state.cloud ? `<div class="memory-tools"><small>本机保存最近 ${PERSISTED_MEMORY_MESSAGES} 条已完成对话与当前卦象。</small><button type="button" data-action="clear-memory" ${interactionLocked ? "disabled" : ""}>清除本机记忆</button></div>` : ""}
@@ -76,6 +77,47 @@ export function renderOracleView(state) {
 
       <footer>守简问卦 · 传统文化体验 · 卦象仅供参考</footer>
     </main>`;
+}
+
+function voiceConversationPanel(state, stage, intakeReview) {
+  const active = Boolean(state.voiceConversationActive);
+  const conversationState = String(state.voiceConversationState ?? "off");
+  const disabled = !active && (state.busy || stage === "ready" || intakeReview);
+  const labels = {
+    listening: "正在听，请自然说完",
+    heard: "已经听清，准备送问",
+    thinking: "墨衡正在回答；此时不会收音",
+    speaking: "墨衡正在说；此时不会收音",
+    interrupted: "旧回答已停，正在重新听",
+    error: "语音输入暂不可用，文字输入仍可继续",
+  };
+  const interruptible = active && ["thinking", "speaking"].includes(conversationState);
+  const transcript = String(state.voiceConversationTranscript ?? "").trim();
+  const error = String(state.voiceConversationError ?? "").trim();
+  return `<section class="voice-conversation" data-conversation-state="${escapeHtml(conversationState)}" aria-label="实时语音对话">
+    <div class="voice-conversation-copy"><strong>实时语音对话</strong><small>${active ? "已开启停顿自动发送；墨衡朗读时暂停收音，避免把扬声器声音再次送问。" : "可靠轮流对话：开启后，停顿会自动发送；不是后台偷录，也不宣称全双工。"}</small></div>
+    <div class="voice-conversation-actions">
+      <button class="${active ? "" : "primary"}" type="button" data-action="voice-conversation" ${disabled ? "disabled" : ""}>${active ? "结束语音对话" : "开始语音对话（自动发送）"}</button>
+      ${interruptible ? `<button class="interrupt" type="button" data-action="voice-interrupt">打断并说话</button>` : ""}
+      ${active && conversationState === "error" ? `<button type="button" data-action="voice-conversation-retry">重新听</button>` : ""}
+    </div>
+    ${active ? `<p class="voice-conversation-status" role="status"><b>${escapeHtml(labels[conversationState] ?? "语音对话已开启")}</b>${transcript ? `<span>“${escapeHtml(transcript)}”</span>` : ""}${error ? `<span>${escapeHtml(error)}</span>` : ""}</p>${latencyHtml(state.voiceConversationMetrics)}` : ""}
+  </section>`;
+}
+
+function latencyHtml(metrics = {}) {
+  const items = [
+    ["ASR 定稿", metrics.asrFinalMs],
+    ["首字", metrics.firstTokenMs],
+    ["首声", metrics.firstAudioMs],
+  ].filter(([, value]) => Number.isFinite(value));
+  if (!items.length) return "";
+  return `<dl class="voice-latency" aria-label="本轮语音延迟">${items.map(([label, value]) => `<div><dt>${label}</dt><dd>${formatLatency(value)}</dd></div>`).join("")}</dl>`;
+}
+
+function formatLatency(value) {
+  const milliseconds = Math.max(0, Number(value) || 0);
+  return milliseconds < 1_000 ? `${Math.round(milliseconds)} ms` : `${(milliseconds / 1_000).toFixed(1)} s`;
 }
 
 function intakePanel(intake, summaryDraft, locked) {
@@ -217,10 +259,11 @@ const styles = `<style>
   .composer-hint { display:block; margin-top:7px; color:#877b6c; font:11px/1.4 system-ui,sans-serif; }
   .submit-actions { display: grid; gap: 8px; align-content: start; } .submit-actions .primary { width: auto; } .quick { display: flex; flex-wrap: wrap; gap: 7px; } .quick button { min-height: 38px; padding: 7px 12px; font-size: 13px; } .rag-invitation { margin: 0; padding: 10px 12px; color: #d5c2a2; background: #88713b18; border: 1px solid #74623e; border-radius: 12px; font: 13px/1.65 system-ui,sans-serif; }
   .voice-tools { display: flex; flex-wrap: wrap; gap: 8px; } .voice-tools button { background: #25201b; } .memory-tools { display: flex; gap: 10px; align-items: center; justify-content: space-between; color: #938674; font: 11px/1.5 system-ui,sans-serif; } .memory-tools button { min-height: 32px; padding: 5px 10px; background: transparent; color: #bda987; font-size: 11px; }
+  .voice-conversation { display:grid; gap:10px; padding:13px; background:linear-gradient(135deg,#17322966,#241b16); border:1px solid #527565; border-radius:14px; } .voice-conversation-copy{display:grid;gap:3px}.voice-conversation-copy strong{color:#d7eadf}.voice-conversation-copy small{color:#aebfb5;font:11px/1.55 system-ui,sans-serif}.voice-conversation-actions{display:flex;flex-wrap:wrap;gap:8px}.voice-conversation-actions .primary{width:auto;background:#315d4d;border-color:#65917e}.voice-conversation-actions .interrupt{background:#8e332a;border-color:#bb6b5d}.voice-conversation-status{display:grid;gap:4px;margin:0;padding:9px 11px;color:#cbdcd2;background:#07130f88;border-radius:10px;font:12px/1.55 system-ui,sans-serif}.voice-conversation-status span{color:#aebfb5;overflow-wrap:anywhere}.voice-latency{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}.voice-latency div{padding:7px;background:#06100d88}.voice-latency dd{font:600 12px/1.3 system-ui,sans-serif;color:#d7eadf}
   .voice-notice { margin: -3px 0 0; padding: 8px 10px; color: #e0b9ad; background: #7a2c2422; border: 1px solid #8d4c43; border-radius: 10px; font: 12px/1.55 system-ui,sans-serif; } .voice-notice[hidden] { display:none; }
   footer { margin-top: 18px; color: #8f8578; font: 11px/1.65 system-ui,sans-serif; } textarea:focus,button:focus-visible,[data-latest]:focus { outline: 3px solid #d2a15b; outline-offset: 3px; }
   @keyframes cursor-blink { 50% { opacity: 0; } } @keyframes halo-turn { to { rotate:360deg; } } @keyframes breathe { 50% { transform: translateY(-3px) scale(1.006); } } @keyframes pulse { 50% { opacity:.38; box-shadow:0 0 0 8px currentColor; } } @keyframes meter { to { height: var(--amp); } }
   @media(max-width:860px){ .master-card{align-items:start}.experience{grid-template-columns:1fr}.avatar-stage{position:relative;top:auto;min-height:470px}.portrait-stack{inset:-20px 0 54px}.oracle-halo{width:340px}.oracle-halo span{transform:rotate(calc(var(--i)*45deg)) translateY(-132px) rotate(calc(var(--i)*-45deg))}.dialogue{max-height:400px} }
-  @media(max-width:560px){ .shell{padding:15px;border-radius:17px}.master-card{display:grid}.system-state{text-align:left}.avatar-stage{min-height:390px}.portrait-stack{inset:-5px -25px 54px}.avatar-panel{margin:0 9px 9px}.oracle-halo{top:4%;width:270px}.oracle-halo span{width:28px;height:28px;margin:-14px;transform:rotate(calc(var(--i)*45deg)) translateY(-105px) rotate(calc(var(--i)*-45deg))}.input-row{grid-template-columns:1fr}.line{grid-template-columns:1fr;gap:2px}dl{grid-template-columns:1fr}.message{max-width:96%}.memory-tools{align-items:flex-start} }
+  @media(max-width:560px){ .shell{padding:15px;border-radius:17px}.master-card{display:grid}.system-state{text-align:left}.avatar-stage{min-height:390px}.portrait-stack{inset:-5px -25px 54px}.avatar-panel{margin:0 9px 9px}.oracle-halo{top:4%;width:270px}.oracle-halo span{width:28px;height:28px;margin:-14px;transform:rotate(calc(var(--i)*45deg)) translateY(-105px) rotate(calc(var(--i)*-45deg))}.input-row{grid-template-columns:1fr}.line{grid-template-columns:1fr;gap:2px}dl:not(.voice-latency){grid-template-columns:1fr}.message{max-width:96%}.memory-tools{align-items:flex-start}.voice-conversation-actions button{flex:1}.voice-latency{grid-template-columns:repeat(3,minmax(0,1fr))} }
   @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important;animation:none!important}[data-avatar-state="speaking"] .avatar-speaking{opacity:var(--voice-level)}}
 </style>`;
