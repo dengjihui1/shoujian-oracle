@@ -131,3 +131,11 @@ test("a failed cloud turn exposes a user-triggered retry without locking chat", 
   assert.match(html, /data-action="retry-response">重试本次回答/u);
   assert.doesNotMatch(html, /<textarea[^>]*disabled/u);
 });
+
+test("view exposes keyboard guidance and only shows jump-to-latest when unread", () => {
+  const current = render({ showJumpToLatest: true });
+  assert.match(current, /Enter 发送 · Shift\+Enter 换行/u);
+  assert.match(current, /data-action="jump-latest" >回到最新消息 ↓/u);
+  const followed = render({ showJumpToLatest: false });
+  assert.match(followed, /data-action="jump-latest" hidden/u);
+});

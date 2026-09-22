@@ -12,6 +12,8 @@ import { StreamingSpeechQueue } from "./speech-queue.js";
 import { StreamingTextRevealer } from "./streaming-text.js";
 import { renderOracleView } from "./oracle-view.js";
 import { deriveAvatarPresentation } from "./avatar-state.js";
+import { ConversationViewport } from "./conversation-scroll.js";
+import { isComposerSendShortcut, preferredComposerSubmitter } from "./composer-keys.js";
 
 export class ShoujianOracle extends HTMLElement {
   constructor() {
@@ -36,6 +38,9 @@ export class ShoujianOracle extends HTMLElement {
     this.transcriptionController = null;
     this.speechQueue = null;
     this.retryRequest = null;
+    this.conversationViewport = new ConversationViewport();
+    this.conversationRevision = 0;
+    this.renderedConversationRevision = -1;
     this.initializeSession();
     this.restoreMemory();
     this.render();
@@ -45,6 +50,8 @@ export class ShoujianOracle extends HTMLElement {
     this.shadowRoot.addEventListener("click", this.handleClick);
     this.shadowRoot.addEventListener("submit", this.handleSubmit);
     this.shadowRoot.addEventListener("input", this.handleInput);
+    this.shadowRoot.addEventListener("keydown", this.handleKeyDown);
+    this.shadowRoot.addEventListener("scroll", this.handleScroll, true);
     this.checkCloud();
   }
 
@@ -52,6 +59,8 @@ export class ShoujianOracle extends HTMLElement {
     this.shadowRoot.removeEventListener("click", this.handleClick);
     this.shadowRoot.removeEventListener("submit", this.handleSubmit);
     this.shadowRoot.removeEventListener("input", this.handleInput);
+    this.shadowRoot.removeEventListener("keydown", this.handleKeyDown);
+    this.shadowRoot.removeEventListener("scroll", this.handleScroll, true);
     clearTimeout(this.recordingTimer);
     if (this.recording && this.recordingMode === "recorded") this.recorder.stop()?.catch(() => {});
     this.recording = false;
@@ -67,6 +76,8 @@ export class ShoujianOracle extends HTMLElement {
     this.question = "";
     this.reading = null;
     this.messages = [{ role: "master", text: welcomeReply() }];
+    this.conversationRevision += 1;
+    this.conversationViewport.reset();
   }
 
   resetSession() {
@@ -76,7 +87,8 @@ export class ShoujianOracle extends HTMLElement {
     this.question = "";
     this.reading = null;
     this.draft = "";
-    this.messages.push({ role: "master", text: "上一卦收好。前面的聊天我还记得，可以继续聊，也可以重新留一件事起卦。" });
+    this.conversationViewport.reset();
+    this.appendMessage({ role: "master", text: "上一卦收好。前面的聊天我还记得，可以继续聊，也可以重新留一件事起卦。" });
     this.persistMemory();
     this.render();
   }
@@ -93,7 +105,10 @@ export class ShoujianOracle extends HTMLElement {
 
   restoreMemory() {
     const session = this.memory.loadSession();
-    if (session.messages.length) this.messages = session.messages;
+    if (session.messages.length) {
+      this.messages = session.messages;
+      this.conversationRevision += 1;
+    }
     this.stage = session.stage;
     this.question = session.question;
     this.reading = session.reading;
@@ -123,11 +138,29 @@ export class ShoujianOracle extends HTMLElement {
     if (event.target.matches?.("textarea")) this.draft = event.target.value;
   };
 
+  handleKeyDown = (event) => {
+    if (!isComposerSendShortcut(event)) return;
+    event.preventDefault();
+    const form = event.target.closest("form");
+    const submitter = preferredComposerSubmitter(form);
+    if (submitter) form.requestSubmit(submitter);
+  };
+
+  handleScroll = (event) => {
+    if (!event.target.matches?.(".dialogue")) return;
+    this.conversationViewport.observeScroll(event.target);
+    this.syncJumpToLatestButton();
+  };
+
   handleClick = async (event) => {
     const action = event.target.closest("[data-action]")?.dataset.action;
     if (action === "cast") await this.cast();
     if (action === "reset") this.resetSession();
     if (action === "clear-memory") this.clearMemory();
+    if (action === "jump-latest") {
+      this.conversationViewport.jumpToLatest(this.shadowRoot.querySelector(".dialogue"));
+      this.syncJumpToLatestButton();
+    }
     if (action === "cancel-response") this.cancelResponse();
     if (action === "retry-response" && this.retryRequest && !this.busy) {
       const retry = this.retryRequest;
@@ -160,7 +193,7 @@ export class ShoujianOracle extends HTMLElement {
     if (this.busy || this.recording || this.transcribing) return;
     this.cancelSpeech();
     this.retryRequest = null;
-    this.messages.push({ role: "user", text });
+    this.appendMessage({ role: "user", text });
     this.persistMemory();
     const history = this.messages.slice(0, -1);
     if (this.stage === "question") {
@@ -168,25 +201,25 @@ export class ShoujianOracle extends HTMLElement {
         await this.askCloud(text, history);
       } else {
         const assessment = assessQuestion(text);
-        this.messages.push({ role: "master", text: boundaryReply(assessment) });
+        this.appendMessage({ role: "master", text: boundaryReply(assessment) });
         if (assessment.level !== "blocked") {
           this.question = text;
           this.stage = "ready";
         }
       }
     } else if (this.stage === "ready") {
-      this.messages.push({ role: "master", text: "原问已经收下。请先起卦；若要换题，点“另起一问”。" });
+      this.appendMessage({ role: "master", text: "原问已经收下。请先起卦；若要换题，点“另起一问”。" });
     } else {
       const localReply = followUpReply(text, this.reading);
       if (localReply.action === "restart") {
-        this.messages.push({ role: "master", text: localReply.text });
+        this.appendMessage({ role: "master", text: localReply.text });
         this.stage = "question";
         this.question = "";
         this.reading = null;
       } else if (this.cloud) {
         await this.askCloud(text, history, inferConversationPurpose(text, this.stage));
       } else {
-        this.messages.push({ role: "master", text: localReply.text });
+        this.appendMessage({ role: "master", text: localReply.text });
       }
     }
     this.persistMemory();
@@ -198,7 +231,7 @@ export class ShoujianOracle extends HTMLElement {
     if (this.stage !== "ready" || this.busy || this.recording || this.transcribing) return;
     this.reading = castWithCoins();
     this.stage = "reading";
-    this.messages.push({ role: "master", text: readingReply(this.reading) });
+    this.appendMessage({ role: "master", text: readingReply(this.reading) });
     this.persistMemory();
     this.render();
     this.focusLatest();
@@ -223,7 +256,7 @@ export class ShoujianOracle extends HTMLElement {
     const controller = new AbortController();
     this.chatController = controller;
     const reply = { role: "master", text: "墨衡正在斟酌…", cloud: true, evidence: [], streaming: true };
-    this.messages.push(reply);
+    this.appendMessage(reply);
     const replyIndex = this.messages.length - 1;
     const reduceMotion = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
     const revealer = new StreamingTextRevealer({
@@ -315,7 +348,8 @@ export class ShoujianOracle extends HTMLElement {
     article.querySelector("p").textContent = this.messages[index].text;
     article.querySelector("b").textContent = this.messages[index].evidence?.length ? "墨衡 · RAG" : "墨衡 · 云端";
     const dialogue = this.shadowRoot.querySelector(".dialogue");
-    if (dialogue) dialogue.scrollTop = dialogue.scrollHeight;
+    this.conversationViewport.contentChanged(dialogue);
+    this.syncJumpToLatestButton();
   }
 
   async startRecording() {
@@ -341,7 +375,7 @@ export class ShoujianOracle extends HTMLElement {
       this.recordingTimer = setTimeout(() => this.stopRecording(), 45_000);
       this.render();
     } catch (error) {
-      this.messages.push({ role: "master", text: error.message });
+      this.appendMessage({ role: "master", text: error.message });
       this.persistMemory();
       this.render();
     }
@@ -374,7 +408,7 @@ export class ShoujianOracle extends HTMLElement {
       }
     } catch (error) {
       if (error?.name !== "AbortError") {
-        this.messages.push({ role: "master", text: `没能听清：${error.message}` });
+        this.appendMessage({ role: "master", text: `没能听清：${error.message}` });
         this.persistMemory();
       }
     } finally {
@@ -392,7 +426,7 @@ export class ShoujianOracle extends HTMLElement {
     clearTimeout(this.recordingTimer);
     this.recording = false;
     if (result.error) {
-      this.messages.push({ role: "master", text: `没能听清：${result.error.message}` });
+      this.appendMessage({ role: "master", text: `没能听清：${result.error.message}` });
       this.persistMemory();
     } else if (result.text) {
       this.draft = result.text;
@@ -506,8 +540,22 @@ export class ShoujianOracle extends HTMLElement {
     }
   }
 
+  appendMessage(message) {
+    this.messages.push(message);
+    this.conversationRevision += 1;
+    return message;
+  }
+
+  syncJumpToLatestButton() {
+    const button = this.shadowRoot?.querySelector('[data-action="jump-latest"]');
+    if (button) button.hidden = !this.conversationViewport.unread;
+  }
+
   render() {
     if (!this.shadowRoot) return;
+    const previousDialogue = this.shadowRoot.querySelector(".dialogue");
+    const viewportSnapshot = this.conversationViewport.capture(previousDialogue);
+    const contentChanged = this.conversationRevision !== this.renderedConversationRevision;
     this.shadowRoot.innerHTML = renderOracleView({
       stage: this.stage,
       cloud: this.cloud,
@@ -528,9 +576,13 @@ export class ShoujianOracle extends HTMLElement {
       voiceState: this.voiceState,
       voiceError: this.voiceError,
       canRetryResponse: Boolean(this.retryRequest),
+      showJumpToLatest: this.conversationViewport.unread,
       voiceButtonLabel: this.voiceButtonLabel(),
       voiceModeButtonLabel: this.voiceModeButtonLabel(),
     });
+    this.renderedConversationRevision = this.conversationRevision;
+    this.conversationViewport.restore(this.shadowRoot.querySelector(".dialogue"), viewportSnapshot, { contentChanged });
+    this.syncJumpToLatestButton();
   }
 }
 

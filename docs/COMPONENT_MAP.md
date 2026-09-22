@@ -11,7 +11,7 @@
   ↓（可选云端，携带最多 16 条且约 6000 字符的最近上下文）
 浏览器实时 ASR：增量语音 → 可编辑文字
   └── 不支持时：Gemini 内联音频 → Files API 兜底
-  ├── 直接问墨衡 → 普通问题自然回答；经传问题走冻结知识检索
+  ├── 直接问墨衡 → 弱相关检索清空后普通回答；经传问题走冻结知识检索与一次引用修复
   └── 以此问起卦
   ↓
 问题边界检查 ── blocked → 即时人身危险：停止起卦并给现实危机支持
@@ -49,6 +49,8 @@ Gemini 未配置 → 有限追问：意思 / 动爻 / 算法 / 边界
 | 流式语音分句 | `src/speech-segmenter.js` | Gemini SSE 文字分片 | 可朗读的完整短句 | 是 |
 | TTS 播放队列 | `src/speech-queue.js` | 完整短句、取消信号 | 最多两句预取、严格顺序播放 | 异步调度可注入测试 |
 | 流式文字队列 | `src/streaming-text.js` | SSE 文字分片 | 可取消的字符级累积文本 | 定时器可注入测试 |
+| 对话视口 | `src/conversation-scroll.js` | 滚动尺寸、旧位置、内容变化 | 跟随、上翻保持、未读提示 | 是，有内部状态 |
+| 键盘提交 | `src/composer-keys.js` | Enter、Shift、IME 状态与表单 | 普通聊天提交或保留换行 | 是 |
 | 本机 API 服务 | `server/index.mjs` | `/api/*` 请求 | 脱敏后的稳定响应 | 否，网络 I/O |
 | Gemini 适配器 | `server/gemini-client.mjs` | 只读卦象、文本、音频 | SSE 分片、转写、PCM | 否，可注入假 `fetch` 测试 |
 | Google Cloud TTS 适配器 | `server/google-cloud-tts-client.mjs` | 完整短句、Cloud 服务端凭证 | 24 kHz LINEAR16 PCM | 否，可注入假官方客户端测试 |
@@ -58,6 +60,7 @@ Gemini 未配置 → 有限追问：意思 / 动爻 / 算法 / 边界
 | 本机会话记忆 | `src/conversation-memory.js` | 已完成对话、阶段、原问、六爻 | 最近 24 条与可恢复会话快照 | 否，仅当前浏览器 |
 | 滑动窗口限流 | `server/rate-limiter.mjs` | IP、服务端时间 | 是否允许本轮 API 请求 | 是，内部状态可注入时间测试 |
 | 冻结知识检索器 | `server/knowledge-retriever.mjs` | 自由问题、当前卦象 | 最多 8 条白名单证据 | 检索为确定性；固定质量 / 延迟评测 |
+| 知识路由与修复 | `server/knowledge-routing.mjs` | 问题、目的、匹配分数与命中原因 | `fast / grounded`、证据过滤、一次修复约束 | 是 |
 | 经传知识包 | `knowledge/shoujian-rag.v1.json` | 64 卦、384 爻、8 个取象 | 456 条可引用片段 | 只读数据 |
 
 ## 三、会话状态机

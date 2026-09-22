@@ -32,6 +32,7 @@ export function renderOracleView(state) {
           <section class="dialogue" aria-label="与墨衡的当前对话" aria-live="polite">
             ${messages.map((message, index) => messageHtml(message, index, messages.length)).join("")}
           </section>
+          <button class="jump-latest" type="button" data-action="jump-latest" ${state.showJumpToLatest ? "" : "hidden"}>回到最新消息 ↓</button>
 
           ${state.reading ? readingCard(state.reading, state.question) : ""}
 
@@ -52,6 +53,7 @@ export function renderOracleView(state) {
                   ${stage === "question" && state.cloud ? `<button type="submit" data-submit-mode="chat" ${interactionLocked ? "disabled" : ""}>直接问墨衡</button><button class="primary" type="submit" data-submit-mode="divination" ${interactionLocked ? "disabled" : ""}>以此问起卦 · 仅供参考</button>` : `<button type="submit" ${composerLocked ? "disabled" : ""}>${interactionLocked ? "请稍候" : "送问"}</button>`}
                 </div>
               </div>
+              <small class="composer-hint">Enter 发送 · Shift+Enter 换行</small>
             </form>
             <div class="voice-tools" aria-label="语音工具">
               ${state.canRetryResponse && !interactionLocked ? `<button type="button" data-action="retry-response">重试本次回答</button>` : ""}
@@ -160,6 +162,8 @@ const styles = `<style>
   [data-avatar-state="speaking"] .voice-meter i { height: var(--voice-level-px); opacity: calc(.3 + var(--voice-level)); transition: height 55ms linear,opacity 55ms linear; } [data-avatar-state="speaking"] .voice-meter i:nth-child(3n+1){transform:scaleY(.62)} [data-avatar-state="speaking"] .voice-meter i:nth-child(3n+2){transform:scaleY(.82)}
   .conversation-column { min-width: 0; display: grid; gap: 14px; align-content: start; }
   .dialogue { display: grid; gap: 10px; min-height: 240px; max-height: 430px; overflow: auto; padding: 4px 6px 4px 2px; scroll-behavior: smooth; }
+  .jump-latest { position: sticky; z-index: 4; bottom: 8px; justify-self: center; min-height: 34px; margin-top: -54px; padding: 6px 13px; color: #f3dfb8; background: #4d3024ee; box-shadow: 0 8px 24px #0009; }
+  .jump-latest[hidden] { display: none; }
   .message { max-width: 88%; padding: 11px 14px; border-radius: 14px; background: #ffffff09; border: 1px solid #68533c; }
   .message.user { justify-self: end; background: #6d2d2729; border-color: #8e4a40; } .message b { color: #c9a46e; font-size: 13px; } .message p { margin: 5px 0 0; line-height: 1.7; white-space: pre-line; overflow-wrap: anywhere; }
   .message.error { border-color: #a85248; background: #7a2c2422; } .message.streaming p::after { content: "▍"; margin-left: 2px; color: #d2a15b; animation: cursor-blink .8s steps(1) infinite; }
@@ -169,6 +173,7 @@ const styles = `<style>
   dl { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin: 0; } dl div { padding: 9px; text-align: center; background: #ffffff08; border-radius: 9px; } dt { color: #9d8f7b; font: 12px system-ui,sans-serif; } dd { margin: 4px 0 0; }
   .controls { display: grid; gap: 12px; padding: 16px; background: #0a0908a8; border: 1px solid #4d4031; border-radius: 18px; } label { display: block; margin-bottom: 7px; color: #d9bd91; font-weight: 700; } .input-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
   textarea { min-height: 78px; resize: vertical; padding: 11px 13px; color: #f3ead8; background: #050505c9; border: 1px solid #6c5942; border-radius: 12px; } button { min-height: 44px; padding: 9px 16px; color: #f8ead0; background: #593a29; border: 1px solid #826244; border-radius: 999px; cursor: pointer; } button:hover:not(:disabled) { border-color:#c0925e; translate:0 -1px; } button:disabled { opacity: .48; cursor: not-allowed; } .primary { width: 100%; background: #8e332a; border-color: #bb6b5d; font-weight: 700; } .text-button { justify-self: center; background: transparent; border: 0; color: #c5aa7e; text-decoration: underline; }
+  .composer-hint { display:block; margin-top:7px; color:#877b6c; font:11px/1.4 system-ui,sans-serif; }
   .submit-actions { display: grid; gap: 8px; align-content: start; } .submit-actions .primary { width: auto; } .quick { display: flex; flex-wrap: wrap; gap: 7px; } .quick button { min-height: 38px; padding: 7px 12px; font-size: 13px; } .rag-invitation { margin: 0; padding: 10px 12px; color: #d5c2a2; background: #88713b18; border: 1px solid #74623e; border-radius: 12px; font: 13px/1.65 system-ui,sans-serif; }
   .voice-tools { display: flex; flex-wrap: wrap; gap: 8px; } .voice-tools button { background: #25201b; } .memory-tools { display: flex; gap: 10px; align-items: center; justify-content: space-between; color: #938674; font: 11px/1.5 system-ui,sans-serif; } .memory-tools button { min-height: 32px; padding: 5px 10px; background: transparent; color: #bda987; font-size: 11px; }
   .voice-notice { margin: -3px 0 0; padding: 8px 10px; color: #e0b9ad; background: #7a2c2422; border: 1px solid #8d4c43; border-radius: 10px; font: 12px/1.55 system-ui,sans-serif; } .voice-notice[hidden] { display:none; }

@@ -10,6 +10,7 @@ index.html
       ├─ P02 安全视图 ── P03 虚拟人状态 ── A01 人物素材
       ├─ P04 本机会话记忆
       ├─ P05 流式文字显示
+      ├─ P12 对话视口跟随 ├─ P13 键盘提交契约
       ├─ P06 浏览器 API 客户端 ─────────────┐
       ├─ P07 录音 / 浏览器实时识别          │
       └─ P08 分句 → P09 TTS 队列 → P10 PCM 播放 / P11 浏览器语音 │
@@ -18,7 +19,7 @@ D01 问题边界 → D02 响应策略 → S01 HTTP 服务 → S07 云端供应�
                   └─ D03 本地降级对话       ├─ S03 Gemini 适配器
 D04 起卦纯计算 ──────────────────────────────├─ S06 OpenAI-compatible 适配器
                                              ├─ S02 提示词 / 时间 / 上下文
-                                             ├─ S04 RAG 检索 → K01 冻结知识包
+                                             ├─ S04 RAG 检索 → S10 知识路由 / 引用修复 → K01
                                              ├─ S05 限流 ├─ S08 TTS 缓存
                                              └─ S09 Google Cloud TTS
 K02 知识导入与来源登记 → K01
@@ -40,6 +41,8 @@ Q01 行为测试 + Q02 项目体检 + Q03 RAG 评测 覆盖全部模块
 | P09 | TTS 预取队列 | `src/speech-queue.js` | 稳定 | `test/speech-queue.test.js` |
 | P10 | PCM 播放与嘴型信号 | `src/audio-player.js` | 稳定 | `test/audio-player.test.js` |
 | P11 | 极速浏览器语音 | `src/browser-speech.js` | 稳定 | `test/browser-speech.test.js` |
+| P12 | 对话视口跟随 | `src/conversation-scroll.js` | 稳定 | `test/conversation-scroll.test.js` |
+| P13 | 输入键盘契约 | `src/composer-keys.js` | 稳定 | `test/composer-keys.test.js` |
 | D01 | 起卦问题边界 | `src/question-boundary.js` | 稳定 | `test/question-boundary.test.js` |
 | D02 | 场景响应策略 | `src/response-policy.js` | 稳定 | `test/response-policy.test.js` |
 | D03 | 无云端降级对话 | `src/dialogue-engine.js` | 稳定 | `test/dialogue-engine.test.js` |
@@ -53,6 +56,7 @@ Q01 行为测试 + Q02 项目体检 + Q03 RAG 评测 覆盖全部模块
 | S07 | 跨供应商路由与熔断 | `server/cloud-client.mjs` | 稳定 | `test/cloud-client.test.js` |
 | S08 | TTS 合并与有界缓存 | `server/speech-cache.mjs` | 稳定 | `test/speech-cache.test.js` |
 | S09 | Google Cloud TTS 适配 | `server/google-cloud-tts-client.mjs` | 已实现，待真实凭证验收 | `test/google-cloud-tts-client.test.js` |
+| S10 | 知识路由与引用修复 | `server/knowledge-routing.mjs` | 稳定 | `test/knowledge-routing.test.js`、服务器契约测试 |
 | K01 | 冻结经传知识包 | `knowledge/shoujian-rag.v1.json` | 稳定 | 完整性体检、检索测试 |
 | K02 | 公开知识导入 | `scripts/import-open-knowledge.mjs` | 工具 | 人工来源复核、项目体检 |
 | A01 | 墨衡人物与品牌素材 | `assets/` | 稳定 | 视图渲染、人工视觉检查 |
@@ -185,6 +189,22 @@ Q01 行为测试 + Q02 项目体检 + Q03 RAG 评测 覆盖全部模块
 - 测试：`test/browser-speech.test.js` 与视图模式切换测试。
 - 练习：在 Chrome / Edge / Safari 和不同系统建立真实首声 P50 / P95 与音色矩阵。
 
+### P12 对话视口跟随
+
+- 文件：`src/conversation-scroll.js`
+- 单一职责：记录用户是否在底部附近、是否有未读内容，并在完整重绘和流式更新后恢复正确滚动位置。
+- 输入 / 输出：滚动容器尺寸、旧位置、内容变化 → 跟随 / 上翻保持 / 未读状态。
+- 失败与降级：用户主动上翻时绝不强拉；点击“回到最新”后才恢复自动跟随。
+- 测试：`test/conversation-scroll.test.js`，并完成桌面和 390 px 页面验收。
+
+### P13 输入键盘契约
+
+- 文件：`src/composer-keys.js`
+- 单一职责：把 Enter、Shift+Enter 和中文输入法组字状态转换为可审计的提交决定。
+- 输入 / 输出：键盘事件与表单 → 普通聊天提交按钮或不提交。
+- 失败与降级：`isComposing` 或历史兼容键码 229 一律不发送；Enter 优先普通聊天，避免误触起卦。
+- 测试：`test/composer-keys.test.js` 与真实页面回归。
+
 ## 四、领域与安全池
 
 ### D01 起卦问题边界
@@ -276,6 +296,15 @@ Q01 行为测试 + Q02 项目体检 + Q03 RAG 评测 覆盖全部模块
 - 失败与降级：未知问题返回空，不制造装饰性来源；包结构不完整时启动失败。
 - 测试：`test/knowledge-retriever.test.js`。
 - 练习：增加可解释同义词表，并为每次召回变化写回归案例。
+
+### S10 知识路由与引用修复
+
+- 文件：`server/knowledge-routing.mjs`
+- 单一职责：把检索候选分成普通聊天与必须落地到经传的请求，并提供一次白名单引用修复和自然失败文案。
+- 输入 / 输出：用户问题、目的、检索分数与命中原因 → `fast / grounded` 决策、过滤后的证据和修复指令。
+- 正常路径：库外或弱相关误召回清空证据走普通模型；明确经传、强词条和当前卦保留冻结证据。
+- 失败与降级：首稿漏引或错引时仅用本轮证据再生成一次；第二次仍不合格时原位替换为自然说明，不暴露内部错误码。
+- 测试：`test/knowledge-routing.test.js`、`test/server-contract.test.js`。
 
 ### S05 滑动窗口限流
 
@@ -402,4 +431,4 @@ Q01 行为测试 + Q02 项目体检 + Q03 RAG 评测 覆盖全部模块
 
 “待补”不等于当前功能不可用；它表示要从本地教学组件升级为面向公众的长期服务时，还需要完成的工程层。
 
-当前自动化、真实云端链路和浏览器人工验收结果见 [0.13.0 质量基线](QUALITY_BASELINE.md)。
+当前自动化、真实云端链路和浏览器人工验收结果见 [0.14.0 质量基线](QUALITY_BASELINE.md)。

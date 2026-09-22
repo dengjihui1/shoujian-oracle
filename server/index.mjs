@@ -11,6 +11,7 @@ import { googleCloudTtsFromEnv } from "./google-cloud-tts-client.mjs";
 import { CachedSpeechService } from "./speech-cache.mjs";
 import { buildChatInput, buildSystemInstruction, formatShanghaiDateTime } from "./prompt.mjs";
 import { loadKnowledgeBase } from "./knowledge-retriever.mjs";
+import { citationRepairInstruction, decideKnowledgeRoute, groundedUnavailableReply } from "./knowledge-routing.mjs";
 import { assessQuestion } from "../src/question-boundary.js";
 import { inferConversationPurpose, resolveResponsePolicy, withDivinationDisclaimer } from "../src/response-policy.js";
 import { SlidingWindowRateLimiter } from "./rate-limiter.mjs";
@@ -79,13 +80,19 @@ async function handleChat(response, client, knowledgeBase, body, now) {
   const prepared = prepareChat(body, knowledgeBase, now);
   if (prepared.response) return json(response, 200, prepared.response);
   const startedAt = performance.now();
-  const result = await client.chat({ input: prepared.input, systemInstruction: prepared.systemInstruction, route: prepared.route });
-  validateCitations(result.text, prepared.evidence);
-  const text = withDivinationDisclaimer(result.text, prepared.purpose);
+  let result = await client.chat({ input: prepared.input, systemInstruction: prepared.systemInstruction, route: prepared.route });
+  let answer = groundedAnswer(result, prepared);
+  if (answer.needsRepair) {
+    answer = await repairGroundedAnswer(client, prepared);
+    result = answer.result;
+  }
+  const text = withDivinationDisclaimer(answer.text, prepared.purpose);
   return json(response, 200, {
     text,
-    evidence: prepared.evidence,
-    grounded: prepared.evidence.length > 0,
+    evidence: answer.evidence,
+    grounded: answer.grounded,
+    repaired: answer.repaired,
+    groundingUnavailable: answer.groundingUnavailable,
     purpose: prepared.purpose,
     runtime: runtimeMetadata({ route: prepared.route, result, totalMs: performance.now() - startedAt }),
   });
@@ -135,14 +142,28 @@ async function handleChatStream(response, client, knowledgeBase, body, now) {
       fullText += chunk.text;
       sse(response, "delta", { text: chunk.text });
     }
-    validateCitations(fullText, prepared.evidence);
-    const finalText = withDivinationDisclaimer(fullText, prepared.purpose);
-    const suffix = finalText.slice(fullText.length);
-    if (suffix) sse(response, "delta", { text: suffix });
-    sse(response, "done", {
-      text: finalText,
-      runtime: runtimeMetadata({ route: prepared.route, result: lastChunk, firstTokenMs, totalMs: performance.now() - startedAt }),
-    });
+    let answer = groundedAnswer({ ...lastChunk, text: fullText }, prepared);
+    if (answer.needsRepair) {
+      answer = await repairGroundedAnswer(client, prepared, { signal: upstreamController.signal });
+      const finalText = withDivinationDisclaimer(answer.text, prepared.purpose);
+      sse(response, "replace", { text: finalText, repaired: true, groundingUnavailable: answer.groundingUnavailable });
+      sse(response, "done", {
+        text: finalText,
+        evidence: answer.evidence,
+        grounded: answer.grounded,
+        repaired: true,
+        groundingUnavailable: answer.groundingUnavailable,
+        runtime: runtimeMetadata({ route: prepared.route, result: answer.result, firstTokenMs, totalMs: performance.now() - startedAt, recovered: true }),
+      });
+    } else {
+      const finalText = withDivinationDisclaimer(answer.text, prepared.purpose);
+      const suffix = finalText.slice(fullText.length);
+      if (suffix) sse(response, "delta", { text: suffix });
+      sse(response, "done", {
+        text: finalText,
+        runtime: runtimeMetadata({ route: prepared.route, result: lastChunk, firstTokenMs, totalMs: performance.now() - startedAt }),
+      });
+    }
   } catch (error) {
     if (fullText && canRecoverInterruptedStream(error, client, upstreamController.signal)) {
       try {
@@ -152,13 +173,17 @@ async function handleChatStream(response, client, knowledgeBase, body, now) {
           signal: upstreamController.signal,
           route: prepared.route,
         });
-        validateCitations(recovered.text, prepared.evidence);
-        const finalText = withDivinationDisclaimer(recovered.text, prepared.purpose);
+        let answer = groundedAnswer(recovered, prepared);
+        if (answer.needsRepair) answer = await repairGroundedAnswer(client, prepared, { signal: upstreamController.signal });
+        const finalText = withDivinationDisclaimer(answer.text, prepared.purpose);
         sse(response, "replace", { text: finalText, recovered: true });
         sse(response, "done", {
           text: finalText,
+          evidence: answer.evidence,
+          grounded: answer.grounded,
+          groundingUnavailable: answer.groundingUnavailable,
           recovered: true,
-          runtime: runtimeMetadata({ route: prepared.route, result: recovered, firstTokenMs, totalMs: performance.now() - startedAt, recovered: true }),
+          runtime: runtimeMetadata({ route: prepared.route, result: answer.result ?? recovered, firstTokenMs, totalMs: performance.now() - startedAt, recovered: true }),
         });
         error = null;
       } catch (recoveryError) {
@@ -204,21 +229,78 @@ function prepareChat(body, knowledgeBase, now) {
     text: String(item?.text ?? "").slice(0, 1_000)
   })) : [];
   const useReadingEvidence = policy.purpose === "divination";
-  const evidence = knowledgeBase.retrieve({
+  const candidates = knowledgeBase.retrieve({
     query: [message, useReadingEvidence ? question : ""].filter(Boolean).join("\n"),
     reading: useReadingEvidence ? reading : null,
     limit: 8,
   });
+  const knowledgeRoute = decideKnowledgeRoute({ message, purpose: policy.purpose, evidence: candidates });
+  const evidence = knowledgeRoute.evidence;
   const serverTime = formatShanghaiDateTime(now());
-  const route = evidence.length > 0 || policy.purpose === "divination" ? "grounded" : "fast";
+  const route = knowledgeRoute.groundingRequested ? "grounded" : "fast";
   return {
     evidence,
     purpose: policy.purpose,
     serverTime,
     route,
+    knowledgeReason: knowledgeRoute.reason,
     input: buildChatInput(message, history),
     systemInstruction: buildSystemInstruction({ stage, question, reading, evidence, currentDateTime: serverTime }),
   };
+}
+
+function groundedAnswer(result, prepared) {
+  try {
+    validateCitations(result?.text, prepared.evidence);
+    return {
+      text: String(result?.text ?? ""),
+      evidence: prepared.evidence,
+      grounded: prepared.evidence.length > 0,
+      repaired: false,
+      groundingUnavailable: false,
+      needsRepair: false,
+      result,
+    };
+  } catch (error) {
+    if (!isCitationError(error) || prepared.evidence.length === 0) throw error;
+    return { needsRepair: true };
+  }
+}
+
+async function repairGroundedAnswer(client, prepared, { signal } = {}) {
+  const result = await client.chat({
+    input: prepared.input,
+    systemInstruction: `${prepared.systemInstruction}\n\n${citationRepairInstruction(prepared.evidence)}`,
+    route: prepared.route,
+    signal,
+  });
+  try {
+    validateCitations(result.text, prepared.evidence);
+    return {
+      text: result.text,
+      evidence: prepared.evidence,
+      grounded: true,
+      repaired: true,
+      groundingUnavailable: false,
+      needsRepair: false,
+      result,
+    };
+  } catch (error) {
+    if (!isCitationError(error)) throw error;
+    return {
+      text: groundedUnavailableReply(prepared.purpose),
+      evidence: [],
+      grounded: false,
+      repaired: true,
+      groundingUnavailable: true,
+      needsRepair: false,
+      result,
+    };
+  }
+}
+
+function isCitationError(error) {
+  return error?.code === "ungrounded_reply";
 }
 
 function runtimeMetadata({ route, result, firstTokenMs = null, totalMs, recovered = false }) {
@@ -336,7 +418,7 @@ function publicStreamError(error) {
     timeout: "云端回答超时，请稍后重试。",
     network_error: "云端网络连接暂时不可用，请稍后重试。",
     upstream_error: "云端服务暂时不可用，请稍后重试。",
-    ungrounded_reply: error?.message,
+    ungrounded_reply: groundedUnavailableReply(),
   };
   return { error: code, message: messages[code] ?? "本次回答没有完成，请稍后重试。" };
 }

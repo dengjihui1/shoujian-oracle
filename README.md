@@ -4,7 +4,7 @@
 
 独立的轻量虚拟卦师与经传 RAG 组件。它保留虚拟人主持、问题边界、三钱六爻和 64 卦确定性映射，并加入可追溯的《周易》《彖》《象》《说卦》冻结知识检索；明确不包含住宅分析、纳甲时证、档案、支付与追验等主项目核心。
 
-![版本](https://img.shields.io/badge/version-0.13.0-8e332a)
+![版本](https://img.shields.io/badge/version-0.14.0-8e332a)
 ![许可](https://img.shields.io/badge/license-MIT-d3b27f)
 
 ## 现在能完成什么
@@ -15,7 +15,7 @@
 4. 配置 Gemini 后，可以直接闲聊、询问墨衡的身份与能力、问一般基础问题，也可以不先起卦自由问经传知识；
 5. 只有点击“以此问起卦”才会固定原问并进入排卦；起卦后既可追问本卦、动爻和之卦，也可随时转回普通聊天，普通问题不会被强塞当前卦的证据；
 6. 涉及经传或当前卦象时，服务端从 456 条冻结片段中检索最多 8 条证据，回答下方可展开原文、层次、源号和维基文库页面；
-7. 普通聊天和经传 / 解卦按场景路由；回答通过 SSE 真流式传输并回传首包、总耗时与实际路由，若供应商半途断流会恢复完整回答并原位替换；
+7. 普通聊天会过滤弱相关误召回；经传 / 解卦保留冻结证据，漏引或错引会自动受约束修复一次，仍失败才给自然资料不足说明；回答通过 SSE 真流式传输，若供应商半途断流会恢复并原位替换；
 8. 每轮注入 `Asia/Shanghai` 服务器时钟，日期与时间问题不再交给模型猜测；
 9. 最近 24 条已完成对话、当前原问和程序卦象保存在当前浏览器本机；刷新后恢复同一阶段与同一卦，每次最多发送最近 16 条且不超过约 6000 字符；
 10. 支持浏览器实时语音转写，并在不支持时退回真实 Gemini 单请求内联转写；这不是 Google Cloud STT v2，接口边界明确记录；
@@ -26,6 +26,7 @@
 15. 云端文字回答最终失败时输入立即恢复，并提供用户主动点击的“重试本次回答”，不会重复插入用户问题；
 16. 可选配置 Groq、OpenRouter、SiliconFlow 或任意 OpenAI-compatible 文字兜底，连续故障会短时熔断；没有密钥时仍可本地起卦；
 17. 固定 RAG 评测集同时守住命中、负例和检索延迟，明确爻位与《说卦》问题不再携带大批无关片段。
+18. 对话在底部时自动跟随流式内容，用户上翻时保持原位并显示“回到最新”；`Enter` 发送、`Shift+Enter` 换行，中文输入法组字不会误发。
 
 问题文字不会改变卦象。项目没有账号、遥测或支付；本地模式不上传内容，云端模式会把用户主动提交的文字、录音、最近上下文和必要卦象证据发送给已配置的供应商。对话记忆只存当前浏览器的 `localStorage`，服务端不建立用户档案。
 
@@ -38,9 +39,9 @@
 | `oracleQuestionBoundary` | 7 类公开字规 | 问契签名、验期、准绳与追验 |
 | `iching` | 6/7/8/9、八卦、文王序 64 卦映射 | 古籍全文、爻辞、纳甲、六亲、旬空、六神 |
 
-经传数据另从中文维基文库公开来源建立独立知识包，不复制主项目住宅知识。语音 API 的真实边界、Google Cloud 配置和 RAG 构建全过程见 [语音 API 与 RAG 架构说明](docs/VOICE_RAG_ARCHITECTURE.md)；从上游 Cactus 提取了什么、拒绝照搬什么见 [Cactus 模块拆解](docs/CACTUS_MODULE_EXTRACTION.md)；完整映射见 [组件抽取与流程图](docs/COMPONENT_MAP.md)，逐模块说明见 [守简模块池](docs/MODULE_POOL.md)，发布验收见 [0.13.0 质量基线](docs/QUALITY_BASELINE.md)。
+经传数据另从中文维基文库公开来源建立独立知识包，不复制主项目住宅知识。语音 API 的真实边界、Google Cloud 配置和 RAG 构建全过程见 [语音 API 与 RAG 架构说明](docs/VOICE_RAG_ARCHITECTURE.md)；从上游 Cactus 提取了什么、拒绝照搬什么见 [Cactus 模块拆解](docs/CACTUS_MODULE_EXTRACTION.md)；完整映射见 [组件抽取与流程图](docs/COMPONENT_MAP.md)，逐模块说明见 [守简模块池](docs/MODULE_POOL.md)，发布验收见 [0.14.0 质量基线](docs/QUALITY_BASELINE.md)。
 
-用户实测确认但尚未完成的交互、RAG 降级、问卦访谈和直接语音对话改进，统一记录在 [下一阶段任务池](docs/USER_FEEDBACK_BACKLOG.md)；任务状态以该文件和实际测试为准。
+用户实测确认的交互、RAG 降级、问卦访谈和直接语音对话改进，统一记录在 [下一阶段任务池](docs/USER_FEEDBACK_BACKLOG.md)；任务状态以该文件和实际测试为准。
 
 ## 本地运行（无需 API）
 
@@ -88,6 +89,7 @@ Gemini 失败 → 可选 OpenAI-compatible 供应商池 → 短时熔断与自�
 - `src/oracle-view.js`：Shadow DOM 视图、卦卡、证据展示和输出转义；
 - `src/conversation-memory.js`：完成轮次过滤、最近上下文与可恢复会话快照；
 - `src/streaming-text.js`：可取消、积压自适应的字符级显示队列；
+- `src/conversation-scroll.js` / `composer-keys.js`：智能跟随、未读提示和输入法安全的键盘发送契约；
 - `src/avatar-state.js`：虚拟人的九种可测试状态与优先级；
 - `src/speech-segmenter.js`：面向中文流式文本的分句、长句切分与引用标记清理；
 - `src/speech-queue.js`：最多两句预取、严格顺序播放和可立即淘汰的 TTS 队列；
@@ -100,6 +102,7 @@ Gemini 失败 → 可选 OpenAI-compatible 供应商池 → 短时熔断与自�
 - `src/oracle-engine.js`：三钱六爻与 64 卦纯计算；
 - `server/`：密钥隔离、场景模型路由、Gemini / OpenAI-compatible 适配、故障熔断、TTS 缓存、限流和静态服务；
 - `server/knowledge-retriever.mjs`：本卦强绑定与自由问题检索；
+- `server/knowledge-routing.mjs`：普通 / 经传相关性路由、一次引用修复和自然降级；
 - `server/google-cloud-tts-client.mjs`：官方 Google Cloud TTS 客户端、凭证隔离与 WAV/PCM 适配；
 - `knowledge/shoujian-rag.v1.json`：64 卦、384 爻与 8 个说卦取象冻结知识；
 - `evaluation/` / `scripts/evaluate-rag.mjs`：固定 RAG 质量集与检索延迟预算；

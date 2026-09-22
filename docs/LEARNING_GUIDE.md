@@ -88,8 +88,12 @@
 - `render()` 只收集状态，`oracle-view.js` 负责转义并投影为 Shadow DOM；
 - `streaming-text.js` 把网络分片变成可取消的字符级显示，并在积压过多时自动提速；
 - `avatar-state.js` 把录音、转写、推演、润声、开口和卦象阶段映射为可测试的人物状态；
+- `conversation-scroll.js` 独立保存“跟随最新 / 用户上翻 / 未读”状态，避免每次重绘都粗暴滚到底；
+- `composer-keys.js` 隔离 Enter、Shift+Enter 与中文输入法组字契约，Enter 默认走普通聊天而不是误起卦；
 - `speech-segmenter.js` 与 `speech-queue.js` 让首句不必等待整篇回答，并限制最多两句并发预取；
 - 录音、转写、文字回答和后台 TTS 使用分离的取消边界，录音期间禁止并发提交文字。
+
+再看 `server/knowledge-routing.mjs`：普通问答会丢弃弱相关误召回；经传问题保留冻结证据，漏引或错引只允许一次受约束修复，第二次仍失败则返回自然说明。这样“自由问答”和“古籍可追溯”不再用同一条僵硬规则互相伤害。
 
 ## 可练习的小改动
 

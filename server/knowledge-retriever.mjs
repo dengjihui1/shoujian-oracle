@@ -89,7 +89,7 @@ export class OracleKnowledgeBase {
 
     return relevant
       .slice(0, boundedLimit)
-      .map(({ fragment, reasons }) => Object.freeze({
+      .map(({ fragment, score, reasons }) => Object.freeze({
         id: fragment.id,
         layer: fragment.layer,
         title: fragment.title,
@@ -97,6 +97,7 @@ export class OracleKnowledgeBase {
         sourceTitle: fragment.source.title,
         sourceUrl: fragment.source.url,
         license: fragment.source.license,
+        matchScore: score,
         matchedBy: reasons,
       }));
   }
