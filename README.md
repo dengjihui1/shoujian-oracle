@@ -4,12 +4,12 @@
 
 独立的轻量虚拟卦师与经传 RAG 组件。它保留虚拟人主持、问题边界、三钱六爻和 64 卦确定性映射，并加入可追溯的《周易》《彖》《象》《说卦》冻结知识检索；明确不包含住宅分析、纳甲时证、档案、支付与追验等主项目核心。
 
-![版本](https://img.shields.io/badge/version-0.16.0-8e332a)
+![版本](https://img.shields.io/badge/version-0.17.0-8e332a)
 ![许可](https://img.shields.io/badge/license-MIT-d3b27f)
 
 ## 现在能完成什么
 
-1. 墨衡以专属双帧 2.5D 虚拟人迎客，具有静候、倾听、辨音、推演、润声、开口、失声、待卦和照卦状态；
+1. 墨衡以专属双帧 2.5D 虚拟人迎客；统一动作编排驱动待机呼吸与眨眼、倾听靠近、听清点头、思考、开口、被打断复位和照卦展示；
 2. 生意、投资、医疗、法律、感情、长期命运和多问题均可起卦并附对应参考边界；只有即时伤害自己或他人的问题停止起卦并转现实危机支持；
 3. 问题通过后，浏览器本机模拟三钱六掷并机械排出本卦、动爻和之卦；
 4. 配置 Gemini 后，可以直接闲聊、询问墨衡的身份与能力、问一般基础问题，也可以不先起卦自由问经传知识；
@@ -42,7 +42,7 @@
 | `oracleQuestionBoundary` | 7 类公开字规 | 问契签名、验期、准绳与追验 |
 | `iching` | 6/7/8/9、八卦、文王序 64 卦映射 | 古籍全文、爻辞、纳甲、六亲、旬空、六神 |
 
-经传数据另从中文维基文库公开来源建立独立知识包，不复制主项目住宅知识。语音 API 的真实边界、Google Cloud 配置和 RAG 构建全过程见 [语音 API 与 RAG 架构说明](docs/VOICE_RAG_ARCHITECTURE.md)；从上游 Cactus 提取了什么、拒绝照搬什么见 [Cactus 模块拆解](docs/CACTUS_MODULE_EXTRACTION.md)；完整映射见 [组件抽取与流程图](docs/COMPONENT_MAP.md)，逐模块说明见 [守简模块池](docs/MODULE_POOL.md)，发布验收见 [0.16.0 质量基线](docs/QUALITY_BASELINE.md)。
+经传数据另从中文维基文库公开来源建立独立知识包，不复制主项目住宅知识。语音 API 的真实边界、Google Cloud 配置和 RAG 构建全过程见 [语音 API 与 RAG 架构说明](docs/VOICE_RAG_ARCHITECTURE.md)；从上游 Cactus 提取了什么、拒绝照搬什么见 [Cactus 模块拆解](docs/CACTUS_MODULE_EXTRACTION.md)；完整映射见 [组件抽取与流程图](docs/COMPONENT_MAP.md)，逐模块说明见 [守简模块池](docs/MODULE_POOL.md)，发布验收见 [0.17.0 质量基线](docs/QUALITY_BASELINE.md)。
 
 用户实测确认的交互、RAG 降级、问卦访谈和直接语音对话改进，统一记录在 [下一阶段任务池](docs/USER_FEEDBACK_BACKLOG.md)；任务状态以该文件和实际测试为准。
 
@@ -95,7 +95,8 @@ Gemini 失败 → 可选 OpenAI-compatible 供应商池 → 短时熔断与自�
 - `src/streaming-text.js`：可取消、积压自适应的字符级显示队列；
 - `src/conversation-scroll.js` / `composer-keys.js`：智能跟随、未读提示和输入法安全的键盘发送契约；
 - `src/voice-conversation.js`：显式开启、自动送问、回声隔离、打断恢复与 ASR / 首字 / 首声指标状态机；
-- `src/avatar-state.js`：虚拟人的九种可测试状态与优先级；
+- `src/avatar-state.js`：虚拟人的可测试语义状态与优先级；
+- `src/avatar-motion.js`：人物状态到身体动作、嘴部约束和手势语义的纯映射；无声音时强制闭口；
 - `src/speech-segmenter.js`：面向中文流式文本的分句、长句切分与引用标记清理；
 - `src/speech-queue.js`：最多两句预取、严格顺序播放和可立即淘汰的 TTS 队列；
 - `src/browser-speech.js`：不等待项目云端 TTS 的普通话浏览器语音与可取消播放；

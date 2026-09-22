@@ -1,6 +1,7 @@
 import { LINE_DEFINITIONS } from "./oracle-engine.js";
 import { PERSISTED_MEMORY_MESSAGES } from "./conversation-memory.js";
 import { deriveAvatarPresentation } from "./avatar-state.js";
+import { deriveAvatarMotion } from "./avatar-motion.js";
 
 const AVATAR_NEUTRAL = new URL("../assets/avatar/moheng-neutral.webp", import.meta.url).href;
 const AVATAR_SPEAKING = new URL("../assets/avatar/moheng-speaking.webp", import.meta.url).href;
@@ -19,6 +20,7 @@ export function renderOracleView(state) {
   const intakeReview = stage === "intake" && state.intake?.status === "review";
   const composerLocked = stage === "ready" || intakeReview || interactionLocked;
   const avatar = deriveAvatarPresentation({ ...state, stage });
+  const avatarMotion = deriveAvatarMotion(avatar.key);
 
   return `${styles}
     <main class="shell">
@@ -28,7 +30,7 @@ export function renderOracleView(state) {
       </header>
 
       <div class="experience">
-        ${avatarStage(avatar, phase)}
+        ${avatarStage(avatar, phase, avatarMotion)}
         <div class="conversation-column">
           <section class="dialogue" aria-label="与墨衡的当前对话" aria-live="polite">
             ${messages.map((message, index) => messageHtml(message, index, messages.length)).join("")}
@@ -101,7 +103,7 @@ function voiceConversationPanel(state, stage, intakeReview) {
       ${interruptible ? `<button class="interrupt" type="button" data-action="voice-interrupt">打断并说话</button>` : ""}
       ${active && conversationState === "error" ? `<button type="button" data-action="voice-conversation-retry">重新听</button>` : ""}
     </div>
-    ${active ? `<p class="voice-conversation-status" role="status"><b>${escapeHtml(labels[conversationState] ?? "语音对话已开启")}</b>${transcript ? `<span>“${escapeHtml(transcript)}”</span>` : ""}${error ? `<span>${escapeHtml(error)}</span>` : ""}</p>${latencyHtml(state.voiceConversationMetrics)}` : ""}
+    ${active ? `<p class="voice-conversation-status" role="status"><b>${escapeHtml(labels[conversationState] ?? "语音对话已开启")}</b><span data-voice-transcript ${transcript ? "" : "hidden"}>${transcript ? `“${escapeHtml(transcript)}”` : ""}</span>${error ? `<span>${escapeHtml(error)}</span>` : ""}</p>${latencyHtml(state.voiceConversationMetrics)}` : ""}
   </section>`;
 }
 
@@ -157,12 +159,15 @@ function composerPlaceholder(stage, state) {
   return state.cloud ? "生意、感情、健康、学业或任何困惑，都可以直接说" : "例如：未来三天，我该先验证哪一步？";
 }
 
-function avatarStage(avatar, phase) {
-  return `<section class="avatar-stage" data-avatar-state="${avatar.key}" style="--voice-level:0" aria-label="墨衡虚拟人，当前状态：${escapeHtml(avatar.label)}">
+function avatarStage(avatar, phase, motion) {
+  return `<section class="avatar-stage" data-avatar-state="${avatar.key}" data-avatar-motion="${motion.key}" data-mouth-state="closed" style="--voice-level:0" aria-label="墨衡虚拟人，当前状态：${escapeHtml(avatar.label)}">
     <div class="oracle-halo" aria-hidden="true"><span>乾</span><span>兑</span><span>离</span><span>震</span><span>巽</span><span>坎</span><span>艮</span><span>坤</span></div>
+    <div class="attention-rings" aria-hidden="true"><i></i><i></i></div>
+    <div class="avatar-reading-token" aria-hidden="true"><span>易</span><i>观象</i></div>
     <div class="portrait-stack" aria-hidden="true">
       <img class="avatar-neutral" src="${escapeHtml(AVATAR_NEUTRAL)}" width="560" height="700" alt="" draggable="false">
       <img class="avatar-speaking" src="${escapeHtml(AVATAR_SPEAKING)}" width="560" height="700" alt="" draggable="false">
+      <span class="avatar-eyelids"><i></i><i></i></span>
       <span class="avatar-breath"></span>
     </div>
     <div class="avatar-panel">
@@ -227,10 +232,21 @@ const styles = `<style>
   .oracle-halo::before,.oracle-halo::after { content: ""; position: absolute; inset: 10%; border: 1px solid #b58b4d30; border-radius: 50%; } .oracle-halo::after { inset: 31%; background: radial-gradient(circle,#d7a5542c,transparent 68%); }
   .oracle-halo span { position: absolute; left: 50%; top: 50%; width: 34px; height: 34px; margin: -17px; display: grid; place-items: center; color: #c9a162; background: #17120fdd; border: 1px solid #80623e; border-radius: 50%; font-size: 13px; transform: rotate(calc(var(--i,0) * 45deg)) translateY(-152px) rotate(calc(var(--i,0) * -45deg)); }
   .oracle-halo span:nth-child(1){--i:0}.oracle-halo span:nth-child(2){--i:1}.oracle-halo span:nth-child(3){--i:2}.oracle-halo span:nth-child(4){--i:3}.oracle-halo span:nth-child(5){--i:4}.oracle-halo span:nth-child(6){--i:5}.oracle-halo span:nth-child(7){--i:6}.oracle-halo span:nth-child(8){--i:7}
-  .portrait-stack { position: absolute; inset: 18px 0 58px; transform-origin: 50% 100%; animation: breathe 5.2s ease-in-out infinite; }
+  .portrait-stack { position: absolute; inset: 18px 0 58px; transform-origin: 50% 100%; }
   .portrait-stack img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; object-position: center bottom; user-select: none; filter: drop-shadow(0 20px 28px #000c); }
   .avatar-speaking { opacity: 0; clip-path: ellipse(11% 5.4% at 50% 28.7%); }
-  [data-avatar-state="speaking"] .avatar-speaking { opacity: var(--voice-level); transition: opacity 55ms linear; }
+  [data-mouth-state="audio"] .avatar-speaking { opacity: var(--voice-level); transition: opacity 55ms linear; }
+  .avatar-eyelids { position:absolute; inset:0; z-index:3; pointer-events:none; } .avatar-eyelids i{position:absolute;top:19.1%;width:5.2%;height:1.7%;border-radius:50%;background:linear-gradient(#4e3024,#9b654c 56%,#382218);box-shadow:0 1px 1px #160c08;opacity:0;transform:scaleY(.08);transform-origin:center}.avatar-eyelids i:first-child{left:42.8%;rotate:2deg}.avatar-eyelids i:last-child{left:51.9%;rotate:-2deg}
+  [data-avatar-motion="idle-breath"] .portrait-stack,[data-avatar-motion="invite-detail"] .portrait-stack,[data-avatar-motion="await-cast"] .portrait-stack{animation:breathe 5.2s ease-in-out infinite}
+  [data-avatar-motion="idle-breath"] .avatar-eyelids i,[data-avatar-motion="invite-detail"] .avatar-eyelids i{animation:blink 7.2s ease-in-out infinite}
+  [data-avatar-motion="listen-lean"] .portrait-stack{animation:listen-lean 1.55s ease-in-out infinite alternate}
+  [data-avatar-motion="listen-lean"] .avatar-eyelids i{animation:soft-blink 5.5s ease-in-out infinite}
+  [data-avatar-motion="acknowledge"] .portrait-stack{animation:acknowledge .62s cubic-bezier(.25,.85,.35,1) both}
+  [data-avatar-motion="ponder"] .portrait-stack{animation:ponder 3.4s ease-in-out infinite alternate}
+  [data-avatar-motion="prepare-speech"] .portrait-stack{animation:inhale .8s ease-out both}
+  [data-avatar-motion="speak"] .portrait-stack{animation:speaking-body 1.1s ease-in-out infinite alternate}
+  [data-avatar-motion="interrupt-recover"] .portrait-stack{animation:interrupt-recover .58s cubic-bezier(.22,.9,.3,1) both}
+  [data-avatar-motion="present-reading"] .portrait-stack{animation:present-reading .85s ease-out both}
   .avatar-breath { position: absolute; left: 50%; bottom: 12%; width: 54%; height: 12%; translate: -50%; border-radius: 50%; background: #b44b3038; filter: blur(24px); opacity: 0; }
   [data-avatar-state="thinking"] .oracle-halo,[data-avatar-state="preparing"] .oracle-halo { animation-duration: 9s; filter: drop-shadow(0 0 12px #c68a48); }
   [data-avatar-state="listening"] .avatar-breath,[data-avatar-state="speaking"] .avatar-breath { opacity: calc(.22 + var(--voice-level)); }
@@ -238,6 +254,9 @@ const styles = `<style>
   .avatar-state-line { display: flex; gap: 7px; align-items: center; font: 12px/1.4 system-ui,sans-serif; letter-spacing: .08em; } .state-dot { width: 8px; height: 8px; border-radius: 50%; background: #96816a; box-shadow: 0 0 0 4px #96816a18; }
   [data-avatar-state="listening"] .state-dot { background:#78b7a2; animation:pulse 1s infinite; } [data-avatar-state="intake"] .state-dot,[data-avatar-state="thinking"] .state-dot,[data-avatar-state="preparing"] .state-dot { background:#d29a53; animation:pulse .8s infinite; } [data-avatar-state="speaking"] .state-dot { background:#dc6d59; animation:pulse .45s infinite; }
   [data-avatar-state="error"] .state-dot { background:#c26559; box-shadow:0 0 0 4px #c2655928; }
+  [data-avatar-state="heard"] .state-dot{background:#d8ae68;animation:pulse .32s 2}[data-avatar-state="interrupted"] .state-dot{background:#df765f;animation:pulse .28s 2}
+  .attention-rings{position:absolute;z-index:1;inset:12% 9% auto;height:38%;opacity:0;pointer-events:none}.attention-rings i{position:absolute;inset:18%;border:1px solid #78b7a255;border-radius:50%;animation:attention 1.8s ease-out infinite}.attention-rings i:last-child{animation-delay:.6s}[data-avatar-motion="listen-lean"] .attention-rings{opacity:1}
+  .avatar-reading-token{position:absolute;z-index:2;right:7%;top:42%;display:grid;justify-items:center;gap:5px;opacity:0;transform:translateY(18px) rotate(4deg);padding:10px 8px;color:#e0bc74;background:#211711e8;border:1px solid #a67c44;border-radius:50% 50% 46% 46%;box-shadow:0 8px 28px #0009,0 0 20px #d79e4440}.avatar-reading-token span{font-size:28px}.avatar-reading-token i{font:10px/1.2 system-ui,sans-serif;letter-spacing:.15em;font-style:normal}[data-avatar-motion="present-reading"] .avatar-reading-token{animation:token-reveal .9s .18s ease-out both}
   .avatar-panel p { margin: 5px 0 0; color: #a99b87; font: 12px/1.5 system-ui,sans-serif; }
   .voice-meter { height: 22px; display: flex; gap: 3px; align-items: end; margin-top: 8px; } .voice-meter i { flex: 1; height: 3px; max-height: 20px; transform-origin: bottom; background: linear-gradient(#dcb26f,#7d3429); border-radius: 4px; opacity: .25; }
   [data-avatar-state="listening"] .voice-meter i { opacity: .8; animation: meter .7s calc(var(--bar) * -70ms) ease-in-out infinite alternate; }
@@ -259,11 +278,11 @@ const styles = `<style>
   .composer-hint { display:block; margin-top:7px; color:#877b6c; font:11px/1.4 system-ui,sans-serif; }
   .submit-actions { display: grid; gap: 8px; align-content: start; } .submit-actions .primary { width: auto; } .quick { display: flex; flex-wrap: wrap; gap: 7px; } .quick button { min-height: 38px; padding: 7px 12px; font-size: 13px; } .rag-invitation { margin: 0; padding: 10px 12px; color: #d5c2a2; background: #88713b18; border: 1px solid #74623e; border-radius: 12px; font: 13px/1.65 system-ui,sans-serif; }
   .voice-tools { display: flex; flex-wrap: wrap; gap: 8px; } .voice-tools button { background: #25201b; } .memory-tools { display: flex; gap: 10px; align-items: center; justify-content: space-between; color: #938674; font: 11px/1.5 system-ui,sans-serif; } .memory-tools button { min-height: 32px; padding: 5px 10px; background: transparent; color: #bda987; font-size: 11px; }
-  .voice-conversation { display:grid; gap:10px; padding:13px; background:linear-gradient(135deg,#17322966,#241b16); border:1px solid #527565; border-radius:14px; } .voice-conversation-copy{display:grid;gap:3px}.voice-conversation-copy strong{color:#d7eadf}.voice-conversation-copy small{color:#aebfb5;font:11px/1.55 system-ui,sans-serif}.voice-conversation-actions{display:flex;flex-wrap:wrap;gap:8px}.voice-conversation-actions .primary{width:auto;background:#315d4d;border-color:#65917e}.voice-conversation-actions .interrupt{background:#8e332a;border-color:#bb6b5d}.voice-conversation-status{display:grid;gap:4px;margin:0;padding:9px 11px;color:#cbdcd2;background:#07130f88;border-radius:10px;font:12px/1.55 system-ui,sans-serif}.voice-conversation-status span{color:#aebfb5;overflow-wrap:anywhere}.voice-latency{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}.voice-latency div{padding:7px;background:#06100d88}.voice-latency dd{font:600 12px/1.3 system-ui,sans-serif;color:#d7eadf}
+  .voice-conversation { display:grid; gap:10px; padding:13px; background:linear-gradient(135deg,#17322966,#241b16); border:1px solid #527565; border-radius:14px; } .voice-conversation-copy{display:grid;gap:3px}.voice-conversation-copy strong{color:#d7eadf}.voice-conversation-copy small{color:#aebfb5;font:11px/1.55 system-ui,sans-serif}.voice-conversation-actions{display:flex;flex-wrap:wrap;gap:8px}.voice-conversation-actions .primary{width:auto;background:#315d4d;border-color:#65917e}.voice-conversation-actions .interrupt{background:#8e332a;border-color:#bb6b5d}.voice-conversation-status{display:grid;gap:4px;margin:0;padding:9px 11px;color:#cbdcd2;background:#07130f88;border-radius:10px;font:12px/1.55 system-ui,sans-serif}.voice-conversation-status span{color:#aebfb5;overflow-wrap:anywhere}.voice-conversation-status span[hidden]{display:none}.voice-latency{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}.voice-latency div{padding:7px;background:#06100d88}.voice-latency dd{font:600 12px/1.3 system-ui,sans-serif;color:#d7eadf}
   .voice-notice { margin: -3px 0 0; padding: 8px 10px; color: #e0b9ad; background: #7a2c2422; border: 1px solid #8d4c43; border-radius: 10px; font: 12px/1.55 system-ui,sans-serif; } .voice-notice[hidden] { display:none; }
   footer { margin-top: 18px; color: #8f8578; font: 11px/1.65 system-ui,sans-serif; } textarea:focus,button:focus-visible,[data-latest]:focus { outline: 3px solid #d2a15b; outline-offset: 3px; }
-  @keyframes cursor-blink { 50% { opacity: 0; } } @keyframes halo-turn { to { rotate:360deg; } } @keyframes breathe { 50% { transform: translateY(-3px) scale(1.006); } } @keyframes pulse { 50% { opacity:.38; box-shadow:0 0 0 8px currentColor; } } @keyframes meter { to { height: var(--amp); } }
+  @keyframes cursor-blink{50%{opacity:0}}@keyframes halo-turn{to{rotate:360deg}}@keyframes breathe{50%{transform:translateY(-4px) scale(1.007)}}@keyframes blink{0%,45%,48%,100%{opacity:0;transform:scaleY(.08)}46%,47%{opacity:.88;transform:scaleY(1)}}@keyframes soft-blink{0%,68%,72%,100%{opacity:0;transform:scaleY(.08)}70%{opacity:.78;transform:scaleY(.78)}}@keyframes listen-lean{to{transform:translateY(-5px) scale(1.018) rotate(-.28deg)}}@keyframes acknowledge{0%{transform:translateY(-2px)}38%{transform:translateY(6px) scale(.995)}72%{transform:translateY(-2px) scale(1.004)}100%{transform:none}}@keyframes ponder{to{transform:translate(-3px,-2px) rotate(-.22deg)}}@keyframes inhale{0%{transform:scale(.998)}70%{transform:translateY(-4px) scale(1.012)}100%{transform:translateY(-2px) scale(1.006)}}@keyframes speaking-body{to{transform:translateY(-2px) scale(1.004)}}@keyframes interrupt-recover{0%{transform:translateY(-2px) scale(1.006)}35%{transform:translateX(-7px) rotate(-.65deg)}100%{transform:translateY(-3px) scale(1.014)}}@keyframes present-reading{from{transform:translateY(5px);filter:brightness(.9)}to{transform:translate(-1.2%,-2px);filter:brightness(1.04)}}@keyframes attention{0%{opacity:.65;transform:scale(.7)}100%{opacity:0;transform:scale(1.28)}}@keyframes token-reveal{from{opacity:0;transform:translateY(18px) rotate(4deg)}to{opacity:1;transform:translateY(0) rotate(0)}}@keyframes pulse{50%{opacity:.38;box-shadow:0 0 0 8px currentColor}}@keyframes meter{to{height:var(--amp)}}
   @media(max-width:860px){ .master-card{align-items:start}.experience{grid-template-columns:1fr}.avatar-stage{position:relative;top:auto;min-height:470px}.portrait-stack{inset:-20px 0 54px}.oracle-halo{width:340px}.oracle-halo span{transform:rotate(calc(var(--i)*45deg)) translateY(-132px) rotate(calc(var(--i)*-45deg))}.dialogue{max-height:400px} }
   @media(max-width:560px){ .shell{padding:15px;border-radius:17px}.master-card{display:grid}.system-state{text-align:left}.avatar-stage{min-height:390px}.portrait-stack{inset:-5px -25px 54px}.avatar-panel{margin:0 9px 9px}.oracle-halo{top:4%;width:270px}.oracle-halo span{width:28px;height:28px;margin:-14px;transform:rotate(calc(var(--i)*45deg)) translateY(-105px) rotate(calc(var(--i)*-45deg))}.input-row{grid-template-columns:1fr}.line{grid-template-columns:1fr;gap:2px}dl:not(.voice-latency){grid-template-columns:1fr}.message{max-width:96%}.memory-tools{align-items:flex-start}.voice-conversation-actions button{flex:1}.voice-latency{grid-template-columns:repeat(3,minmax(0,1fr))} }
-  @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important;animation:none!important}[data-avatar-state="speaking"] .avatar-speaking{opacity:var(--voice-level)}}
+  @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important;animation:none!important}[data-mouth-state="audio"] .avatar-speaking{opacity:var(--voice-level)}[data-avatar-motion="present-reading"] .avatar-reading-token{opacity:1;transform:none}}
 </style>`;

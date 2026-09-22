@@ -10,7 +10,7 @@ const required = [
   "docs/API_SETUP.md", "server/index.mjs", "server/gemini-client.mjs", "server/prompt.mjs",
   "server/knowledge-retriever.mjs", "server/knowledge-routing.mjs", "server/rate-limiter.mjs", "server/cloud-client.mjs", "server/openai-compatible-client.mjs", "server/speech-cache.mjs", "server/google-cloud-tts-client.mjs", "knowledge/shoujian-rag.v1.json", "knowledge/README.md", "evaluation/rag-cases.json", "scripts/evaluate-rag.mjs",
   "src/oracle-engine.js", "src/question-boundary.js", "src/response-policy.js", "src/dialogue-engine.js", "src/shoujian-oracle.js", "src/oracle-view.js",
-  "src/api-client.js", "src/audio-recorder.js", "src/audio-player.js", "src/browser-speech.js", "src/conversation-memory.js", "src/streaming-text.js", "src/avatar-state.js", "src/conversation-scroll.js", "src/composer-keys.js", "src/divination-intake.js", "src/voice-conversation.js",
+  "src/api-client.js", "src/audio-recorder.js", "src/audio-player.js", "src/browser-speech.js", "src/conversation-memory.js", "src/streaming-text.js", "src/avatar-state.js", "src/avatar-motion.js", "src/conversation-scroll.js", "src/composer-keys.js", "src/divination-intake.js", "src/voice-conversation.js",
   "src/speech-segmenter.js", "src/speech-queue.js",
   "assets/avatar/moheng-neutral.webp", "assets/avatar/moheng-speaking.webp"
 ];

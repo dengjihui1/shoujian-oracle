@@ -41,6 +41,7 @@ Gemini 未配置 → 有限追问：意思 / 动爻 / 算法 / 边界
 | --- | --- | --- | --- | --- |
 | 虚拟人外壳 | `src/shoujian-oracle.js` | 点击、文本、会话状态 | 对话和卦象界面 | 否，负责 UI 状态 |
 | 虚拟人状态 | `src/avatar-state.js` | 录音、转写、回答、语音与卦象阶段 | 可测试的人物表现状态 | 是 |
+| 虚拟人动作编排 | `src/avatar-motion.js` | 人物表现状态、音频能量 | 呼吸 / 眨眼 / 靠近 / 点头 / 思考 / 说话 / 打断 / 照卦动作与闭口约束 | 是 |
 | 安全视图 | `src/oracle-view.js` | 当前只读状态 | Shadow DOM、卦卡、证据链接 | 是，返回转义后的 HTML |
 | 对话路由 | `src/dialogue-engine.js` | 用户追问、当前卦象 | 固定意图与回答 | 是 |
 | 问题边界 | `src/question-boundary.js` | 原问文本 | `clear/advisory/blocked` | 是 |

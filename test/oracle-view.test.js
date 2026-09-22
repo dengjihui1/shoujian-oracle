@@ -62,9 +62,19 @@ test("unknown stages fall back to the question state", () => {
 test("view renders the dedicated two-frame virtual diviner stage", () => {
   const html = render({ voiceState: "playing" });
   assert.match(html, /class="avatar-stage" data-avatar-state="speaking"/u);
+  assert.match(html, /data-avatar-motion="speak" data-mouth-state="closed"/u);
   assert.match(html, /moheng-neutral\.webp/u);
   assert.match(html, /moheng-speaking\.webp/u);
   assert.match(html, /data-avatar-label>开口</u);
+  assert.match(html, /class="avatar-eyelids"/u);
+});
+
+test("avatar choreography exposes listening, acknowledgement and reading motions", () => {
+  assert.match(render({ voiceConversationState: "listening" }), /data-avatar-motion="listen-lean"/u);
+  assert.match(render({ voiceConversationState: "heard" }), /data-avatar-motion="acknowledge"/u);
+  assert.match(render({ stage: "reading" }), /data-avatar-motion="present-reading"/u);
+  assert.match(render({ stage: "reading" }), /class="avatar-reading-token"/u);
+  assert.match(render(), /@media\(prefers-reduced-motion:reduce\)/u);
 });
 
 test("view makes a speech failure visible without disabling text chat", () => {

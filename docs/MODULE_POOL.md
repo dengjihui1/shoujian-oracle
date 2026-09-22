@@ -7,7 +7,7 @@
 ```text
 index.html
   └─ P01 Web Component 编排
-      ├─ P02 安全视图 ── P03 虚拟人状态 ── A01 人物素材
+      ├─ P02 安全视图 ── P03 虚拟人状态 ── P16 动作编排 ── A01 人物素材
       ├─ P04 本机会话记忆
       ├─ P05 流式文字显示
       ├─ P12 对话视口跟随 ├─ P13 键盘提交契约
@@ -47,6 +47,7 @@ Q01 行为测试 + Q02 项目体检 + Q03 RAG 评测 覆盖全部模块
 | P13 | 输入键盘契约 | `src/composer-keys.js` | 稳定 | `test/composer-keys.test.js` |
 | P14 | 问卦情境访谈 | `src/divination-intake.js` | 稳定 | `test/divination-intake.test.js`、会话记忆与视图测试 |
 | P15 | 直接语音对话状态机 | `src/voice-conversation.js` | 代码稳定，待真实设备指标 | `test/voice-conversation.test.js`、人物与视图测试 |
+| P16 | 虚拟人动作编排 | `src/avatar-motion.js`、`src/oracle-view.js` | 稳定 | `test/avatar-motion.test.js`、视图与人物状态测试 |
 | D01 | 起卦问题边界 | `src/question-boundary.js` | 稳定 | `test/question-boundary.test.js` |
 | D02 | 场景响应策略 | `src/response-policy.js` | 稳定 | `test/response-policy.test.js` |
 | D03 | 无云端降级对话 | `src/dialogue-engine.js` | 稳定 | `test/dialogue-engine.test.js` |
@@ -77,7 +78,7 @@ Q01 行为测试 + Q02 项目体检 + Q03 RAG 评测 覆盖全部模块
 - 文件：`src/shoujian-oracle.js`
 - 单一职责：把用户事件、三阶段会话、云端流、记忆、录音和 TTS 串成一个可取消生命周期；不负责生成 HTML、计算卦象规则或直接调用 Gemini。
 - 输入 / 输出：键盘、按钮、麦克风事件与 API 分片 → 组件状态、消息、卦象和渲染调用。
-- 依赖：P02–P11、P15、D01、D03、D04。
+- 依赖：P02–P11、P15、P16、D01、D03、D04。
 - 正常路径：自由对话；明确选择起卦；`question → intake → ready → reading`；卦后自由追问。
 - 失败与降级：流式中途断开会尝试恢复完整回答并原位替换；恢复仍失败才结束当前回复；TTS 失败不锁文字；取消会中止当前请求并淘汰旧音频；无云端退回 D03。
 - 测试：通过各子模块单测和 `test/server-contract.test.js` 间接覆盖；目前最值得补的是浏览器级组件集成测试。
@@ -103,7 +104,7 @@ Q01 行为测试 + Q02 项目体检 + Q03 RAG 评测 覆盖全部模块
 - 优先级：语音对话的倾听 / 听清 / 打断 / 开口 / 推演 → 单次录音 → 辨音 → TTS → 失声 → 卦象阶段。
 - 失败与降级：语音失败显示“失声”，但更高优先级的活动状态仍可覆盖它。
 - 测试：`test/avatar-state.test.js`。
-- 练习：加入可测试的“被用户打断”过渡态，而不是只加 CSS 动画。
+- 练习：新增人物状态时先补纯映射和优先级测试，再交给 P16 选择动作。
 
 ### P04 本机会话记忆
 
@@ -228,6 +229,17 @@ Q01 行为测试 + Q02 项目体检 + Q03 RAG 评测 覆盖全部模块
 - 指标：每轮记录 ASR 定稿、提交后首字、提交后首声；仓库只提供单轮可视值，P50 / P95 需要真实设备样本。
 - 测试：`test/voice-conversation.test.js`、`test/oracle-view.test.js`、`test/avatar-state.test.js`。
 - 练习：把真实设备指标导出为本机 JSON，仍不上传服务器或保存原始音频。
+
+### P16 虚拟人动作编排
+
+- 文件：`src/avatar-motion.js`、`src/oracle-view.js`
+- 单一职责：把 P03 的语义状态映射成低幅度身体动作、环境强调和嘴部规则；动作不决定对话内容，也不读取音频或网络。
+- 输入 / 输出：人物表现键与 0–1 音频能量 → 动作键、手势语义、`closed / audio` 嘴部状态。
+- 正常路径：静候呼吸与定时眨眼；倾听轻微靠近；听清单次点头；推演轻摆；开口由音频节奏带动；打断回撤后靠近；照卦出现“易 / 观象”令牌。
+- 失败与降级：未知状态退回静候；音频能量未过 0.08 或状态不是 `speaking` 时始终闭口；减少动态偏好停用动作但保留状态文字和照卦符号。
+- 性能：只改变 `transform / opacity` 等合成友好属性；interim 转写只更新文本节点，不再重建人物舞台。
+- 测试：`test/avatar-motion.test.js`、`test/oracle-view.test.js`、`test/avatar-state.test.js`。
+- 练习：用视觉回归检查不同宽度下眼睑与面部对齐，不在未验证前增加更大动作幅度。
 
 ## 四、领域与安全池
 
@@ -455,4 +467,4 @@ Q01 行为测试 + Q02 项目体检 + Q03 RAG 评测 覆盖全部模块
 
 “待补”不等于当前功能不可用；它表示要从本地教学组件升级为面向公众的长期服务时，还需要完成的工程层。
 
-当前自动化、真实云端链路和浏览器人工验收结果见 [0.16.0 质量基线](QUALITY_BASELINE.md)。
+当前自动化、真实云端链路和浏览器人工验收结果见 [0.17.0 质量基线](QUALITY_BASELINE.md)。

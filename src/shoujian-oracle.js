@@ -16,6 +16,7 @@ import { ConversationViewport } from "./conversation-scroll.js";
 import { isComposerSendShortcut, preferredComposerSubmitter } from "./composer-keys.js";
 import { answerIntakeQuestion, confirmIntakeSummary, createDivinationIntake, currentIntakeQuestion, prepareIntakeReview, skipIntakeQuestion } from "./divination-intake.js";
 import { VoiceConversationController } from "./voice-conversation.js";
+import { deriveAvatarMotion, mouthStateForLevel } from "./avatar-motion.js";
 
 export class ShoujianOracle extends HTMLElement {
   constructor() {
@@ -598,6 +599,7 @@ export class ShoujianOracle extends HTMLElement {
     const normalized = Math.max(0, Math.min(1, Number(level) || 0));
     stage.style.setProperty("--voice-level", String(normalized));
     stage.style.setProperty("--voice-level-px", `${Math.round(3 + normalized * 16)}px`);
+    stage.dataset.mouthState = mouthStateForLevel(stage.dataset.avatarState, normalized);
   }
 
   updateVoiceStatus() {
@@ -607,6 +609,8 @@ export class ShoujianOracle extends HTMLElement {
     const stage = this.shadowRoot?.querySelector(".avatar-stage");
     if (!stage) return;
     stage.dataset.avatarState = avatar.key;
+    stage.dataset.avatarMotion = deriveAvatarMotion(avatar.key).key;
+    if (avatar.key !== "speaking") stage.dataset.mouthState = "closed";
     stage.setAttribute("aria-label", `墨衡虚拟人，当前状态：${avatar.label}`);
     const label = stage.querySelector("[data-avatar-label]");
     const detail = stage.querySelector("[data-avatar-detail]");
@@ -647,9 +651,22 @@ export class ShoujianOracle extends HTMLElement {
   }
 
   handleVoiceConversationUpdate(snapshot) {
+    const previous = this.voiceConversationSnapshot;
     this.voiceConversationSnapshot = snapshot;
     if (snapshot.state === "listening") this.draft = snapshot.transcript;
-    this.render();
+    const metricsChanged = ["asrFinalMs", "firstTokenMs", "firstAudioMs"]
+      .some((key) => previous.metrics?.[key] !== snapshot.metrics?.[key]);
+    if (previous.active !== snapshot.active || previous.state !== snapshot.state || previous.error !== snapshot.error || metricsChanged) {
+      this.render();
+      return;
+    }
+    const field = this.shadowRoot.querySelector("textarea:not([data-intake-summary])");
+    if (field && snapshot.state === "listening") field.value = snapshot.transcript;
+    const transcript = this.shadowRoot.querySelector("[data-voice-transcript]");
+    if (transcript) {
+      transcript.hidden = !snapshot.transcript;
+      transcript.textContent = snapshot.transcript ? `“${snapshot.transcript}”` : "";
+    }
   }
 
   voiceButtonLabel() {
