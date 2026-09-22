@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { once } from "node:events";
-import { compatibleProvidersFromEnv, createApp } from "../server/index.mjs";
+import { clientFromEnv, compatibleProvidersFromEnv, createApp } from "../server/index.mjs";
 import { OracleApiClient } from "../src/api-client.js";
 
 async function withServer(app, run) {
@@ -43,6 +43,15 @@ test("environment adapter recognizes named and generic compatible providers only
   });
   assert.deepEqual(providers.map(({ provider }) => provider), ["compatible", "groq"]);
   assert.equal(providers[1].baseUrl, "https://api.groq.com/openai/v1");
+});
+
+test("legacy chat configuration no longer slows the ordinary fast route", () => {
+  const client = clientFromEnv({ GEMINI_API_KEY: "test-only", GEMINI_CHAT_MODEL: "legacy-quality-model" });
+  assert.equal(client.primary.models.chat, "gemini-3.1-flash-lite");
+  assert.equal(client.primary.models.fast, "gemini-3.1-flash-lite");
+  assert.equal(client.primary.models.grounded, "gemini-3.1-flash-lite");
+  const overridden = clientFromEnv({ GEMINI_API_KEY: "test-only", GEMINI_GROUNDED_MODEL: "chosen-quality-model" });
+  assert.equal(overridden.primary.models.grounded, "chosen-quality-model");
 });
 
 test("API routes enforce boundary and preserve deterministic reading context", async () => {

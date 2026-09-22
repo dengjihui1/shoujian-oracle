@@ -53,6 +53,13 @@ test("an explicitly ordinary question remains chat even when a reading exists", 
   assert.equal(policy.purpose, "chat");
 });
 
+test("named Zhouyi knowledge stays independent from the current reading", () => {
+  assert.equal(inferConversationPurpose("《说卦》里坤为什么是地和母？", "reading"), "chat");
+  assert.equal(inferConversationPurpose("乾卦九五爻辞怎么理解？", "reading"), "chat");
+  assert.equal(inferConversationPurpose("这卦的九五爻辞怎么理解？", "reading"), "divination");
+  assert.equal(inferConversationPurpose("本卦和原问有什么关系？", "reading"), "divination");
+});
+
 test("advisory divination is allowed while immediate harm still receives direct support", () => {
   const business = resolveResponsePolicy({ message: "这门生意是否值得继续？", purpose: "divination", stage: "question" });
   assert.equal(business.action, "allow");

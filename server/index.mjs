@@ -360,9 +360,8 @@ export function clientFromEnv(env = process.env) {
     fastFallbackModels: splitModels(env.GEMINI_FAST_FALLBACK_MODELS),
     groundedFallbackModels: splitModels(env.GEMINI_GROUNDED_FALLBACK_MODELS),
     models: {
-      chat: env.GEMINI_CHAT_MODEL ?? DEFAULT_MODELS.chat,
-      fast: env.GEMINI_FAST_MODEL ?? env.GEMINI_CHAT_MODEL ?? DEFAULT_MODELS.fast,
-      grounded: env.GEMINI_GROUNDED_MODEL ?? env.GEMINI_CHAT_MODEL ?? DEFAULT_MODELS.grounded,
+      fast: env.GEMINI_FAST_MODEL ?? DEFAULT_MODELS.fast,
+      grounded: env.GEMINI_GROUNDED_MODEL ?? DEFAULT_MODELS.grounded,
       transcribe: env.GEMINI_TRANSCRIBE_MODEL ?? DEFAULT_MODELS.transcribe,
       speech: env.GEMINI_TTS_MODEL ?? DEFAULT_MODELS.speech
     }

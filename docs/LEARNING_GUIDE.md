@@ -44,6 +44,7 @@
 - 知识包把 64 个卦级记录、384 个爻级记录和 8 个《说卦》取象拆成 456 个片段；
 - 当前本卦、实际动爻、之卦和上下卦使用确定性高权重，不让普通关键词把核心证据挤走；
 - 不带当前卦时，可以按卦名、爻位和经传短语检索；
+- 明确询问九五等爻位、卦辞或《说卦》取象时，会提升对应证据并抑制无关兄弟片段；
 - 每条返回证据都有稳定源号、原文、层次、许可与源页面；
 - 没有命中时返回空证据，不生成装饰性出处。
 
@@ -51,12 +52,14 @@
 
 ### 5. 再看云端适配器
 
-按顺序看 `src/api-client.js`、`server/index.mjs`、`server/gemini-client.mjs` 和 `server/prompt.mjs`：
+按顺序看 `src/api-client.js`、`server/index.mjs`、`server/cloud-client.mjs`、两个供应商适配器和 `server/prompt.mjs`：
 
 - 浏览器永远不接触 Gemini 密钥；
 - 服务端先做长度、类型和问题边界校验；
 - 每轮由服务端注入可信的 `Asia/Shanghai` 当前时间，模型不得自行猜日期；
 - 自由回答使用 Gemini `streamGenerateContent` SSE，浏览器解析 `meta / delta / replace / done / error` 事件；若上游在已有分片后中断，服务端会重新生成完整答案并通过 `replace` 原位恢复；
+- 普通问题使用 `fast` 路由，经传 / 解卦使用 `grounded` 路由；当前实测两者默认同用低延迟模型，但保留独立配置和质量备用链；
+- `cloud-client.mjs` 只在首字前跨供应商回退，连续瞬态失败会短时熔断；`openai-compatible-client.mjs` 让 Groq、OpenRouter、SiliconFlow 使用同一契约；
 - 语音优先使用浏览器实时识别并持续更新输入框；不支持时把短音频内联交给 Transcribe，只有格式不兼容才使用 Files API；
 - 提示词把本地计算结果标为只读，模型不能重新排卦，并把本轮 RAG 片段作为唯一经传证据；
 - `fetch` 可以注入，所以测试不需要真实密钥或额度。
@@ -68,6 +71,7 @@
 - 为什么取消必须同时覆盖待合成请求、当前播放器和后续队列；
 - PCM16 如何直接转换成 Web Audio 浮点采样，并用 RMS 音量驱动嘴部叠层；
 - Web Audio 不可用时，怎样退回 WAV Blob，而不影响文字回答。
+- `server/speech-cache.mjs` 怎样合并相同在途句子，并用哈希键和 LRU / TTL 控制缓存边界。
 
 ### 6. 最后看 UI 状态机与视图拆分
 

@@ -61,3 +61,11 @@ test("explicit Shuogua questions prioritize the matching trigram evidence", () =
     assert.equal(knowledge.retrieve({ query })[0]?.id, expected);
   }
 });
+
+test("an explicit line or overview query does not drag in every sibling line", () => {
+  const lineEvidence = knowledge.retrieve({ query: "乾卦九五爻辞怎么理解？", limit: 8 });
+  assert.equal(lineEvidence[0]?.id, "ZY-01-LINE-5");
+  assert.ok(lineEvidence.length <= 3);
+  const overviewEvidence = knowledge.retrieve({ query: "谦卦的卦辞和大象是什么？", limit: 8 });
+  assert.equal(overviewEvidence[0]?.id, "ZY-15-OVERVIEW");
+});

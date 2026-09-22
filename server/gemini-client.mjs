@@ -1,14 +1,14 @@
 const DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com";
 
 export const DEFAULT_MODELS = Object.freeze({
-  chat: "gemini-3.5-flash",
+  chat: "gemini-3.1-flash-lite",
   fast: "gemini-3.1-flash-lite",
-  grounded: "gemini-3.5-flash",
+  grounded: "gemini-3.1-flash-lite",
   transcribe: "gemini-3.5-transcribe",
   speech: "gemini-3.1-flash-tts-preview"
 });
 const DEFAULT_FAST_FALLBACKS = Object.freeze(["gemini-3.5-flash", "gemini-3.6-flash"]);
-const DEFAULT_GROUNDED_FALLBACKS = Object.freeze(["gemini-3.6-flash"]);
+const DEFAULT_GROUNDED_FALLBACKS = Object.freeze(["gemini-3.5-flash", "gemini-3.6-flash"]);
 
 export class GeminiError extends Error {
   constructor(message, { status = 502, code = "gemini_error", providerStatus = null } = {}) {

@@ -38,6 +38,8 @@ export class OracleKnowledgeBase {
     const normalizedQuery = normalize(query);
     const grams = queryGrams(normalizedQuery);
     const trigramIntent = /(?:说卦|取象|八卦|象征|为何.*为|为什么.*为)/u.test(normalizedQuery);
+    const requestedLine = explicitLineNumber(normalizedQuery);
+    const overviewIntent = /(?:卦辞|彖传|大象|整卦|卦义)/u.test(normalizedQuery);
     const readingSignals = readReadingSignals(reading, this.hexagrams);
     const scored = [];
 
@@ -57,6 +59,13 @@ export class OracleKnowledgeBase {
         score += 900; reasons.push("上下卦");
       }
       if (normalizedQuery) {
+        const entityMatched = fragment.entityAliases?.some((alias) => alias.length >= 2 && normalizedQuery.includes(alias));
+        if (entityMatched && requestedLine && fragment.kind === "line" && fragment.lineNumber === requestedLine) {
+          score += 1_200; reasons.push("明示爻位");
+        }
+        if (entityMatched && overviewIntent && fragment.kind === "overview") {
+          score += 800; reasons.push("明示卦义");
+        }
         if (fragment.kind === "trigram" && trigramIntent
           && fragment.aliases.some((alias) => alias.length >= 2 && normalizedQuery.includes(alias))) {
           score += 1_200; reasons.push("说卦取象");
@@ -116,6 +125,7 @@ function buildFragments(data, sources) {
       source,
       hexagramNumber: hexagram.number,
       aliases,
+      entityAliases: aliases,
       order: order++,
     }));
     for (const line of hexagram.lines) {
@@ -129,6 +139,7 @@ function buildFragments(data, sources) {
         hexagramNumber: hexagram.number,
         lineNumber: line.number,
         aliases: [...aliases, normalize(line.label), `第${line.number}爻`],
+        entityAliases: aliases,
         order: order++,
       }));
     }
@@ -205,6 +216,19 @@ function queryGrams(query) {
     for (let index = 0; index + width <= compact.length; index += 1) grams.add(compact.slice(index, index + width));
   }
   return [...grams];
+}
+
+function explicitLineNumber(query) {
+  const patterns = [
+    /(?:初[六九]|第一爻|初爻)/u,
+    /(?:[六九]二|第二爻)/u,
+    /(?:[六九]三|第三爻)/u,
+    /(?:[六九]四|第四爻)/u,
+    /(?:[六九]五|第五爻)/u,
+    /(?:上[六九]|第六爻|上爻)/u,
+  ];
+  const index = patterns.findIndex((pattern) => pattern.test(query));
+  return index < 0 ? null : index + 1;
 }
 
 function normalize(value) {

@@ -24,6 +24,8 @@ test("server time is formatted in Asia/Shanghai and injected as the trusted date
   assert.match(prompt, /可信服务器时钟：2026年09月20日 00:30:45/u);
   assert.match(prompt, /今天几号.*可信服务器时钟/u);
   assert.match(prompt, /浏览器本机记忆在刷新后恢复/u);
+  assert.match(prompt, /除非用户问你是谁，否则不要加自我介绍/u);
+  assert.match(prompt, /不要在结尾主动兜售起卦/u);
 });
 
 test("recent context keeps the newest messages inside a total character budget", () => {

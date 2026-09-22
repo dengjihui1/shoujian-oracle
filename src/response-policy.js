@@ -1,6 +1,8 @@
 import { assessQuestion } from "./question-boundary.js";
 
-const READING_FOLLOW_UP = /本卦|此卦|这卦|卦象|卦辞|爻辞|动爻|变爻|之卦|变卦|上卦|下卦|彖传|象传|说卦|起卦|排卦|解卦|占断|原问|刚才的(?:卦|结果)|这个(?:卦|结果)|它.{0,8}(?:怎么理解|什么意思|和.{0,6}关系)/u;
+const READING_FOLLOW_UP = /本卦|此卦|这卦|当前.{0,4}卦|卦象|卦辞|爻辞|动爻|变爻|之卦|变卦|上卦|下卦|彖传|象传|起卦|排卦|解卦|占断|原问|刚才的(?:卦|结果)|这个(?:卦|结果)|它.{0,8}(?:怎么理解|什么意思|和.{0,6}关系)/u;
+const EXPLICIT_GENERAL_KNOWLEDGE = /《?说卦》?|(?:乾|坤|屯|蒙|需|讼|師|师|比|小畜|履|泰|否|同人|大有|谦|豫|随|蛊|临|观|噬嗑|贲|剥|复|无妄|大畜|颐|大过|坎|离|咸|恒|遁|大壮|晋|明夷|家人|睽|蹇|解|损|益|夬|姤|萃|升|困|井|革|鼎|震|艮|渐|归妹|丰|旅|巽|兑|涣|节|中孚|小过|既济|未济)卦/u;
+const DEICTIC_READING_REFERENCE = /(?:本|此|这|当前|刚才|刚刚).{0,5}(?:卦|结果)|原问/u;
 export const DIVINATION_DISCLAIMER = "卦象仅供传统文化体验与自我反思参考，不作为投资、医疗、法律或其他现实决定的唯一依据。";
 
 export function crisisSupportReply() {
@@ -58,5 +60,7 @@ export function withDivinationDisclaimer(text, purpose) {
 export function inferConversationPurpose(message, stage = "question") {
   if (stage === "ready") return "divination";
   if (stage !== "reading") return "chat";
-  return READING_FOLLOW_UP.test(String(message).normalize("NFKC")) ? "divination" : "chat";
+  const normalized = String(message).normalize("NFKC");
+  if (EXPLICIT_GENERAL_KNOWLEDGE.test(normalized) && !DEICTIC_READING_REFERENCE.test(normalized)) return "chat";
+  return READING_FOLLOW_UP.test(normalized) ? "divination" : "chat";
 }
