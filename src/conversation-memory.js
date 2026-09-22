@@ -1,4 +1,5 @@
 import { castHexagram } from "./oracle-engine.js";
+import { restoreDivinationIntake, serializeDivinationIntake } from "./divination-intake.js";
 
 export const PERSISTED_MEMORY_MESSAGES = 24;
 export const REQUEST_CONTEXT_MESSAGES = 16;
@@ -33,11 +34,11 @@ export class ConversationMemory {
     return this.saveSession({ messages }).messages;
   }
 
-  saveSession({ messages, stage = "question", question = "", reading = null } = {}) {
+  saveSession({ messages, stage = "question", question = "", reading = null, intake = null } = {}) {
     const snapshot = {
-      version: 2,
+      version: 3,
       messages: sanitizeMessages(messages, this.limit, { persistentOnly: true }),
-      session: serializeSession({ stage, question, reading }),
+      session: serializeSession({ stage, question, reading, intake }),
     };
     if (this.storage) {
       try { this.storage.setItem(this.key, JSON.stringify(snapshot)); } catch { /* current-page state remains usable */ }
@@ -51,18 +52,20 @@ export class ConversationMemory {
 }
 
 function emptySession() {
-  return { messages: [], stage: "question", question: "", reading: null };
+  return { messages: [], stage: "question", question: "", reading: null, intake: null };
 }
 
-function serializeSession({ stage, question, reading }) {
+function serializeSession({ stage, question, reading, intake }) {
   const cleanQuestion = String(question ?? "").trim().slice(0, 500);
+  const cleanIntake = serializeDivinationIntake(intake);
   const lines = Array.isArray(reading?.lines) && reading.lines.length === 6
     && reading.lines.every((line) => [6, 7, 8, 9].includes(line))
     ? [...reading.lines]
     : null;
-  if (stage === "reading" && cleanQuestion && lines) return { stage, question: cleanQuestion, lines };
-  if (stage === "ready" && cleanQuestion) return { stage, question: cleanQuestion, lines: null };
-  return { stage: "question", question: "", lines: null };
+  if (stage === "reading" && cleanQuestion && lines) return { stage, question: cleanQuestion, lines, intake: cleanIntake };
+  if (stage === "ready" && cleanQuestion) return { stage, question: cleanQuestion, lines: null, intake: cleanIntake };
+  if (stage === "intake" && cleanIntake) return { stage, question: cleanIntake.originalQuestion, lines: null, intake: cleanIntake };
+  return { stage: "question", question: "", lines: null, intake: null };
 }
 
 function restoreSession(value) {
@@ -70,12 +73,14 @@ function restoreSession(value) {
     stage: value?.stage,
     question: value?.question,
     reading: value?.lines ? { lines: value.lines } : null,
+    intake: value?.intake,
   });
-  if (serialized.stage !== "reading") return { stage: serialized.stage, question: serialized.question, reading: null };
+  const intake = restoreDivinationIntake(serialized.intake);
+  if (serialized.stage !== "reading") return { stage: serialized.stage, question: serialized.question, reading: null, intake };
   try {
-    return { stage: "reading", question: serialized.question, reading: castHexagram(serialized.lines) };
+    return { stage: "reading", question: serialized.question, reading: castHexagram(serialized.lines), intake };
   } catch {
-    return { stage: "question", question: "", reading: null };
+    return { stage: "question", question: "", reading: null, intake: null };
   }
 }
 

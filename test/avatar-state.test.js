@@ -12,6 +12,7 @@ test("avatar presentation prioritizes live interaction states", () => {
 
 test("avatar presentation follows the divination stage while idle", () => {
   assert.equal(deriveAvatarPresentation({ stage: "question" }).key, "idle");
+  assert.equal(deriveAvatarPresentation({ stage: "intake" }).key, "intake");
   assert.equal(deriveAvatarPresentation({ stage: "ready" }).key, "casting");
   assert.equal(deriveAvatarPresentation({ stage: "reading" }).key, "reading");
 });

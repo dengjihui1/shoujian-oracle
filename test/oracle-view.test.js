@@ -139,3 +139,38 @@ test("view exposes keyboard guidance and only shows jump-to-latest when unread",
   const followed = render({ showJumpToLatest: false });
   assert.match(followed, /data-action="jump-latest" hidden/u);
 });
+
+test("intake stage asks one bounded question and allows skip or early review", () => {
+  const html = render({
+    stage: "intake",
+    intake: {
+      status: "collecting",
+      cursor: 0,
+      questions: [{ id: "timeframe", label: "观察时间", prompt: "希望观察到什么时候？" }, { id: "constraint", label: "关键约束", prompt: "关键约束是什么？" }],
+    },
+  });
+  assert.match(html, /起卦前理问 · 1 \/ 2/u);
+  assert.match(html, /希望观察到什么时候/u);
+  assert.match(html, /data-action="intake-skip"/u);
+  assert.match(html, /data-action="intake-review"/u);
+  assert.doesNotMatch(html, /data-action="cast"/u);
+});
+
+test("intake review is editable and must be confirmed before casting", () => {
+  const review = render({
+    stage: "intake",
+    intake: { status: "review", summary: "所问：是否继续项目", questions: [], cursor: 0 },
+    intakeSummaryDraft: "所问：未来三个月是否继续项目",
+  });
+  assert.match(review, /data-intake-summary/u);
+  assert.match(review, /未来三个月是否继续项目/u);
+  assert.match(review, /data-action="intake-confirm"/u);
+  assert.doesNotMatch(review, /data-action="cast"/u);
+
+  const ready = render({
+    stage: "ready",
+    intake: { status: "confirmed", summary: "所问：未来三个月是否继续项目" },
+  });
+  assert.match(ready, /问卦摘要已冻结/u);
+  assert.match(ready, /data-action="cast"/u);
+});

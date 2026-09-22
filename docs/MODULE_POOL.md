@@ -11,6 +11,7 @@ index.html
       ├─ P04 本机会话记忆
       ├─ P05 流式文字显示
       ├─ P12 对话视口跟随 ├─ P13 键盘提交契约
+      ├─ P14 问卦情境访谈 / 摘要确认
       ├─ P06 浏览器 API 客户端 ─────────────┐
       ├─ P07 录音 / 浏览器实时识别          │
       └─ P08 分句 → P09 TTS 队列 → P10 PCM 播放 / P11 浏览器语音 │
@@ -43,6 +44,7 @@ Q01 行为测试 + Q02 项目体检 + Q03 RAG 评测 覆盖全部模块
 | P11 | 极速浏览器语音 | `src/browser-speech.js` | 稳定 | `test/browser-speech.test.js` |
 | P12 | 对话视口跟随 | `src/conversation-scroll.js` | 稳定 | `test/conversation-scroll.test.js` |
 | P13 | 输入键盘契约 | `src/composer-keys.js` | 稳定 | `test/composer-keys.test.js` |
+| P14 | 问卦情境访谈 | `src/divination-intake.js` | 稳定 | `test/divination-intake.test.js`、会话记忆与视图测试 |
 | D01 | 起卦问题边界 | `src/question-boundary.js` | 稳定 | `test/question-boundary.test.js` |
 | D02 | 场景响应策略 | `src/response-policy.js` | 稳定 | `test/response-policy.test.js` |
 | D03 | 无云端降级对话 | `src/dialogue-engine.js` | 稳定 | `test/dialogue-engine.test.js` |
@@ -74,7 +76,7 @@ Q01 行为测试 + Q02 项目体检 + Q03 RAG 评测 覆盖全部模块
 - 单一职责：把用户事件、三阶段会话、云端流、记忆、录音和 TTS 串成一个可取消生命周期；不负责生成 HTML、计算卦象规则或直接调用 Gemini。
 - 输入 / 输出：键盘、按钮、麦克风事件与 API 分片 → 组件状态、消息、卦象和渲染调用。
 - 依赖：P02–P10、D01、D03、D04。
-- 正常路径：自由对话；明确选择起卦；`question → ready → reading`；卦后自由追问。
+- 正常路径：自由对话；明确选择起卦；`question → intake → ready → reading`；卦后自由追问。
 - 失败与降级：流式中途断开会尝试恢复完整回答并原位替换；恢复仍失败才结束当前回复；TTS 失败不锁文字；取消会中止当前请求并淘汰旧音频；无云端退回 D03。
 - 测试：通过各子模块单测和 `test/server-contract.test.js` 间接覆盖；目前最值得补的是浏览器级组件集成测试。
 - 练习：把三阶段转换进一步抽成纯状态机，同时保持现有本机快照兼容。
@@ -204,6 +206,15 @@ Q01 行为测试 + Q02 项目体检 + Q03 RAG 评测 覆盖全部模块
 - 输入 / 输出：键盘事件与表单 → 普通聊天提交按钮或不提交。
 - 失败与降级：`isComposing` 或历史兼容键码 229 一律不发送；Enter 优先普通聊天，避免误触起卦。
 - 测试：`test/composer-keys.test.js` 与真实页面回归。
+
+### P14 问卦情境访谈
+
+- 文件：`src/divination-intake.js`
+- 单一职责：根据原问已包含的信息选择最多 4 个现实问题，管理回答、跳过、提前整理、摘要编辑和确认冻结；不执行排卦。
+- 输入 / 输出：原问与逐项回答 → `collecting / review / confirmed` 状态和不超过 500 字的问卦摘要。
+- 依赖：无；纯状态转换。P04 只负责序列化并兼容旧快照，D04 只在摘要确认后的 `ready` 阶段运行。
+- 失败与降级：每项均可跳过，用户可随时提前整理；不索取生辰八字；损坏状态拒绝恢复并退回普通候问。
+- 测试：`test/divination-intake.test.js`、`test/conversation-memory.test.js`、`test/oracle-view.test.js` 与真实页面全流程。
 
 ## 四、领域与安全池
 
@@ -431,4 +442,4 @@ Q01 行为测试 + Q02 项目体检 + Q03 RAG 评测 覆盖全部模块
 
 “待补”不等于当前功能不可用；它表示要从本地教学组件升级为面向公众的长期服务时，还需要完成的工程层。
 
-当前自动化、真实云端链路和浏览器人工验收结果见 [0.14.0 质量基线](QUALITY_BASELINE.md)。
+当前自动化、真实云端链路和浏览器人工验收结果见 [0.15.0 质量基线](QUALITY_BASELINE.md)。

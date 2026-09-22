@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { ConversationMemory, recentConversation } from "../src/conversation-memory.js";
 import { castHexagram } from "../src/oracle-engine.js";
+import { answerIntakeQuestion, createDivinationIntake, prepareIntakeReview } from "../src/divination-intake.js";
 
 function fakeStorage(initial = null) {
   let value = initial;
@@ -75,6 +76,27 @@ test("conversation memory restores a deterministic reading after refresh", () =>
   assert.equal(restored.reading.changed.number, reading.changed.number);
 });
 
+test("conversation memory restores an unfinished and reviewable intake", () => {
+  const storage = fakeStorage();
+  let intake = createDivinationIntake("我要不要投这个实习？");
+  intake = answerIntakeQuestion(intake, "未来两周");
+  const memory = new ConversationMemory({ storage });
+  memory.saveSession({
+    messages: [{ role: "user", text: "我要不要投这个实习？" }, { role: "master", text: "先理清问题。" }],
+    stage: "intake",
+    question: intake.originalQuestion,
+    intake,
+  });
+  const restored = memory.loadSession();
+  assert.equal(restored.stage, "intake");
+  assert.equal(restored.intake.cursor, 1);
+  assert.equal(restored.intake.answers.timeframe, "未来两周");
+
+  const review = prepareIntakeReview(restored.intake);
+  memory.saveSession({ messages: restored.messages, stage: "intake", question: review.originalQuestion, intake: review });
+  assert.equal(memory.loadSession().intake.status, "review");
+});
+
 test("legacy message-only snapshots remain readable and corrupt session state is ignored", () => {
   const legacy = fakeStorage(JSON.stringify({ version: 1, messages: [{ role: "user", text: "旧对话" }] }));
   assert.deepEqual(new ConversationMemory({ storage: legacy }).loadSession(), {
@@ -82,6 +104,7 @@ test("legacy message-only snapshots remain readable and corrupt session state is
     stage: "question",
     question: "",
     reading: null,
+    intake: null,
   });
 
   const corrupt = fakeStorage(JSON.stringify({

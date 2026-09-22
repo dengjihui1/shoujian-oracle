@@ -14,6 +14,7 @@ import { renderOracleView } from "./oracle-view.js";
 import { deriveAvatarPresentation } from "./avatar-state.js";
 import { ConversationViewport } from "./conversation-scroll.js";
 import { isComposerSendShortcut, preferredComposerSubmitter } from "./composer-keys.js";
+import { answerIntakeQuestion, confirmIntakeSummary, createDivinationIntake, currentIntakeQuestion, prepareIntakeReview, skipIntakeQuestion } from "./divination-intake.js";
 
 export class ShoujianOracle extends HTMLElement {
   constructor() {
@@ -34,6 +35,7 @@ export class ShoujianOracle extends HTMLElement {
     this.voiceState = "idle";
     this.voiceError = "";
     this.draft = "";
+    this.intakeSummaryDraft = "";
     this.chatController = null;
     this.transcriptionController = null;
     this.speechQueue = null;
@@ -75,6 +77,8 @@ export class ShoujianOracle extends HTMLElement {
     this.stage = "question";
     this.question = "";
     this.reading = null;
+    this.intake = null;
+    this.intakeSummaryDraft = "";
     this.messages = [{ role: "master", text: welcomeReply() }];
     this.conversationRevision += 1;
     this.conversationViewport.reset();
@@ -86,7 +90,9 @@ export class ShoujianOracle extends HTMLElement {
     this.stage = "question";
     this.question = "";
     this.reading = null;
+    this.intake = null;
     this.draft = "";
+    this.intakeSummaryDraft = "";
     this.conversationViewport.reset();
     this.appendMessage({ role: "master", text: "上一卦收好。前面的聊天我还记得，可以继续聊，也可以重新留一件事起卦。" });
     this.persistMemory();
@@ -112,6 +118,8 @@ export class ShoujianOracle extends HTMLElement {
     this.stage = session.stage;
     this.question = session.question;
     this.reading = session.reading;
+    this.intake = session.intake;
+    this.intakeSummaryDraft = session.intake?.status === "review" ? session.intake.summary : "";
   }
 
   persistMemory() {
@@ -120,6 +128,7 @@ export class ShoujianOracle extends HTMLElement {
       stage: this.stage,
       question: this.question,
       reading: this.reading,
+      intake: this.intake,
     });
   }
 
@@ -135,7 +144,8 @@ export class ShoujianOracle extends HTMLElement {
   };
 
   handleInput = (event) => {
-    if (event.target.matches?.("textarea")) this.draft = event.target.value;
+    if (event.target.matches?.("textarea:not([data-intake-summary])")) this.draft = event.target.value;
+    if (event.target.matches?.("[data-intake-summary]")) this.intakeSummaryDraft = event.target.value;
   };
 
   handleKeyDown = (event) => {
@@ -155,6 +165,9 @@ export class ShoujianOracle extends HTMLElement {
   handleClick = async (event) => {
     const action = event.target.closest("[data-action]")?.dataset.action;
     if (action === "cast") await this.cast();
+    if (action === "intake-skip") this.skipCurrentIntakeQuestion();
+    if (action === "intake-review") this.reviewCurrentIntake();
+    if (action === "intake-confirm") this.confirmCurrentIntake();
     if (action === "reset") this.resetSession();
     if (action === "clear-memory") this.clearMemory();
     if (action === "jump-latest") {
@@ -200,13 +213,10 @@ export class ShoujianOracle extends HTMLElement {
       if (mode === "chat" && this.cloud) {
         await this.askCloud(text, history);
       } else {
-        const assessment = assessQuestion(text);
-        this.appendMessage({ role: "master", text: boundaryReply(assessment) });
-        if (assessment.level !== "blocked") {
-          this.question = text;
-          this.stage = "ready";
-        }
+        this.beginDivinationIntake(text);
       }
+    } else if (this.stage === "intake") {
+      this.answerCurrentIntakeQuestion(text);
     } else if (this.stage === "ready") {
       this.appendMessage({ role: "master", text: "原问已经收下。请先起卦；若要换题，点“另起一问”。" });
     } else {
@@ -216,6 +226,7 @@ export class ShoujianOracle extends HTMLElement {
         this.stage = "question";
         this.question = "";
         this.reading = null;
+        this.intake = null;
       } else if (this.cloud) {
         await this.askCloud(text, history, inferConversationPurpose(text, this.stage));
       } else {
@@ -225,6 +236,71 @@ export class ShoujianOracle extends HTMLElement {
     this.persistMemory();
     this.render();
     this.focusComposer();
+  }
+
+  beginDivinationIntake(text) {
+    const assessment = assessQuestion(text);
+    if (assessment.level === "blocked") {
+      this.appendMessage({ role: "master", text: boundaryReply(assessment) });
+      return;
+    }
+    this.question = text;
+    this.intake = createDivinationIntake(text);
+    this.stage = "intake";
+    const prompt = currentIntakeQuestion(this.intake);
+    this.appendMessage({
+      role: "master",
+      text: `${boundaryReply(assessment)}\n\n先不急着掷钱。我只补问几项会真正影响解读的现实信息，不需要生辰八字。第 1 项：${prompt.prompt}`,
+    });
+  }
+
+  answerCurrentIntakeQuestion(text) {
+    if (this.intake?.status !== "collecting") return;
+    this.intake = answerIntakeQuestion(this.intake, text);
+    this.continueIntakeReply();
+  }
+
+  skipCurrentIntakeQuestion() {
+    if (this.stage !== "intake" || this.intake?.status !== "collecting") return;
+    this.intake = skipIntakeQuestion(this.intake);
+    this.continueIntakeReply("这一项先略过。 ");
+    this.persistMemory();
+    this.render();
+    this.focusComposer();
+  }
+
+  reviewCurrentIntake() {
+    if (this.stage !== "intake" || !this.intake) return;
+    this.intake = prepareIntakeReview(this.intake);
+    this.intakeSummaryDraft = this.intake.summary;
+    this.appendMessage({ role: "master", text: "现有信息已经整理成问卦摘要。你可以直接修改；确认前不会起卦。" });
+    this.persistMemory();
+    this.render();
+  }
+
+  confirmCurrentIntake() {
+    if (this.stage !== "intake" || this.intake?.status !== "review") return;
+    const field = this.shadowRoot.querySelector("[data-intake-summary]");
+    const summary = String(field?.value ?? this.intakeSummaryDraft).trim();
+    if (!summary) return;
+    this.intake = confirmIntakeSummary(this.intake, summary);
+    this.question = this.intake.summary;
+    this.intakeSummaryDraft = "";
+    this.stage = "ready";
+    this.appendMessage({ role: "master", text: `问卦摘要已确认并冻结：\n${this.question}\n\n接下来才会随机掷三钱六次。文字只用于解读上下文，不会影响卦象。` });
+    this.persistMemory();
+    this.render();
+    this.focusLatest();
+  }
+
+  continueIntakeReply(prefix = "") {
+    if (this.intake.status === "review") {
+      this.intakeSummaryDraft = this.intake.summary;
+      this.appendMessage({ role: "master", text: `${prefix}必要信息已经问完。请检查下方问卦摘要；确认前不会起卦。` });
+      return;
+    }
+    const prompt = currentIntakeQuestion(this.intake);
+    this.appendMessage({ role: "master", text: `${prefix}第 ${this.intake.cursor + 1} 项：${prompt.prompt}` });
   }
 
   async cast() {
@@ -563,6 +639,8 @@ export class ShoujianOracle extends HTMLElement {
       messages: this.messages,
       reading: this.reading,
       question: this.question,
+      intake: this.intake,
+      intakeSummaryDraft: this.intakeSummaryDraft,
       busy: this.busy,
       recording: this.recording,
       transcribing: this.transcribing,

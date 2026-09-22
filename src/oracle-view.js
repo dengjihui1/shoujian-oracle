@@ -6,8 +6,8 @@ const AVATAR_NEUTRAL = new URL("../assets/avatar/moheng-neutral.webp", import.me
 const AVATAR_SPEAKING = new URL("../assets/avatar/moheng-speaking.webp", import.meta.url).href;
 
 export function renderOracleView(state) {
-  const stage = ["question", "ready", "reading"].includes(state.stage) ? state.stage : "question";
-  const phase = stage === "question" ? "候问" : stage === "ready" ? "问已收" : "照卦答";
+  const stage = ["question", "intake", "ready", "reading"].includes(state.stage) ? state.stage : "question";
+  const phase = stage === "question" ? "候问" : stage === "intake" ? "理问" : stage === "ready" ? "问已收" : "照卦答";
   const cloudLabel = state.cloud ? "墨衡云端 · 周易 RAG 已连接" : "本地有限对话";
   const knowledgeLabel = state.knowledge
     ? `${Number(state.knowledge.hexagrams) || 0} 卦 · ${Number(state.knowledge.trigrams) || 0} 八卦 · ${Number(state.knowledge.fragments) || 0} 条冻结片段`
@@ -16,7 +16,8 @@ export function renderOracleView(state) {
   const liveSupported = Boolean(state.liveTranscriberSupported);
   const recorderSupported = Boolean(state.recorderSupported);
   const interactionLocked = Boolean(state.busy || state.recording || state.transcribing);
-  const composerLocked = stage === "ready" || interactionLocked;
+  const intakeReview = stage === "intake" && state.intake?.status === "review";
+  const composerLocked = stage === "ready" || intakeReview || interactionLocked;
   const avatar = deriveAvatarPresentation({ ...state, stage });
 
   return `${styles}
@@ -37,6 +38,8 @@ export function renderOracleView(state) {
           ${state.reading ? readingCard(state.reading, state.question) : ""}
 
           <section class="controls">
+            ${stage === "intake" ? intakePanel(state.intake, state.intakeSummaryDraft, interactionLocked) : ""}
+            ${stage === "ready" && state.intake?.summary ? confirmedIntakeCard(state.intake.summary) : ""}
             ${stage === "ready" ? `<button class="primary" type="button" data-action="cast">掷三钱六次，依数排卦</button>` : ""}
             ${stage === "reading" && !state.cloud ? `<div class="quick" aria-label="本地可追问内容">
               <button type="button" data-quick="这个卦是什么意思">什么意思</button>
@@ -45,21 +48,21 @@ export function renderOracleView(state) {
               <button type="button" data-quick="边界是什么">边界是什么</button>
             </div>` : ""}
             ${stage === "reading" && state.cloud ? `<p class="rag-invitation">现在可自由追问原文、动爻、上下卦关系、不同理解，或它如何映照你的原问。</p>` : ""}
-            <form>
-              <label for="say">${stage === "question" ? state.cloud ? "想问墨衡什么" : "留下一件具体的事" : stage === "ready" ? "原问已固定" : "继续问墨衡"}</label>
+            ${intakeReview ? "" : `<form>
+              <label for="say">${escapeHtml(composerLabel(stage, state))}</label>
               <div class="input-row">
-                <textarea id="say" maxlength="500" ${composerLocked ? "disabled" : ""} placeholder="${stage === "reading" ? "直接追问，也可以随时换回普通聊天" : state.cloud ? "生意、感情、健康、学业或任何困惑，都可以直接说" : "例如：未来三天，我该先验证哪一步？"}">${escapeHtml(state.draft)}</textarea>
+                <textarea id="say" maxlength="500" ${composerLocked ? "disabled" : ""} placeholder="${escapeHtml(composerPlaceholder(stage, state))}">${escapeHtml(state.draft)}</textarea>
                 <div class="submit-actions">
-                  ${stage === "question" && state.cloud ? `<button type="submit" data-submit-mode="chat" ${interactionLocked ? "disabled" : ""}>直接问墨衡</button><button class="primary" type="submit" data-submit-mode="divination" ${interactionLocked ? "disabled" : ""}>以此问起卦 · 仅供参考</button>` : `<button type="submit" ${composerLocked ? "disabled" : ""}>${interactionLocked ? "请稍候" : "送问"}</button>`}
+                  ${stage === "question" && state.cloud ? `<button type="submit" data-submit-mode="chat" ${interactionLocked ? "disabled" : ""}>直接问墨衡</button><button class="primary" type="submit" data-submit-mode="divination" ${interactionLocked ? "disabled" : ""}>以此问起卦 · 仅供参考</button>` : stage === "intake" ? `<button class="primary" type="submit" data-submit-mode="intake" ${composerLocked ? "disabled" : ""}>记下这一项</button>` : `<button type="submit" ${composerLocked ? "disabled" : ""}>${interactionLocked ? "请稍候" : "送问"}</button>`}
                 </div>
               </div>
               <small class="composer-hint">Enter 发送 · Shift+Enter 换行</small>
-            </form>
+            </form>`}
             <div class="voice-tools" aria-label="语音工具">
               ${state.canRetryResponse && !interactionLocked ? `<button type="button" data-action="retry-response">重试本次回答</button>` : ""}
               ${state.cloud && (liveSupported || recorderSupported) ? state.transcribing
                 ? `<button type="button" data-action="cancel-transcription">取消转写</button>`
-                : `<button type="button" data-action="${state.recording ? "stop-record" : "record"}" ${(stage === "ready" || state.busy) && !state.recording ? "disabled" : ""}>${state.recording ? state.recordingMode === "live" ? "停止并采用文字" : "停止并转文字" : liveSupported ? "实时语音输入" : "按下说话"}</button>` : ""}
+                : `<button type="button" data-action="${state.recording ? "stop-record" : "record"}" ${(stage === "ready" || intakeReview || state.busy) && !state.recording ? "disabled" : ""}>${state.recording ? state.recordingMode === "live" ? "停止并采用文字" : "停止并转文字" : liveSupported ? "实时语音输入" : "按下说话"}</button>` : ""}
               ${state.busy && !state.transcribing ? `<button type="button" data-action="cancel-response">停止回答</button>` : ""}
               ${state.cloud ? `<button type="button" data-action="voice" aria-pressed="${Boolean(state.voiceReplies)}">${escapeHtml(state.voiceButtonLabel)}</button>` : ""}
               ${state.cloud && state.voiceReplies && state.fastVoiceSupported ? `<button type="button" data-action="voice-mode" aria-label="切换语音模式">${escapeHtml(state.voiceModeButtonLabel)}</button>` : ""}
@@ -73,6 +76,43 @@ export function renderOracleView(state) {
 
       <footer>守简问卦 · 传统文化体验 · 卦象仅供参考</footer>
     </main>`;
+}
+
+function intakePanel(intake, summaryDraft, locked) {
+  if (!intake || !Array.isArray(intake.questions)) return `<p class="intake-card">访谈状态不可用，请点“另起一问”重新开始。</p>`;
+  if (intake.status === "review") {
+    return `<section class="intake-card" aria-label="确认问卦摘要">
+      <small>问卦摘要 · 确认后冻结</small>
+      <label for="intake-summary">请检查并按真实情况修改</label>
+      <textarea id="intake-summary" data-intake-summary maxlength="500" ${locked ? "disabled" : ""}>${escapeHtml(summaryDraft || intake.summary)}</textarea>
+      <p>摘要只用于后续解释，不参与随机排卦；不需要填写生辰八字。</p>
+      <button class="primary" type="button" data-action="intake-confirm" ${locked ? "disabled" : ""}>确认摘要，准备起卦</button>
+    </section>`;
+  }
+  const total = intake.questions.length;
+  const current = Math.min(Number(intake.cursor) + 1, total);
+  return `<section class="intake-card" aria-label="起卦前情境访谈">
+    <small>起卦前理问 · ${current} / ${total}</small>
+    <p>只补充会影响解读的现实信息；你可以跳过，也可以现在就整理摘要。</p>
+    <div class="intake-actions"><button type="button" data-action="intake-skip" ${locked ? "disabled" : ""}>暂不回答这一项</button><button type="button" data-action="intake-review" ${locked ? "disabled" : ""}>信息已足够，直接整理</button></div>
+  </section>`;
+}
+
+function confirmedIntakeCard(summary) {
+  return `<section class="intake-card confirmed" aria-label="已确认问卦摘要"><small>问卦摘要已冻结</small><p>${escapeHtml(summary)}</p><p>文字只用于解释上下文，不会改变六爻结果。</p></section>`;
+}
+
+function composerLabel(stage, state) {
+  if (stage === "question") return state.cloud ? "想问墨衡什么" : "留下一件具体的事";
+  if (stage === "intake") return state.intake?.questions?.[state.intake.cursor]?.prompt ?? "补充这一项";
+  if (stage === "ready") return "原问已固定";
+  return "继续问墨衡";
+}
+
+function composerPlaceholder(stage, state) {
+  if (stage === "reading") return "直接追问，也可以随时换回普通聊天";
+  if (stage === "intake") return "只说你愿意提供且能确认的信息；也可以点击跳过";
+  return state.cloud ? "生意、感情、健康、学业或任何困惑，都可以直接说" : "例如：未来三天，我该先验证哪一步？";
 }
 
 function avatarStage(avatar, phase) {
@@ -154,7 +194,7 @@ const styles = `<style>
   [data-avatar-state="listening"] .avatar-breath,[data-avatar-state="speaking"] .avatar-breath { opacity: calc(.22 + var(--voice-level)); }
   .avatar-panel { position: relative; z-index: 3; margin: auto 14px 14px; padding: 12px 14px; color: #eee2cc; background: #0c0b0aeb; border: 1px solid #795f40; border-radius: 14px; backdrop-filter: blur(12px); }
   .avatar-state-line { display: flex; gap: 7px; align-items: center; font: 12px/1.4 system-ui,sans-serif; letter-spacing: .08em; } .state-dot { width: 8px; height: 8px; border-radius: 50%; background: #96816a; box-shadow: 0 0 0 4px #96816a18; }
-  [data-avatar-state="listening"] .state-dot { background:#78b7a2; animation:pulse 1s infinite; } [data-avatar-state="thinking"] .state-dot,[data-avatar-state="preparing"] .state-dot { background:#d29a53; animation:pulse .8s infinite; } [data-avatar-state="speaking"] .state-dot { background:#dc6d59; animation:pulse .45s infinite; }
+  [data-avatar-state="listening"] .state-dot { background:#78b7a2; animation:pulse 1s infinite; } [data-avatar-state="intake"] .state-dot,[data-avatar-state="thinking"] .state-dot,[data-avatar-state="preparing"] .state-dot { background:#d29a53; animation:pulse .8s infinite; } [data-avatar-state="speaking"] .state-dot { background:#dc6d59; animation:pulse .45s infinite; }
   [data-avatar-state="error"] .state-dot { background:#c26559; box-shadow:0 0 0 4px #c2655928; }
   .avatar-panel p { margin: 5px 0 0; color: #a99b87; font: 12px/1.5 system-ui,sans-serif; }
   .voice-meter { height: 22px; display: flex; gap: 3px; align-items: end; margin-top: 8px; } .voice-meter i { flex: 1; height: 3px; max-height: 20px; transform-origin: bottom; background: linear-gradient(#dcb26f,#7d3429); border-radius: 4px; opacity: .25; }
@@ -170,6 +210,7 @@ const styles = `<style>
   .rag-evidence { margin-top: 10px; border-top: 1px solid #66513b; padding-top: 8px; font: 12px/1.55 system-ui,sans-serif; } .rag-evidence summary { color: #d0ac76; cursor: pointer; } .rag-evidence ol { display: grid; gap: 10px; margin: 10px 0 0; padding-left: 20px; } .rag-evidence a { color: #e0be86; } .rag-evidence small { display: block; color: #918574; } .rag-evidence blockquote { margin: 5px 0 0; padding-left: 9px; color: #c8beae; border-left: 2px solid #71573a; white-space: pre-line; }
   .reading { padding: 16px; background: #09080772; border: 1px solid #604932; border-radius: 16px; } .question { margin: 0 0 12px; color: #bca889; } .reading-title { display: flex; gap: 14px; align-items: center; } .reading-title > span { font-size: 44px; color: #d2b782; } h2 { margin: 2px 0 0; font-size: 24px; }
   .reading ol { display: grid; gap: 5px; padding: 13px; list-style: none; background: #05050566; border-radius: 12px; } .line { display: grid; grid-template-columns: 1fr auto; gap: 12px; } .line span { color: #d2b782; font: 800 21px/1 monospace; } .line small { color: #918574; font: 12px/1.4 system-ui,sans-serif; } .line.moving span,.line.moving small { color: #e5705e; } .reading-disclaimer { margin: 12px 0 0; color: #a99b87; font: 11px/1.6 system-ui,sans-serif; }
+  .intake-card { display:grid; gap:9px; padding:14px; color:#d9c6a6; background:#76582e18; border:1px solid #76603f; border-radius:14px; } .intake-card small{color:#d3aa6e;letter-spacing:.08em}.intake-card p{margin:0;white-space:pre-line;line-height:1.65}.intake-card label{margin:0}.intake-card textarea{min-height:150px}.intake-actions{display:flex;flex-wrap:wrap;gap:8px}.intake-card.confirmed{background:#35634514;border-color:#567455}
   dl { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin: 0; } dl div { padding: 9px; text-align: center; background: #ffffff08; border-radius: 9px; } dt { color: #9d8f7b; font: 12px system-ui,sans-serif; } dd { margin: 4px 0 0; }
   .controls { display: grid; gap: 12px; padding: 16px; background: #0a0908a8; border: 1px solid #4d4031; border-radius: 18px; } label { display: block; margin-bottom: 7px; color: #d9bd91; font-weight: 700; } .input-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
   textarea { min-height: 78px; resize: vertical; padding: 11px 13px; color: #f3ead8; background: #050505c9; border: 1px solid #6c5942; border-radius: 12px; } button { min-height: 44px; padding: 9px 16px; color: #f8ead0; background: #593a29; border: 1px solid #826244; border-radius: 999px; cursor: pointer; } button:hover:not(:disabled) { border-color:#c0925e; translate:0 -1px; } button:disabled { opacity: .48; cursor: not-allowed; } .primary { width: 100%; background: #8e332a; border-color: #bb6b5d; font-weight: 700; } .text-button { justify-self: center; background: transparent; border: 0; color: #c5aa7e; text-decoration: underline; }

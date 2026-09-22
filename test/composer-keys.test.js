@@ -8,7 +8,7 @@ function event(overrides = {}) {
     shiftKey: false,
     isComposing: false,
     keyCode: 13,
-    target: { matches: (selector) => selector === "textarea" },
+    target: { matches: (selector) => selector === "textarea:not([data-intake-summary])" },
     ...overrides,
   };
 }
@@ -24,6 +24,10 @@ test("Shift+Enter remains a newline", () => {
 test("IME composition Enter never submits", () => {
   assert.equal(isComposerSendShortcut(event({ isComposing: true })), false);
   assert.equal(isComposerSendShortcut(event({ keyCode: 229 })), false);
+});
+
+test("Enter remains editable inside the intake summary", () => {
+  assert.equal(isComposerSendShortcut(event({ target: { matches: () => false } })), false);
 });
 
 test("Enter prefers ordinary chat over divination", () => {

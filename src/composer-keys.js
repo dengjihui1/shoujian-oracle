@@ -3,7 +3,7 @@ export function isComposerSendShortcut(event) {
     && !event.shiftKey
     && !event.isComposing
     && event.keyCode !== 229
-    && event.target?.matches?.("textarea");
+    && event.target?.matches?.("textarea:not([data-intake-summary])");
 }
 
 export function preferredComposerSubmitter(form) {

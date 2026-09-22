@@ -4,7 +4,7 @@
 
 独立的轻量虚拟卦师与经传 RAG 组件。它保留虚拟人主持、问题边界、三钱六爻和 64 卦确定性映射，并加入可追溯的《周易》《彖》《象》《说卦》冻结知识检索；明确不包含住宅分析、纳甲时证、档案、支付与追验等主项目核心。
 
-![版本](https://img.shields.io/badge/version-0.14.0-8e332a)
+![版本](https://img.shields.io/badge/version-0.15.0-8e332a)
 ![许可](https://img.shields.io/badge/license-MIT-d3b27f)
 
 ## 现在能完成什么
@@ -27,6 +27,7 @@
 16. 可选配置 Groq、OpenRouter、SiliconFlow 或任意 OpenAI-compatible 文字兜底，连续故障会短时熔断；没有密钥时仍可本地起卦；
 17. 固定 RAG 评测集同时守住命中、负例和检索延迟，明确爻位与《说卦》问题不再携带大批无关片段。
 18. 对话在底部时自动跟随流式内容，用户上翻时保持原位并显示“回到最新”；`Enter` 发送、`Shift+Enter` 换行，中文输入法组字不会误发。
+19. 选择起卦后先进入 2–4 项情境访谈；可跳过、提前整理并编辑问卦摘要，只有确认摘要后才随机排卦，不索取生辰八字，文字不会影响六爻结果。
 
 问题文字不会改变卦象。项目没有账号、遥测或支付；本地模式不上传内容，云端模式会把用户主动提交的文字、录音、最近上下文和必要卦象证据发送给已配置的供应商。对话记忆只存当前浏览器的 `localStorage`，服务端不建立用户档案。
 
@@ -39,7 +40,7 @@
 | `oracleQuestionBoundary` | 7 类公开字规 | 问契签名、验期、准绳与追验 |
 | `iching` | 6/7/8/9、八卦、文王序 64 卦映射 | 古籍全文、爻辞、纳甲、六亲、旬空、六神 |
 
-经传数据另从中文维基文库公开来源建立独立知识包，不复制主项目住宅知识。语音 API 的真实边界、Google Cloud 配置和 RAG 构建全过程见 [语音 API 与 RAG 架构说明](docs/VOICE_RAG_ARCHITECTURE.md)；从上游 Cactus 提取了什么、拒绝照搬什么见 [Cactus 模块拆解](docs/CACTUS_MODULE_EXTRACTION.md)；完整映射见 [组件抽取与流程图](docs/COMPONENT_MAP.md)，逐模块说明见 [守简模块池](docs/MODULE_POOL.md)，发布验收见 [0.14.0 质量基线](docs/QUALITY_BASELINE.md)。
+经传数据另从中文维基文库公开来源建立独立知识包，不复制主项目住宅知识。语音 API 的真实边界、Google Cloud 配置和 RAG 构建全过程见 [语音 API 与 RAG 架构说明](docs/VOICE_RAG_ARCHITECTURE.md)；从上游 Cactus 提取了什么、拒绝照搬什么见 [Cactus 模块拆解](docs/CACTUS_MODULE_EXTRACTION.md)；完整映射见 [组件抽取与流程图](docs/COMPONENT_MAP.md)，逐模块说明见 [守简模块池](docs/MODULE_POOL.md)，发布验收见 [0.15.0 质量基线](docs/QUALITY_BASELINE.md)。
 
 用户实测确认的交互、RAG 降级、问卦访谈和直接语音对话改进，统一记录在 [下一阶段任务池](docs/USER_FEEDBACK_BACKLOG.md)；任务状态以该文件和实际测试为准。
 
@@ -98,6 +99,7 @@ Gemini 失败 → 可选 OpenAI-compatible 供应商池 → 短时熔断与自�
 - `src/api-client.js`：浏览器与本机 API 的 JSON/SSE 通信；
 - `src/audio-recorder.js` / `audio-player.js`：浏览器实时转写、录音兜底、PCM Web Audio 播放与实时音量分析；
 - `src/question-boundary.js`：起卦前问题边界；
+- `src/divination-intake.js`：起卦前必要问题选择、跳过 / 提前整理、可编辑摘要与确认冻结；
 - `src/response-policy.js`：区分自由聊天、现实危机与起卦边界，并给出可继续的安全路径；
 - `src/oracle-engine.js`：三钱六爻与 64 卦纯计算；
 - `server/`：密钥隔离、场景模型路由、Gemini / OpenAI-compatible 适配、故障熔断、TTS 缓存、限流和静态服务；
