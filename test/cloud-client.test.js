@@ -24,6 +24,28 @@ test("cloud client crosses providers after transient text failure", async () => 
   assert.equal((await client.transcribe({})).text, "voice");
 });
 
+test("cloud client routes speech to a dedicated provider while keeping Gemini transcription", async () => {
+  const calls = [];
+  const primary = {
+    provider: "gemini",
+    models: { speech: "gemini-tts", transcribe: "gemini-stt" },
+    async transcribe() { calls.push("gemini-stt"); return { text: "实时文字" }; },
+    async speech() { throw new Error("primary TTS must not be used"); },
+  };
+  const speechProvider = {
+    provider: "google-cloud-tts",
+    model: "cmn-CN-Test-B",
+    async speech() { calls.push("cloud-tts"); return { data: "AQI=" }; },
+  };
+  const client = new OracleCloudClient({ primary, speechProvider });
+  await client.transcribe({});
+  await client.speech({ text: "测试" });
+  assert.deepEqual(calls, ["gemini-stt", "cloud-tts"]);
+  assert.equal(client.models.speech, "cmn-CN-Test-B");
+  assert.equal(client.speechProviderName, "google-cloud-tts");
+  assert.equal(client.transcribeProviderName, "gemini");
+});
+
 test("stream fallback happens only before any text was emitted", async () => {
   const fallbackCalls = [];
   const primaryBeforeText = { models: {}, async *chatStream() { throw transientError(); }, async transcribe() {}, async speech() {} };

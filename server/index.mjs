@@ -7,6 +7,7 @@ import process from "node:process";
 import { GeminiClient, GeminiError, DEFAULT_MODELS } from "./gemini-client.mjs";
 import { OpenAiCompatibleClient } from "./openai-compatible-client.mjs";
 import { OracleCloudClient } from "./cloud-client.mjs";
+import { googleCloudTtsFromEnv } from "./google-cloud-tts-client.mjs";
 import { CachedSpeechService } from "./speech-cache.mjs";
 import { buildChatInput, buildSystemInstruction, formatShanghaiDateTime } from "./prompt.mjs";
 import { loadKnowledgeBase } from "./knowledge-retriever.mjs";
@@ -36,6 +37,8 @@ export function createApp({ client = null, knowledgeBase = defaultKnowledgeBase,
           return json(response, 200, {
             cloud: apiEnabled,
             provider: apiEnabled ? client.providerSummary ?? "gemini" : null,
+            speechProvider: apiEnabled ? client.speechProviderName ?? "gemini" : null,
+            transcribeProvider: apiEnabled ? client.transcribeProviderName ?? "gemini" : null,
             models: apiEnabled ? client.models : null,
             knowledge: knowledgeBase.summary,
             serverTime: formatShanghaiDateTime(now()),
@@ -370,7 +373,8 @@ export function clientFromEnv(env = process.env) {
     ...config,
     timeoutMs: boundedTimeout(env.COMPATIBLE_TIMEOUT_MS ?? env.GEMINI_TIMEOUT_MS),
   }));
-  return new OracleCloudClient({ primary, chatFallbacks });
+  const speechProvider = googleCloudTtsFromEnv(env) ?? primary;
+  return new OracleCloudClient({ primary, chatFallbacks, speechProvider });
 }
 
 export function compatibleProvidersFromEnv(env = process.env) {

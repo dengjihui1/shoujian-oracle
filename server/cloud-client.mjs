@@ -1,20 +1,28 @@
 const TRANSIENT_CODES = new Set(["quota_exceeded", "upstream_error", "network_error", "timeout", "empty_text"]);
 
 export class OracleCloudClient {
-  constructor({ primary, chatFallbacks = [], now = Date.now, failureThreshold = 2, cooldownMs = 30_000 } = {}) {
+  constructor({ primary, chatFallbacks = [], speechProvider = primary, transcribeProvider = primary, now = Date.now, failureThreshold = 2, cooldownMs = 30_000 } = {}) {
     if (!primary) throw new TypeError("primary cloud client is required");
     this.primary = primary;
+    this.speechProvider = speechProvider;
+    this.transcribeProvider = transcribeProvider;
     this.chatProviders = [primary, ...chatFallbacks];
     this.now = now;
     this.failureThreshold = Math.max(1, failureThreshold);
     this.cooldownMs = Math.max(1_000, cooldownMs);
     this.circuits = new Map();
-    this.models = primary.models;
+    this.models = Object.freeze({
+      ...primary.models,
+      speech: speechProvider?.model ?? primary.models?.speech,
+      transcribe: transcribeProvider?.models?.transcribe ?? primary.models?.transcribe,
+    });
     this.providerSummary = this.chatProviders.map(providerName).join(" + ");
+    this.speechProviderName = providerName(speechProvider);
+    this.transcribeProviderName = providerName(transcribeProvider);
   }
 
-  transcribe(payload) { return this.primary.transcribe(payload); }
-  speech(payload) { return this.primary.speech(payload); }
+  transcribe(payload) { return this.transcribeProvider.transcribe(payload); }
+  speech(payload) { return this.speechProvider.speech(payload); }
 
   async chat(payload) {
     let lastError = null;

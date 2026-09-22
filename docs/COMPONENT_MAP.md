@@ -51,6 +51,7 @@ Gemini 未配置 → 有限追问：意思 / 动爻 / 算法 / 边界
 | 流式文字队列 | `src/streaming-text.js` | SSE 文字分片 | 可取消的字符级累积文本 | 定时器可注入测试 |
 | 本机 API 服务 | `server/index.mjs` | `/api/*` 请求 | 脱敏后的稳定响应 | 否，网络 I/O |
 | Gemini 适配器 | `server/gemini-client.mjs` | 只读卦象、文本、音频 | SSE 分片、转写、PCM | 否，可注入假 `fetch` 测试 |
+| Google Cloud TTS 适配器 | `server/google-cloud-tts-client.mjs` | 完整短句、Cloud 服务端凭证 | 24 kHz LINEAR16 PCM | 否，可注入假官方客户端测试 |
 | 兼容供应商适配器 | `server/openai-compatible-client.mjs` | 系统约束与文本 | OpenAI-compatible JSON / SSE | 否，可注入假 `fetch` 测试 |
 | 云端供应商池 | `server/cloud-client.mjs` | 同一聊天请求、供应商列表 | 自动回退、熔断后的统一文本流 | 异步状态可注入时间测试 |
 | TTS 缓存 | `server/speech-cache.mjs` | 句子、音色 | 合并后的 PCM 与缓存指标 | 异步状态可注入时间测试 |

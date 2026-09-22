@@ -52,7 +52,7 @@
 
 ### 5. 再看云端适配器
 
-按顺序看 `src/api-client.js`、`server/index.mjs`、`server/cloud-client.mjs`、两个供应商适配器和 `server/prompt.mjs`：
+按顺序看 `src/api-client.js`、`server/index.mjs`、`server/cloud-client.mjs`、三个供应商适配器和 `server/prompt.mjs`：
 
 - 浏览器永远不接触 Gemini 密钥；
 - 服务端先做长度、类型和问题边界校验；
@@ -72,6 +72,7 @@
 - PCM16 如何直接转换成 Web Audio 浮点采样，并用 RMS 音量驱动嘴部叠层；
 - Web Audio 不可用时，怎样退回 WAV Blob，而不影响文字回答。
 - `server/speech-cache.mjs` 怎样合并相同在途句子，并用哈希键和 LRU / TTL 控制缓存边界。
+- `server/google-cloud-tts-client.mjs` 怎样隔离 Cloud 凭证、固定普通话音色参数，并把 Google 的 LINEAR16 WAV 容器还原成现有播放器需要的裸 PCM；对应测试不需要真实 Cloud 账号。
 
 ### 6. 最后看 UI 状态机与视图拆分
 

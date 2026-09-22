@@ -19,7 +19,8 @@ D01 问题边界 → D02 响应策略 → S01 HTTP 服务 → S07 云端供应�
 D04 起卦纯计算 ──────────────────────────────├─ S06 OpenAI-compatible 适配器
                                              ├─ S02 提示词 / 时间 / 上下文
                                              ├─ S04 RAG 检索 → K01 冻结知识包
-                                             ├─ S05 限流 └─ S08 TTS 缓存
+                                             ├─ S05 限流 ├─ S08 TTS 缓存
+                                             └─ S09 Google Cloud TTS
 K02 知识导入与来源登记 → K01
 Q01 行为测试 + Q02 项目体检 + Q03 RAG 评测 覆盖全部模块
 ```
@@ -51,6 +52,7 @@ Q01 行为测试 + Q02 项目体检 + Q03 RAG 评测 覆盖全部模块
 | S06 | OpenAI-compatible 适配 | `server/openai-compatible-client.mjs` | 稳定 | `test/openai-compatible-client.test.js` |
 | S07 | 跨供应商路由与熔断 | `server/cloud-client.mjs` | 稳定 | `test/cloud-client.test.js` |
 | S08 | TTS 合并与有界缓存 | `server/speech-cache.mjs` | 稳定 | `test/speech-cache.test.js` |
+| S09 | Google Cloud TTS 适配 | `server/google-cloud-tts-client.mjs` | 已实现，待真实凭证验收 | `test/google-cloud-tts-client.test.js` |
 | K01 | 冻结经传知识包 | `knowledge/shoujian-rag.v1.json` | 稳定 | 完整性体检、检索测试 |
 | K02 | 公开知识导入 | `scripts/import-open-knowledge.mjs` | 工具 | 人工来源复核、项目体检 |
 | A01 | 墨衡人物与品牌素材 | `assets/` | 稳定 | 视图渲染、人工视觉检查 |
@@ -307,6 +309,18 @@ Q01 行为测试 + Q02 项目体检 + Q03 RAG 评测 覆盖全部模块
 - 失败与降级：键只保存文本与音色的 SHA-256；超大音频不缓存；合成失败不写缓存。
 - 测试：`test/speech-cache.test.js`。
 
+### S09 Google Cloud TTS 适配
+
+- 文件：`server/google-cloud-tts-client.mjs`
+- 单一职责：用官方 Node 客户端调用 Cloud Text-to-Speech，把凭证、普通话音色参数、超时和 LINEAR16 容器适配隔离在单一模块。
+- 输入 / 输出：完整短句、服务端 API Key 或显式启用的 ADC / 服务账号 → 24 kHz 裸 PCM Base64、MIME 类型与采样率。
+- 依赖：`@google-cloud/text-to-speech`；凭证只从服务端环境变量读取，浏览器不可见。
+- 正常路径：配置 Cloud 凭证时由 S07 把云端语音路由到本模块；默认 `cmn-CN-Wavenet-B`，语速 0.92、音高 -3；Google 返回 WAV 时剥离 `data` 块后复用 P10。
+- 失败与降级：未配置 Cloud 凭证时不实例化本模块，继续使用 Gemini TTS；无音频、损坏 WAV、配额和上游错误均转换为稳定错误，不把凭证或供应商原始详情发给浏览器。
+- 测试：`test/google-cloud-tts-client.test.js` 覆盖请求参数、环境适配、WAV → PCM 和损坏容器；`test/cloud-client.test.js` 覆盖独立 TTS 路由。
+- 成熟度边界：自动契约已完成；没有用户 Cloud 凭证，尚未真实测量新句首声 P50 / P95，也未接入单句内部 `StreamingSynthesize`。
+- 练习：在不改动 P09 / P10 契约的前提下，增加可注入的真实 Cloud 性能探针，并只记录耗时、供应商和音色，不记录朗读文本。
+
 ## 六、知识、素材与质量池
 
 ### K01 冻结经传知识包
@@ -386,4 +400,4 @@ Q01 行为测试 + Q02 项目体检 + Q03 RAG 评测 覆盖全部模块
 
 “待补”不等于当前功能不可用；它表示要从本地教学组件升级为面向公众的长期服务时，还需要完成的工程层。
 
-当前自动化、真实云端链路和浏览器人工验收结果见 [0.11.0 质量基线](QUALITY_BASELINE.md)。
+当前自动化、真实云端链路和浏览器人工验收结果见 [0.13.0 质量基线](QUALITY_BASELINE.md)。

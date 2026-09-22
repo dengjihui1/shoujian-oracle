@@ -22,20 +22,24 @@
 | 模式 | 实现 | 网络等待 | 适合场景 | 主要限制 |
 | --- | --- | --- | --- | --- |
 | 极速浏览器 | `src/browser-speech.js`，Web Speech Synthesis | 无项目服务端 TTS 往返 | 面对面即时对话、演示 | 音色取决于浏览器和操作系统；无本地音色时浏览器实现仍可能联网 |
-| 云端音色 | `server/gemini-client.mjs`，`gemini-3.1-flash-tts-preview` | 首次新句需等待完整 PCM | 更统一的声音风格 | 当前不是音频分片流；首次等待可能很高 |
+| 云端音色 | `server/google-cloud-tts-client.mjs`；未配置时回退 `server/gemini-client.mjs` | 首次新句需等待完整 PCM | 更统一的声音风格 | 当前是句级 `synthesizeSpeech`，不是句内音频分片流 |
 
 “极速浏览器”有本地普通话音色时只在本地候选中优先男声音色提示（如 Microsoft Yunxi / Yunjian），并降低语速和音高；第一段文字达到完整句或 40 字软切分后即可交给浏览器朗读，不再等待 Gemini TTS。它仍保留取消、顺序播放和虚拟人开口状态，但嘴型是节奏驱动，不是云端 PCM 的真实 RMS。若系统没有本地普通话音色，具体是否联网由浏览器实现决定。
 
-“云端音色”继续保留 30 分钟 TTL、48 条 / 24 MB LRU、相同并发请求合并和两句预取。缓存命中约 9 毫秒只代表重复句无需再次合成，**不能降低每条新句的供应商首次生成时间**。2026-09-22 已观察到约 6.1 秒和约 16.5 秒两次新句结果，因此 6 秒不应被当作稳定上限或可接受实时目标。
+“云端音色”继续保留 30 分钟 TTL、48 条 / 24 MB LRU、相同并发请求合并和两句预取。有 Google Cloud 凭证时使用官方 `@google-cloud/text-to-speech` 客户端和普通话 Wavenet 音色；未配置时兼容 Gemini TTS。Google 返回的 LINEAR16 WAV 会在服务端剥离容器，继续复用现有 24 kHz PCM 播放与 RMS 嘴型链路。
 
-## 二、Google Cloud Streaming 为什么没有直接冒充成已接入
+缓存命中约 9 毫秒只代表重复句无需再次合成，**不能降低每条新句的供应商首次生成时间**。2026-09-22 在 Gemini TTS 上已观察到约 6.1 秒和约 16.5 秒两次新句结果，因此 6 秒不应被当作稳定上限或可接受实时目标。Google Cloud TTS 适配器已通过请求参数、错误边界和 WAV → PCM 自动测试，但当前开发机没有用户 Cloud 凭证，尚未做真实 Cloud 首声测速。
 
-Google Cloud 是另一套产品和认证，不等于现有 Gemini API Key：
+## 二、当前接入到哪一层
+
+Google Cloud 是另一套产品和认证，不等于现有 Gemini API Key。当前已经接入的是同步 `synthesizeSpeech` 适配器，行为与 Cactus 的句级 TTS 相同：每个完整短句单独合成，句与句可以流水预取，但单句内部仍需等完整音频返回。完整配置步骤见 [API 配置指南](API_SETUP.md)。
+
+尚未接入的是更复杂的真正音频流式层：
 
 - [Cloud Text-to-Speech StreamingSynthesize](https://cloud.google.com/text-to-speech/docs/create-audio-text-streaming) 提供双向流式合成，官方页面说明流式合成适用于 Chirp 3 HD voices；
 - [Cloud Speech-to-Text v2 StreamingRecognize](https://cloud.google.com/speech-to-text/v2/docs/streaming-recognize) 通过 gRPC 持续发送音频并接收增量结果；
-- 两者通常需要 Google Cloud 项目、启用 API、结算/配额、Application Default Credentials 或服务账号，而不是把现有 AI Studio Key 换个变量名；
-- 当前开发机没有 `gcloud`、ADC 或 `GOOGLE_APPLICATION_CREDENTIALS`，所以仓库不能诚实地声称已经完成真实 Google Cloud 流式验收。
+- 两者需要 Google Cloud 项目、启用 API、结算/配额和独立 Cloud 凭证，而不是把现有 AI Studio Key 换个变量名；
+- 当前开发机没有用户 Cloud 凭证，所以仓库不能诚实地声称已经完成真实 Google Cloud 调用或流式验收。
 
 生产版若采用 Google Cloud，建议把目标定为“真实设备测得的首字 / 首声 P50 与 P95”，而不是写死未经实测的毫秒宣传值。接入前还要确认项目所在区域、中文 voice / recognizer 可用性、费用上限和数据处理条款。
 

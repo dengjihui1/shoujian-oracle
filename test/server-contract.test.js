@@ -19,6 +19,8 @@ test("status exposes local fallback without leaking credentials", async () => {
     const status = await response.json();
     assert.equal(status.cloud, false);
     assert.equal(status.provider, null);
+    assert.equal(status.speechProvider, null);
+    assert.equal(status.transcribeProvider, null);
     assert.equal(status.models, null);
     assert.deepEqual(status.knowledge, {
       schema: "shoujian.oracle-rag.v1",
