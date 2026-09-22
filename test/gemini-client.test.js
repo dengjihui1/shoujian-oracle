@@ -106,6 +106,24 @@ test("chat falls back to another model when the primary model is overloaded", as
   assert.deepEqual(requestedModels, ["chat-busy", "chat-stable"]);
 });
 
+test("chat routes ordinary and grounded requests to separate model chains", async () => {
+  const requestedModels = [];
+  const client = new GeminiClient({
+    apiKey: "test-only",
+    models: { fast: "chat-fast", grounded: "chat-grounded" },
+    fastFallbackModels: [],
+    groundedFallbackModels: [],
+    fetchFn: async (_url, options) => {
+      const body = JSON.parse(options.body);
+      requestedModels.push(body.model);
+      return Response.json({ interaction: { output_text: "回答" } });
+    }
+  });
+  assert.equal((await client.chat({ input: "你好", systemInstruction: "自然回答", route: "fast" })).model, "chat-fast");
+  assert.equal((await client.chat({ input: "解释卦辞", systemInstruction: "必须引证", route: "grounded" })).model, "chat-grounded");
+  assert.deepEqual(requestedModels, ["chat-fast", "chat-grounded"]);
+});
+
 test("chat stream yields Gemini SSE chunks and falls back before the first chunk", async () => {
   const requestedModels = [];
   const client = new GeminiClient({

@@ -1,4 +1,5 @@
 import { createServer as createHttpServer } from "node:http";
+import { performance } from "node:perf_hooks";
 import { readFile, stat } from "node:fs/promises";
 import { extname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -68,7 +69,8 @@ async function handleTranscribe(response, client, body) {
 async function handleChat(response, client, knowledgeBase, body, now) {
   const prepared = prepareChat(body, knowledgeBase, now);
   if (prepared.response) return json(response, 200, prepared.response);
-  const result = await client.chat({ input: prepared.input, systemInstruction: prepared.systemInstruction });
+  const startedAt = performance.now();
+  const result = await client.chat({ input: prepared.input, systemInstruction: prepared.systemInstruction, route: prepared.route });
   validateCitations(result.text, prepared.evidence);
   const text = withDivinationDisclaimer(result.text, prepared.purpose);
   return json(response, 200, {
@@ -76,11 +78,13 @@ async function handleChat(response, client, knowledgeBase, body, now) {
     evidence: prepared.evidence,
     grounded: prepared.evidence.length > 0,
     purpose: prepared.purpose,
+    runtime: runtimeMetadata({ route: prepared.route, result, totalMs: performance.now() - startedAt }),
   });
 }
 
 async function handleChatStream(response, client, knowledgeBase, body, now) {
   const prepared = prepareChat(body, knowledgeBase, now);
+  const startedAt = performance.now();
   const upstreamController = new AbortController();
   response.once("close", () => upstreamController.abort());
   response.writeHead(200, {
@@ -94,6 +98,7 @@ async function handleChatStream(response, client, knowledgeBase, body, now) {
     grounded: prepared.evidence.length > 0,
     purpose: prepared.purpose,
     serverTime: prepared.serverTime,
+    route: prepared.route,
   });
   if (prepared.response) {
     sse(response, "delta", { text: prepared.response.text });
@@ -102,6 +107,8 @@ async function handleChatStream(response, client, knowledgeBase, body, now) {
   }
 
   let fullText = "";
+  let firstTokenMs = null;
+  let lastChunk = null;
   const heartbeat = setInterval(() => {
     if (!response.writableEnded && !response.destroyed) response.write(": keep-alive\n\n");
   }, 15_000);
@@ -111,8 +118,11 @@ async function handleChatStream(response, client, knowledgeBase, body, now) {
       input: prepared.input,
       systemInstruction: prepared.systemInstruction,
       signal: upstreamController.signal,
+      route: prepared.route,
     })) {
       if (response.destroyed) return;
+      if (firstTokenMs === null) firstTokenMs = performance.now() - startedAt;
+      lastChunk = chunk;
       fullText += chunk.text;
       sse(response, "delta", { text: chunk.text });
     }
@@ -120,7 +130,10 @@ async function handleChatStream(response, client, knowledgeBase, body, now) {
     const finalText = withDivinationDisclaimer(fullText, prepared.purpose);
     const suffix = finalText.slice(fullText.length);
     if (suffix) sse(response, "delta", { text: suffix });
-    sse(response, "done", { text: finalText });
+    sse(response, "done", {
+      text: finalText,
+      runtime: runtimeMetadata({ route: prepared.route, result: lastChunk, firstTokenMs, totalMs: performance.now() - startedAt }),
+    });
   } catch (error) {
     if (fullText && canRecoverInterruptedStream(error, client, upstreamController.signal)) {
       try {
@@ -128,11 +141,16 @@ async function handleChatStream(response, client, knowledgeBase, body, now) {
           input: prepared.input,
           systemInstruction: prepared.systemInstruction,
           signal: upstreamController.signal,
+          route: prepared.route,
         });
         validateCitations(recovered.text, prepared.evidence);
         const finalText = withDivinationDisclaimer(recovered.text, prepared.purpose);
         sse(response, "replace", { text: finalText, recovered: true });
-        sse(response, "done", { text: finalText, recovered: true });
+        sse(response, "done", {
+          text: finalText,
+          recovered: true,
+          runtime: runtimeMetadata({ route: prepared.route, result: recovered, firstTokenMs, totalMs: performance.now() - startedAt, recovered: true }),
+        });
         error = null;
       } catch (recoveryError) {
         error = recoveryError;
@@ -183,12 +201,25 @@ function prepareChat(body, knowledgeBase, now) {
     limit: 8,
   });
   const serverTime = formatShanghaiDateTime(now());
+  const route = evidence.length > 0 || policy.purpose === "divination" ? "grounded" : "fast";
   return {
     evidence,
     purpose: policy.purpose,
     serverTime,
+    route,
     input: buildChatInput(message, history),
     systemInstruction: buildSystemInstruction({ stage, question, reading, evidence, currentDateTime: serverTime }),
+  };
+}
+
+function runtimeMetadata({ route, result, firstTokenMs = null, totalMs, recovered = false }) {
+  return {
+    route,
+    provider: result?.provider ?? null,
+    model: result?.model ?? null,
+    firstTokenMs: firstTokenMs === null ? null : Math.max(0, Math.round(firstTokenMs)),
+    totalMs: Math.max(0, Math.round(totalMs)),
+    recovered: Boolean(recovered),
   };
 }
 
@@ -314,8 +345,12 @@ export function clientFromEnv(env = process.env) {
     apiKey: env.GEMINI_API_KEY,
     timeoutMs: boundedTimeout(env.GEMINI_TIMEOUT_MS),
     chatFallbackModels: splitModels(env.GEMINI_CHAT_FALLBACK_MODELS),
+    fastFallbackModels: splitModels(env.GEMINI_FAST_FALLBACK_MODELS),
+    groundedFallbackModels: splitModels(env.GEMINI_GROUNDED_FALLBACK_MODELS),
     models: {
       chat: env.GEMINI_CHAT_MODEL ?? DEFAULT_MODELS.chat,
+      fast: env.GEMINI_FAST_MODEL ?? env.GEMINI_CHAT_MODEL ?? DEFAULT_MODELS.fast,
+      grounded: env.GEMINI_GROUNDED_MODEL ?? env.GEMINI_CHAT_MODEL ?? DEFAULT_MODELS.grounded,
       transcribe: env.GEMINI_TRANSCRIBE_MODEL ?? DEFAULT_MODELS.transcribe,
       speech: env.GEMINI_TTS_MODEL ?? DEFAULT_MODELS.speech
     }

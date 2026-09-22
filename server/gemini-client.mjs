@@ -2,10 +2,13 @@ const DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com";
 
 export const DEFAULT_MODELS = Object.freeze({
   chat: "gemini-3.5-flash",
+  fast: "gemini-3.1-flash-lite",
+  grounded: "gemini-3.5-flash",
   transcribe: "gemini-3.5-transcribe",
   speech: "gemini-3.1-flash-tts-preview"
 });
-const DEFAULT_CHAT_FALLBACKS = Object.freeze(["gemini-3.6-flash"]);
+const DEFAULT_FAST_FALLBACKS = Object.freeze(["gemini-3.5-flash", "gemini-3.6-flash"]);
+const DEFAULT_GROUNDED_FALLBACKS = Object.freeze(["gemini-3.6-flash"]);
 
 export class GeminiError extends Error {
   constructor(message, { status = 502, code = "gemini_error", providerStatus = null } = {}) {
@@ -18,20 +21,28 @@ export class GeminiError extends Error {
 }
 
 export class GeminiClient {
-  constructor({ apiKey, fetchFn = globalThis.fetch, baseUrl = DEFAULT_BASE_URL, models = {}, chatFallbackModels = DEFAULT_CHAT_FALLBACKS, timeoutMs = 30_000 } = {}) {
+  constructor({ apiKey, fetchFn = globalThis.fetch, baseUrl = DEFAULT_BASE_URL, models = {}, chatFallbackModels, fastFallbackModels, groundedFallbackModels, timeoutMs = 30_000 } = {}) {
     if (!apiKey) throw new TypeError("Gemini API key is required");
     if (typeof fetchFn !== "function") throw new TypeError("fetch implementation is required");
     this.apiKey = apiKey;
     this.fetchFn = fetchFn;
     this.baseUrl = baseUrl.replace(/\/$/u, "");
+    const legacyChatOverride = Object.hasOwn(models, "chat") ? models.chat : null;
     this.models = { ...DEFAULT_MODELS, ...models };
-    this.chatModels = [...new Set([this.models.chat, ...chatFallbackModels].filter(Boolean))];
+    if (legacyChatOverride && !Object.hasOwn(models, "fast")) this.models.fast = legacyChatOverride;
+    if (legacyChatOverride && !Object.hasOwn(models, "grounded")) this.models.grounded = legacyChatOverride;
+    const sharedFallbacks = chatFallbackModels === undefined ? null : chatFallbackModels;
+    this.chatModelsByRoute = Object.freeze({
+      fast: uniqueModels([this.models.fast, ...(fastFallbackModels ?? sharedFallbacks ?? DEFAULT_FAST_FALLBACKS)]),
+      grounded: uniqueModels([this.models.grounded, ...(groundedFallbackModels ?? sharedFallbacks ?? DEFAULT_GROUNDED_FALLBACKS)]),
+    });
+    this.chatModels = this.chatModelsByRoute.grounded;
     this.timeoutMs = timeoutMs;
   }
 
-  async chat({ input, systemInstruction, signal }) {
+  async chat({ input, systemInstruction, signal, route = "grounded" }) {
     let lastError;
-    for (const model of this.chatModels) {
+    for (const model of this.#modelsForRoute(route)) {
       try {
         const data = await this.#interaction({
           model,
@@ -41,7 +52,7 @@ export class GeminiClient {
         }, signal);
         const text = extractText(data);
         if (!text) throw new GeminiError("Gemini returned no text", { code: "empty_text" });
-        return { text, interactionId: extractInteraction(data)?.id ?? null, model };
+        return { text, interactionId: extractInteraction(data)?.id ?? null, model, provider: "gemini" };
       } catch (error) {
         lastError = error;
         if (!isTransientChatError(error)) throw error;
@@ -50,9 +61,9 @@ export class GeminiClient {
     throw lastError;
   }
 
-  async *chatStream({ input, systemInstruction, signal }) {
+  async *chatStream({ input, systemInstruction, signal, route = "grounded" }) {
     let lastError;
-    for (const model of this.chatModels) {
+    for (const model of this.#modelsForRoute(route)) {
       let emitted = false;
       try {
         const response = await this.#fetch(`${this.baseUrl}/v1beta/models/${encodeURIComponent(model.replace(/^models\//u, ""))}:streamGenerateContent?alt=sse`, {
@@ -70,7 +81,7 @@ export class GeminiClient {
           if (!text) continue;
           emitted = true;
           fullText += text;
-          yield { text, model };
+          yield { text, model, provider: "gemini" };
         }
         if (!fullText) throw new GeminiError("Gemini returned no text", { code: "empty_text" });
         return;
@@ -82,6 +93,10 @@ export class GeminiClient {
       }
     }
     throw lastError;
+  }
+
+  #modelsForRoute(route) {
+    return route === "fast" ? this.chatModelsByRoute.fast : this.chatModelsByRoute.grounded;
   }
 
   async transcribe({ bytes, mimeType }) {
@@ -192,6 +207,10 @@ export class GeminiClient {
       throw new GeminiError("Gemini request failed", { code: "network_error" });
     }
   }
+}
+
+function uniqueModels(models) {
+  return [...new Set(models.map((model) => String(model ?? "").trim()).filter(Boolean))];
 }
 
 function isTransientChatError(error) {

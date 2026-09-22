@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildSystemInstruction, formatShanghaiDateTime } from "../server/prompt.mjs";
+import { buildChatInput, buildSystemInstruction, formatShanghaiDateTime, selectRecentHistory } from "../server/prompt.mjs";
 
 test("question stage supports ordinary conversation without inventing a reading", () => {
   const prompt = buildSystemInstruction({ stage: "question", question: "", reading: null, evidence: [] });
@@ -24,4 +24,19 @@ test("server time is formatted in Asia/Shanghai and injected as the trusted date
   assert.match(prompt, /可信服务器时钟：2026年09月20日 00:30:45/u);
   assert.match(prompt, /今天几号.*可信服务器时钟/u);
   assert.match(prompt, /浏览器本机记忆在刷新后恢复/u);
+});
+
+test("recent context keeps the newest messages inside a total character budget", () => {
+  const history = [
+    { role: "user", text: "旧问题".repeat(20) },
+    { role: "master", text: "旧回答".repeat(20) },
+    { role: "user", text: "我叫小明" },
+    { role: "master", text: "记住了" },
+  ];
+  const selected = selectRecentHistory(history, { maxMessages: 16, maxCharacters: 30 });
+  assert.deepEqual(selected.map(({ text }) => text), ["我叫小明", "记住了"]);
+  const input = buildChatInput("我叫什么？", history, { maxCharacters: 30 });
+  assert.doesNotMatch(input, /旧问题/u);
+  assert.match(input, /我叫小明/u);
+  assert.match(input, /用户本轮：我叫什么/u);
 });

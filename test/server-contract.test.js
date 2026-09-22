@@ -79,9 +79,10 @@ test("voice endpoints validate media and return stable browser contracts", async
 test("ordinary identity questions work without a cast or decorative citation", async () => {
   const client = {
     models: { chat: "test-chat" },
-    async chat({ systemInstruction }) {
+    async chat({ systemInstruction, route }) {
       assert.match(systemInstruction, /目前还没有程序排出的卦象/u);
-      return { text: "我是墨衡，一个能闲聊、讲《周易》，也能陪你起卦的虚拟卦师。" };
+      assert.equal(route, "fast");
+      return { text: "我是墨衡，一个能闲聊、讲《周易》，也能陪你起卦的虚拟卦师。", model: "test-fast", provider: "test" };
     },
   };
   await withServer(createApp({ client }), async (base) => {
@@ -96,6 +97,8 @@ test("ordinary identity questions work without a cast or decorative citation", a
     assert.equal(body.evidence.length, 0);
     assert.match(body.text, /墨衡/u);
     assert.equal(body.purpose, "chat");
+    assert.equal(body.runtime.route, "fast");
+    assert.equal(body.runtime.model, "test-fast");
   });
 });
 
