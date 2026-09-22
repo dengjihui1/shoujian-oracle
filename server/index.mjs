@@ -5,6 +5,8 @@ import { extname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import process from "node:process";
 import { GeminiClient, GeminiError, DEFAULT_MODELS } from "./gemini-client.mjs";
+import { OpenAiCompatibleClient } from "./openai-compatible-client.mjs";
+import { OracleCloudClient } from "./cloud-client.mjs";
 import { buildChatInput, buildSystemInstruction, formatShanghaiDateTime } from "./prompt.mjs";
 import { loadKnowledgeBase } from "./knowledge-retriever.mjs";
 import { assessQuestion } from "../src/question-boundary.js";
@@ -29,7 +31,7 @@ export function createApp({ client = null, knowledgeBase = defaultKnowledgeBase,
         if (request.method === "GET" && url.pathname === "/api/status") {
           return json(response, 200, {
             cloud: apiEnabled,
-            provider: apiEnabled ? "Google Gemini" : null,
+            provider: apiEnabled ? client.providerSummary ?? "gemini" : null,
             models: apiEnabled ? client.models : null,
             knowledge: knowledgeBase.summary,
             serverTime: formatShanghaiDateTime(now()),
@@ -341,7 +343,7 @@ export async function loadEnv(path = resolve(projectRoot, ".env")) {
 
 export function clientFromEnv(env = process.env) {
   if (!env.GEMINI_API_KEY) return null;
-  return new GeminiClient({
+  const primary = new GeminiClient({
     apiKey: env.GEMINI_API_KEY,
     timeoutMs: boundedTimeout(env.GEMINI_TIMEOUT_MS),
     chatFallbackModels: splitModels(env.GEMINI_CHAT_FALLBACK_MODELS),
@@ -355,6 +357,46 @@ export function clientFromEnv(env = process.env) {
       speech: env.GEMINI_TTS_MODEL ?? DEFAULT_MODELS.speech
     }
   });
+  const chatFallbacks = compatibleProvidersFromEnv(env).map((config) => new OpenAiCompatibleClient({
+    ...config,
+    timeoutMs: boundedTimeout(env.COMPATIBLE_TIMEOUT_MS ?? env.GEMINI_TIMEOUT_MS),
+  }));
+  return new OracleCloudClient({ primary, chatFallbacks });
+}
+
+export function compatibleProvidersFromEnv(env = process.env) {
+  const candidates = [
+    {
+      apiKey: env.OPENAI_COMPAT_API_KEY,
+      baseUrl: env.OPENAI_COMPAT_BASE_URL,
+      model: env.OPENAI_COMPAT_FAST_MODEL ?? env.OPENAI_COMPAT_MODEL,
+      groundedModel: env.OPENAI_COMPAT_GROUNDED_MODEL ?? env.OPENAI_COMPAT_MODEL,
+      provider: env.OPENAI_COMPAT_PROVIDER ?? "compatible",
+    },
+    {
+      apiKey: env.GROQ_API_KEY,
+      baseUrl: "https://api.groq.com/openai/v1",
+      model: env.GROQ_FAST_MODEL ?? env.GROQ_CHAT_MODEL,
+      groundedModel: env.GROQ_GROUNDED_MODEL ?? env.GROQ_CHAT_MODEL,
+      provider: "groq",
+    },
+    {
+      apiKey: env.OPENROUTER_API_KEY,
+      baseUrl: "https://openrouter.ai/api/v1",
+      model: env.OPENROUTER_FAST_MODEL ?? env.OPENROUTER_CHAT_MODEL,
+      groundedModel: env.OPENROUTER_GROUNDED_MODEL ?? env.OPENROUTER_CHAT_MODEL,
+      provider: "openrouter",
+      headers: { "HTTP-Referer": "https://github.com/dengjihui1/shoujian-oracle", "X-Title": "Shoujian Oracle" },
+    },
+    {
+      apiKey: env.SILICONFLOW_API_KEY,
+      baseUrl: "https://api.siliconflow.cn/v1",
+      model: env.SILICONFLOW_FAST_MODEL ?? env.SILICONFLOW_CHAT_MODEL,
+      groundedModel: env.SILICONFLOW_GROUNDED_MODEL ?? env.SILICONFLOW_CHAT_MODEL,
+      provider: "siliconflow",
+    },
+  ];
+  return candidates.filter(({ apiKey, baseUrl, model }) => apiKey && baseUrl && model);
 }
 
 function splitModels(value) {

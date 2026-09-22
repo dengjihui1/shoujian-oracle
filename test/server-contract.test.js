@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { once } from "node:events";
-import { createApp } from "../server/index.mjs";
+import { compatibleProvidersFromEnv, createApp } from "../server/index.mjs";
 import { OracleApiClient } from "../src/api-client.js";
 
 async function withServer(app, run) {
@@ -30,6 +30,19 @@ test("status exposes local fallback without leaking credentials", async () => {
     const hidden = await fetch(`${base}/.env`);
     assert.equal(hidden.status, 404);
   });
+});
+
+test("environment adapter recognizes named and generic compatible providers only when complete", () => {
+  const providers = compatibleProvidersFromEnv({
+    GROQ_API_KEY: "groq-secret",
+    GROQ_CHAT_MODEL: "groq-model",
+    OPENROUTER_API_KEY: "incomplete-without-model",
+    OPENAI_COMPAT_API_KEY: "generic-secret",
+    OPENAI_COMPAT_BASE_URL: "https://compatible.test/v1",
+    OPENAI_COMPAT_MODEL: "generic-model",
+  });
+  assert.deepEqual(providers.map(({ provider }) => provider), ["compatible", "groq"]);
+  assert.equal(providers[1].baseUrl, "https://api.groq.com/openai/v1");
 });
 
 test("API routes enforce boundary and preserve deterministic reading context", async () => {
