@@ -7,6 +7,7 @@ import process from "node:process";
 import { GeminiClient, GeminiError, DEFAULT_MODELS } from "./gemini-client.mjs";
 import { OpenAiCompatibleClient } from "./openai-compatible-client.mjs";
 import { OracleCloudClient } from "./cloud-client.mjs";
+import { CachedSpeechService } from "./speech-cache.mjs";
 import { buildChatInput, buildSystemInstruction, formatShanghaiDateTime } from "./prompt.mjs";
 import { loadKnowledgeBase } from "./knowledge-retriever.mjs";
 import { assessQuestion } from "../src/question-boundary.js";
@@ -21,6 +22,9 @@ const defaultKnowledgeBase = await loadKnowledgeBase();
 export function createApp({ client = null, knowledgeBase = defaultKnowledgeBase, rootPath = projectRoot, now = Date.now } = {}) {
   const rateLimiter = new SlidingWindowRateLimiter();
   const apiEnabled = Boolean(client);
+  const speechService = typeof client?.speech === "function"
+    ? new CachedSpeechService({ synthesize: (payload) => client.speech(payload), now })
+    : null;
 
   return async function app(request, response) {
     setSecurityHeaders(response);
@@ -43,7 +47,7 @@ export function createApp({ client = null, knowledgeBase = defaultKnowledgeBase,
         if (url.pathname === "/api/transcribe") return await handleTranscribe(response, client, body);
         if (url.pathname === "/api/chat") return await handleChat(response, client, knowledgeBase, body, now);
         if (url.pathname === "/api/chat/stream") return await handleChatStream(response, client, knowledgeBase, body, now);
-        if (url.pathname === "/api/speech") return await handleSpeech(response, client, body);
+        if (url.pathname === "/api/speech") return await handleSpeech(response, speechService, body);
         return json(response, 404, { error: "not_found", message: "接口不存在。" });
       }
       return serveStatic(response, url.pathname, rootPath);
@@ -225,10 +229,16 @@ function runtimeMetadata({ route, result, firstTokenMs = null, totalMs, recovere
   };
 }
 
-async function handleSpeech(response, client, body) {
+async function handleSpeech(response, speechService, body) {
   const text = cleanText(body.text, 800, "朗读内容");
-  const result = await client.speech({ text });
-  return json(response, 200, { data: result.data, mimeType: result.mimeType, sampleRate: result.sampleRate });
+  if (!speechService) throw httpError(503, "speech_disabled", "语音合成暂不可用。");
+  const result = await speechService.speech({ text });
+  return json(response, 200, {
+    data: result.data,
+    mimeType: result.mimeType,
+    sampleRate: result.sampleRate,
+    runtime: { cache: result.cache, synthesisMs: result.synthesisMs },
+  });
 }
 
 function sanitizeReading(value) {

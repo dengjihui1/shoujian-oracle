@@ -85,7 +85,32 @@ test("voice endpoints validate media and return stable browser contracts", async
     const transcribe = await fetch(`${base}/api/transcribe`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ data: Buffer.from([1, 2, 3]).toString("base64"), mimeType: "audio/webm;codecs=opus" }) });
     assert.deepEqual(await transcribe.json(), { text: "语音问题" });
     const speech = await fetch(`${base}/api/speech`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "墨衡回答" }) });
-    assert.deepEqual(await speech.json(), { data: "AQI=", mimeType: "audio/pcm;rate=24000", sampleRate: 24000 });
+    const speechBody = await speech.json();
+    assert.equal(speechBody.data, "AQI=");
+    assert.equal(speechBody.mimeType, "audio/pcm;rate=24000");
+    assert.equal(speechBody.sampleRate, 24000);
+    assert.equal(speechBody.runtime.cache, "miss");
+    assert.equal(Number.isInteger(speechBody.runtime.synthesisMs), true);
+  });
+});
+
+test("speech endpoint caches repeated sentences and coalesces provider work", async () => {
+  let calls = 0;
+  const client = {
+    models: {},
+    async speech() { calls += 1; return { data: "AQI=", mimeType: "audio/pcm", sampleRate: 24_000 }; },
+  };
+  await withServer(createApp({ client, now: () => 1_000 }), async (base) => {
+    const request = () => fetch(`${base}/api/speech`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: "重复句子" }),
+    }).then((response) => response.json());
+    const first = await request();
+    const second = await request();
+    assert.equal(calls, 1);
+    assert.equal(first.runtime.cache, "miss");
+    assert.equal(second.runtime.cache, "hit");
   });
 });
 
