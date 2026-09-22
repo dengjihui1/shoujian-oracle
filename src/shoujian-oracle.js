@@ -5,6 +5,7 @@ import { inferConversationPurpose } from "./response-policy.js";
 import { OracleApiClient } from "./api-client.js";
 import { AudioRecorder, BrowserSpeechRecognizer, blobToBase64 } from "./audio-recorder.js";
 import { playPcmBase64, primeAudioPlayback } from "./audio-player.js";
+import { BrowserSpeechPlayer } from "./browser-speech.js";
 import { ConversationMemory, recentConversation } from "./conversation-memory.js";
 import { SentenceSegmenter } from "./speech-segmenter.js";
 import { StreamingSpeechQueue } from "./speech-queue.js";
@@ -19,6 +20,7 @@ export class ShoujianOracle extends HTMLElement {
     this.api = new OracleApiClient();
     this.recorder = new AudioRecorder();
     this.liveTranscriber = new BrowserSpeechRecognizer();
+    this.browserSpeech = new BrowserSpeechPlayer();
     this.memory = new ConversationMemory();
     this.cloud = false;
     this.knowledge = null;
@@ -26,6 +28,7 @@ export class ShoujianOracle extends HTMLElement {
     this.transcribing = false;
     this.busy = false;
     this.voiceReplies = false;
+    this.voiceMode = this.browserSpeech.supported ? "fast" : "cloud";
     this.voiceState = "idle";
     this.voiceError = "";
     this.draft = "";
@@ -143,6 +146,12 @@ export class ShoujianOracle extends HTMLElement {
       if (!this.voiceReplies) this.cancelSpeech();
       this.render();
     }
+    if (action === "voice-mode" && this.voiceReplies && this.browserSpeech.supported) {
+      this.cancelSpeech();
+      this.voiceMode = this.voiceMode === "fast" ? "cloud" : "fast";
+      if (this.voiceMode === "cloud") primeAudioPlayback();
+      this.render();
+    }
     const quick = event.target.closest("[data-quick]")?.dataset.quick;
     if (quick) await this.sendText(quick);
   };
@@ -226,7 +235,7 @@ export class ShoujianOracle extends HTMLElement {
     });
     this.activeRevealer = revealer;
     let speechQueue = this.voiceReplies ? this.createSpeechQueue() : null;
-    let speechSegmenter = speechQueue ? new SentenceSegmenter() : null;
+    let speechSegmenter = speechQueue ? this.createSpeechSegmenter() : null;
     let receivedText = false;
     this.render();
     try {
@@ -257,7 +266,7 @@ export class ShoujianOracle extends HTMLElement {
           if (speechQueue) {
             speechQueue.cancel();
             speechQueue = this.createSpeechQueue();
-            speechSegmenter = new SentenceSegmenter();
+            speechSegmenter = this.createSpeechSegmenter();
             for (const sentence of speechSegmenter.push(text)) speechQueue.enqueue(sentence);
           }
         },
@@ -394,17 +403,22 @@ export class ShoujianOracle extends HTMLElement {
 
   async speak(text) {
     const queue = this.createSpeechQueue();
-    const segmenter = new SentenceSegmenter();
+    const segmenter = this.createSpeechSegmenter();
     for (const sentence of [...segmenter.push(text), ...segmenter.flush()]) queue.enqueue(sentence);
     await queue.close();
   }
 
   createSpeechQueue() {
     this.cancelSpeech();
+    const useFastBrowserSpeech = this.voiceMode === "fast" && this.browserSpeech.supported;
     let queue;
     queue = new StreamingSpeechQueue({
-      synthesize: (text, { signal }) => this.api.speech(text, { signal }),
-      play: (audio, { onLevel }) => playPcmBase64(audio.data, { sampleRate: audio.sampleRate, onLevel }),
+      synthesize: useFastBrowserSpeech
+        ? async (text) => this.browserSpeech.prepare(text)
+        : (text, { signal }) => this.api.speech(text, { signal }),
+      play: useFastBrowserSpeech
+        ? (payload, { onLevel }) => this.browserSpeech.play(payload, { onLevel })
+        : (audio, { onLevel }) => playPcmBase64(audio.data, { sampleRate: audio.sampleRate, onLevel }),
       onState: (state) => {
         if (this.speechQueue !== queue) return;
         this.voiceState = state;
@@ -421,6 +435,12 @@ export class ShoujianOracle extends HTMLElement {
     });
     this.speechQueue = queue;
     return queue;
+  }
+
+  createSpeechSegmenter() {
+    return this.voiceMode === "fast"
+      ? new SentenceSegmenter({ maxChars: 40, minSplitChars: 20 })
+      : new SentenceSegmenter();
   }
 
   cancelSpeech() {
@@ -465,7 +485,11 @@ export class ShoujianOracle extends HTMLElement {
     if (this.voiceError) return "语音暂不可用 · 文字仍可用";
     if (this.voiceState === "generating") return "语音生成中 · 可继续问";
     if (this.voiceState === "playing") return "正在播放 · 可继续问";
-    return "语音回答：开";
+    return this.voiceMode === "fast" ? "语音回答：极速" : "语音回答：云端";
+  }
+
+  voiceModeButtonLabel() {
+    return this.voiceMode === "fast" ? "切换到云端音色" : "切换到极速浏览器";
   }
 
   focusLatest() {
@@ -499,10 +523,13 @@ export class ShoujianOracle extends HTMLElement {
       liveTranscriberSupported: this.liveTranscriber.supported,
       draft: this.draft,
       voiceReplies: this.voiceReplies,
+      voiceMode: this.voiceMode,
+      fastVoiceSupported: this.browserSpeech.supported,
       voiceState: this.voiceState,
       voiceError: this.voiceError,
       canRetryResponse: Boolean(this.retryRequest),
       voiceButtonLabel: this.voiceButtonLabel(),
+      voiceModeButtonLabel: this.voiceModeButtonLabel(),
     });
   }
 }

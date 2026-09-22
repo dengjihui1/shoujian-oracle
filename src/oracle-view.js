@@ -60,6 +60,7 @@ export function renderOracleView(state) {
                 : `<button type="button" data-action="${state.recording ? "stop-record" : "record"}" ${(stage === "ready" || state.busy) && !state.recording ? "disabled" : ""}>${state.recording ? state.recordingMode === "live" ? "停止并采用文字" : "停止并转文字" : liveSupported ? "实时语音输入" : "按下说话"}</button>` : ""}
               ${state.busy && !state.transcribing ? `<button type="button" data-action="cancel-response">停止回答</button>` : ""}
               ${state.cloud ? `<button type="button" data-action="voice" aria-pressed="${Boolean(state.voiceReplies)}">${escapeHtml(state.voiceButtonLabel)}</button>` : ""}
+              ${state.cloud && state.voiceReplies && state.fastVoiceSupported ? `<button type="button" data-action="voice-mode" aria-label="切换语音模式">${escapeHtml(state.voiceModeButtonLabel)}</button>` : ""}
             </div>
             ${state.cloud ? `<p class="voice-notice" data-voice-notice role="status" ${state.voiceError ? "" : "hidden"}>${state.voiceError ? `语音暂不可用：${escapeHtml(state.voiceError)}。文字回答仍可继续。` : ""}</p>` : ""}
             ${state.cloud ? `<div class="memory-tools"><small>本机保存最近 ${PERSISTED_MEMORY_MESSAGES} 条已完成对话与当前卦象。</small><button type="button" data-action="clear-memory" ${interactionLocked ? "disabled" : ""}>清除本机记忆</button></div>` : ""}

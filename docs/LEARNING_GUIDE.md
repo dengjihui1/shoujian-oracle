@@ -64,7 +64,7 @@
 - 提示词把本地计算结果标为只读，模型不能重新排卦，并把本轮 RAG 片段作为唯一经传证据；
 - `fetch` 可以注入，所以测试不需要真实密钥或额度。
 
-再看 `speech-segmenter.js`、`speech-queue.js`、`audio-recorder.js` 与 `audio-player.js`：
+再看 `speech-segmenter.js`、`speech-queue.js`、`audio-recorder.js`、`browser-speech.js` 与 `audio-player.js`：
 
 - 分句器如何从任意 SSE 边界恢复完整中文句子，并在长句中安全切分；
 - 播放队列如何把“并发预取”和“严格按序播放”分开；

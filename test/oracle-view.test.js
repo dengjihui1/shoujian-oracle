@@ -16,6 +16,8 @@ function render(overrides = {}) {
     voiceReplies: false,
     voiceState: "idle",
     voiceButtonLabel: "语音回答：关",
+    voiceModeButtonLabel: "切换到云端音色",
+    fastVoiceSupported: true,
     ...overrides,
   });
 }
@@ -65,6 +67,12 @@ test("view makes a speech failure visible without disabling text chat", () => {
   assert.match(html, /data-avatar-state="error"/u);
   assert.match(html, /语音暂不可用：当前额度不足/u);
   assert.doesNotMatch(html, /data-submit-mode="chat" disabled/u);
+});
+
+test("enabled voice exposes an explicit fast or cloud mode switch", () => {
+  const html = render({ voiceReplies: true, voiceButtonLabel: "语音回答：极速" });
+  assert.match(html, /data-action="voice-mode"/u);
+  assert.match(html, /切换到云端音色/u);
 });
 
 test("busy state disables the composer while keeping cancellation available", () => {

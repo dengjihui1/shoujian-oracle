@@ -27,7 +27,7 @@
   ↓
 Gemini 已配置 → 按场景模型路由 → SSE 流式自由追问 + 字符级显示 + 中途断流恢复 + 来源展开
   ├── 首字前失败：可选 OpenAI-compatible 供应商回退 + 短时熔断
-  └── 可选语音：完整句切分 → 最多预取 2 句 TTS → 合并 / 缓存 → 顺序播放 → 音量驱动墨衡嘴型
+  └── 可选语音：完整句切分 → 极速浏览器朗读，或云端 TTS 预取 / 合并 / 缓存 → 顺序播放 → 墨衡嘴型
 Gemini 未配置 → 有限追问：意思 / 动爻 / 算法 / 边界
 ```
 
@@ -45,6 +45,7 @@ Gemini 未配置 → 有限追问：意思 / 动爻 / 算法 / 边界
 | 随机适配器 | `castWithCoins()` | `crypto.getRandomValues` | 六个爻值 | 外层有随机，排卦仍纯计算 |
 | 浏览器 API 适配器 | `src/api-client.js` | 文本、录音 | JSON / SSE 事件流 | 否，网络 I/O |
 | 录音与播放 | `src/audio-recorder.js` / `audio-player.js` | 麦克风、PCM | 实时文字 / Web Audio 播放 / RMS 音量 | 播放有 I/O，PCM 转换与音量计算为纯函数 |
+| 极速浏览器语音 | `src/browser-speech.js` | 完整短句、本机音色 | 可取消朗读与节奏嘴型信号 | 音色选择和生命周期可注入测试 |
 | 流式语音分句 | `src/speech-segmenter.js` | Gemini SSE 文字分片 | 可朗读的完整短句 | 是 |
 | TTS 播放队列 | `src/speech-queue.js` | 完整短句、取消信号 | 最多两句预取、严格顺序播放 | 异步调度可注入测试 |
 | 流式文字队列 | `src/streaming-text.js` | SSE 文字分片 | 可取消的字符级累积文本 | 定时器可注入测试 |

@@ -4,7 +4,7 @@
 
 独立的轻量虚拟卦师与经传 RAG 组件。它保留虚拟人主持、问题边界、三钱六爻和 64 卦确定性映射，并加入可追溯的《周易》《彖》《象》《说卦》冻结知识检索；明确不包含住宅分析、纳甲时证、档案、支付与追验等主项目核心。
 
-![版本](https://img.shields.io/badge/version-0.11.0-8e332a)
+![版本](https://img.shields.io/badge/version-0.12.0-8e332a)
 ![许可](https://img.shields.io/badge/license-MIT-d3b27f)
 
 ## 现在能完成什么
@@ -18,8 +18,8 @@
 7. 普通聊天和经传 / 解卦按场景路由；回答通过 SSE 真流式传输并回传首包、总耗时与实际路由，若供应商半途断流会恢复完整回答并原位替换；
 8. 每轮注入 `Asia/Shanghai` 服务器时钟，日期与时间问题不再交给模型猜测；
 9. 最近 24 条已完成对话、当前原问和程序卦象保存在当前浏览器本机；刷新后恢复同一阶段与同一卦，每次最多发送最近 16 条且不超过约 6000 字符；
-10. 支持浏览器实时语音转写，并在不支持时退回 Gemini 单请求内联转写；
-11. 语音回答不再等待整段文字：第一个完整句到达就开始 TTS，最多预取两句并严格按原序播放；重复句命中有界内存缓存，并发相同句只合成一次；
+10. 支持浏览器实时语音转写，并在不支持时退回真实 Gemini 单请求内联转写；这不是 Google Cloud STT v2，接口边界明确记录；
+11. 语音回答提供“极速浏览器 / 云端音色”切换：极速模式不等待项目的云端 TTS，云端模式继续使用两句预取、请求合并和有界缓存；
 12. 浏览器直接把 PCM 放进 Web Audio，按真实音量驱动墨衡嘴型与音量柱；不支持 Web Audio 时才回退到 WAV 播放；
 13. 回答和转写都可以手动停止；新问题、关闭语音或停止回答都会立即清理旧 TTS 请求和播放队列；
 14. TTS 配额或网络失败时显示“失声”和稳定错误说明，文字回答、输入与下一轮对话不受影响；
@@ -38,7 +38,7 @@
 | `oracleQuestionBoundary` | 7 类公开字规 | 问契签名、验期、准绳与追验 |
 | `iching` | 6/7/8/9、八卦、文王序 64 卦映射 | 古籍全文、爻辞、纳甲、六亲、旬空、六神 |
 
-经传数据另从中文维基文库公开来源建立独立知识包，不复制主项目住宅知识。完整映射见 [组件抽取与流程图](docs/COMPONENT_MAP.md)，逐模块输入输出、依赖、降级、测试和练习见 [守简模块池](docs/MODULE_POOL.md)，阅读顺序见 [代码学习指南](docs/LEARNING_GUIDE.md)，对标项目与实测见 [0.11 性能与虚拟人架构调研](docs/OPTIMIZATION_RESEARCH.md)，发布验收见 [0.11.0 质量基线](docs/QUALITY_BASELINE.md)。
+经传数据另从中文维基文库公开来源建立独立知识包，不复制主项目住宅知识。语音 API 的真实边界、Google Cloud 升级路线和 RAG 构建全过程见 [语音 API 与 RAG 架构说明](docs/VOICE_RAG_ARCHITECTURE.md)；完整映射见 [组件抽取与流程图](docs/COMPONENT_MAP.md)，逐模块说明见 [守简模块池](docs/MODULE_POOL.md)，阅读顺序见 [代码学习指南](docs/LEARNING_GUIDE.md)，对标项目与实测见 [性能与虚拟人架构调研](docs/OPTIMIZATION_RESEARCH.md)，发布验收见 [0.12.0 质量基线](docs/QUALITY_BASELINE.md)。
 
 ## 本地运行（无需 API）
 
@@ -66,8 +66,8 @@ npm start
 普通文字 → Gemini 3.1 Flash Lite SSE（普通 / RAG 场景路由；半途断流恢复）→ 字符级呈现
 经传问题或本地卦象 → 冻结知识检索 → 引用白名单校验 → 带来源回答
 Gemini 失败 → 可选 OpenAI-compatible 供应商池 → 短时熔断与自动回退
-墨衡 SSE 分片 → 中文分句器 → 最多预取 2 句 TTS → 合并重复合成 / 有界缓存 → 顺序播放
-24 kHz PCM → Web Audio 音量分析 → 墨衡开口帧与音量柱
+墨衡 SSE 分片 → 中文分句器 → 极速浏览器朗读（默认，不等待 Gemini TTS）→ 节奏驱动开口
+墨衡 SSE 分片 → 可切换云端 TTS → 两句预取 / 合并 / 有界缓存 → 24 kHz PCM 音量驱动开口
 ```
 
 ## 嵌入自己的网页
@@ -88,6 +88,7 @@ Gemini 失败 → 可选 OpenAI-compatible 供应商池 → 短时熔断与自�
 - `src/avatar-state.js`：虚拟人的九种可测试状态与优先级；
 - `src/speech-segmenter.js`：面向中文流式文本的分句、长句切分与引用标记清理；
 - `src/speech-queue.js`：最多两句预取、严格顺序播放和可立即淘汰的 TTS 队列；
+- `src/browser-speech.js`：不等待项目云端 TTS 的普通话浏览器语音与可取消播放；
 - `src/dialogue-engine.js`：有限意图识别与墨衡回答；
 - `src/api-client.js`：浏览器与本机 API 的 JSON/SSE 通信；
 - `src/audio-recorder.js` / `audio-player.js`：浏览器实时转写、录音兜底、PCM Web Audio 播放与实时音量分析；
@@ -99,7 +100,7 @@ Gemini 失败 → 可选 OpenAI-compatible 供应商池 → 短时熔断与自�
 - `knowledge/shoujian-rag.v1.json`：64 卦、384 爻与 8 个说卦取象冻结知识；
 - `evaluation/` / `scripts/evaluate-rag.mjs`：固定 RAG 质量集与检索延迟预算；
 - `test/`：上述各层的确定性测试。
-- `docs/MODULE_POOL.md`：全项目 28 个模块的学习、测试、成熟度与后续迭代池。
+- `docs/MODULE_POOL.md`：全项目模块的学习、测试、成熟度与后续迭代池。
 
 ## 验证
 

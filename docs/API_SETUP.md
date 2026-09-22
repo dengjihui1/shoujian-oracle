@@ -1,6 +1,6 @@
 # 云端 API 配置指南
 
-本文对应项目 `0.11.0`。模型和免费额度会变化；下面的模型 ID 已在 2026-09-22 通过当前账号的真实状态与请求核验。
+本文对应项目 `0.12.0`。模型和免费额度会变化；下面的模型 ID 已在 2026-09-22 通过当前账号的真实状态与请求核验。
 
 ## 1. 准备条件
 
@@ -78,8 +78,8 @@ npm start
 8. 起卦后输入任意相关追问，回答旁显示“墨衡 · RAG”，并能展开本卦、实际动爻和之卦来源；刷新页面后应仍显示相同原问和卦象；
 9. 支持浏览器实时识别时，点击“实时语音输入”，说话期间文字应逐步进入输入框；停止后仍可修改再提交；
 10. 不支持实时识别时，页面显示“按下说话”，停止后使用 Gemini 单请求内联音频转写，失败时才退回 Files API；
-11. 打开“语音回答”再提问：第一句完整文字出现后，人物应先显示“润声”，无需等整段回答完成才发起 TTS；
-12. 开始播放后人物显示“开口”，嘴部和音量柱应随真实声音变化；句间顺序不能颠倒；
+11. 打开“语音回答”默认进入“极速”模式；第一句完整文字出现后直接交给浏览器语音引擎，不等待 Gemini TTS；
+12. 点击“切换到云端音色”可使用 Gemini TTS；开始播放后人物显示“开口”，句间顺序不能颠倒；云端模式按 PCM 真实音量驱动，极速模式按朗读节奏驱动；
 13. 文字完成后输入框必须立即恢复，剩余语音可继续在后台生成和播放；此时提交新问题应立即停止旧语音；
 14. 若 TTS 配额不足，人物应显示“失声”和错误说明，但文字回答及下一轮输入仍然正常；
 15. 回答期间应出现“停止回答”，转写期间应出现“取消转写”，两者均可恢复可输入状态；
@@ -92,8 +92,9 @@ npm start
 | 能力 | 默认模型 | 接口 | 本项目职责 |
 | --- | --- | --- | --- |
 | 自由对话 / RAG | `gemini-3.1-flash-lite`；备用 3.5 / 3.6 与可选兼容供应商 | `streamGenerateContent?alt=sse` / OpenAI-compatible chat | SSE 真流式输出；首包前可跨模型、跨供应商回退；已有分片后断流则恢复完整答案 |
-| 语音转文字 | 浏览器语音服务；兜底 `gemini-3.5-transcribe` | 实时识别；Interactions 内联音频；Files API 最终兜底 | 优先返回增量文字，避免等待完整录音上传 |
-| 文字转语音 | `gemini-3.1-flash-tts-preview` | Interactions API | 按完整句预取 2 段 24 kHz PCM；重复合成合并并命中有界缓存；Web Audio 顺序播放并驱动人物口型 |
+| 语音转文字 | 浏览器语音服务；兜底 `gemini-3.5-transcribe` | 实时识别；Interactions 内联音频；Files API 最终兜底 | 优先返回增量文字；当前不是 Google Cloud STT v2 |
+| 极速文字转语音 | 浏览器优先本地普通话音色 | Web Speech Synthesis | 无项目服务端 TTS 往返；音色和启动速度取决于浏览器 / 操作系统 |
+| 云端文字转语音 | `gemini-3.1-flash-tts-preview` | Interactions API | 按完整句预取 2 段 24 kHz PCM；重复合成合并并命中有界缓存；首次新句仍受供应商延迟影响 |
 
 起卦不调用模型：六个爻值、本卦、动爻和之卦仍由 `src/oracle-engine.js` 在浏览器本地机械计算。Gemini 只能解释只读结果与本轮冻结片段。
 
@@ -109,8 +110,8 @@ npm start
 - 地区不可用：这是 Google 账号或地区限制；项目会保留本地起卦，不能通过代码合法绕过。
 - 麦克风按钮不出现：浏览器不支持录音，或当前没有连接 Gemini；使用 `127.0.0.1`/HTTPS 并允许麦克风。
 - 能转写但没有声音：浏览器可能拦截自动播放；先手动点击页面按钮，再重试语音回答。
-- 一句话很长时迟迟没有声音：流式分句器会优先等待句号、问号等终止符，达到约 72 字后在逗号附近强制切分，以降低首句开声延迟。
-- 回答已经出现但中途网络抖动：0.11.0 会用同一系统约束和检索证据恢复完整回答，再通过 `replace` 事件原位替换半截文本；若恢复请求也失败，才显示稳定错误提示。
+- 一句话很长时迟迟没有声音：极速模式约 40 字软切分，云端模式约 72 字软切分；两者都优先使用句号、问号等自然终止符。
+- 回答已经出现但中途网络抖动：当前版本会用同一系统约束和检索证据恢复完整回答，再通过 `replace` 事件原位替换半截文本；若恢复请求也失败，才显示稳定错误提示。
 - 模型下线：修改 `.env` 中对应的 `FAST / GROUNDED / TTS / TRANSCRIBE` 模型 ID，不需要改源码；先到官方模型页核对替代型号。
 
 ## 7. 上线前的密钥原则
@@ -125,5 +126,7 @@ npm start
 - [文本转语音](https://ai.google.dev/gemini-api/docs/speech-generation)
 - [Files API](https://ai.google.dev/gemini-api/docs/files)
 - [Interactions API 文本生成](https://ai.google.dev/gemini-api/docs/text-generation)
+- [Google Cloud TTS StreamingSynthesize](https://cloud.google.com/text-to-speech/docs/create-audio-text-streaming)
+- [Google Cloud STT v2 StreamingRecognize](https://cloud.google.com/speech-to-text/v2/docs/streaming-recognize)
 - [Groq OpenAI 兼容接口](https://console.groq.com/docs/openai)
 - [OpenRouter API](https://openrouter.ai/docs/api-reference/overview)

@@ -12,7 +12,7 @@ index.html
       ├─ P05 流式文字显示
       ├─ P06 浏览器 API 客户端 ─────────────┐
       ├─ P07 录音 / 浏览器实时识别          │
-      └─ P08 分句 → P09 TTS 队列 → P10 播放 │
+      └─ P08 分句 → P09 TTS 队列 → P10 PCM 播放 / P11 浏览器语音 │
                                                ↓
 D01 问题边界 → D02 响应策略 → S01 HTTP 服务 → S07 云端供应商池
                   └─ D03 本地降级对话       ├─ S03 Gemini 适配器
@@ -38,6 +38,7 @@ Q01 行为测试 + Q02 项目体检 + Q03 RAG 评测 覆盖全部模块
 | P08 | 中文语音分句 | `src/speech-segmenter.js` | 稳定 | `test/speech-segmenter.test.js` |
 | P09 | TTS 预取队列 | `src/speech-queue.js` | 稳定 | `test/speech-queue.test.js` |
 | P10 | PCM 播放与嘴型信号 | `src/audio-player.js` | 稳定 | `test/audio-player.test.js` |
+| P11 | 极速浏览器语音 | `src/browser-speech.js` | 稳定 | `test/browser-speech.test.js` |
 | D01 | 起卦问题边界 | `src/question-boundary.js` | 稳定 | `test/question-boundary.test.js` |
 | D02 | 场景响应策略 | `src/response-policy.js` | 稳定 | `test/response-policy.test.js` |
 | D03 | 无云端降级对话 | `src/dialogue-engine.js` | 稳定 | `test/dialogue-engine.test.js` |
@@ -170,6 +171,17 @@ Q01 行为测试 + Q02 项目体检 + Q03 RAG 评测 覆盖全部模块
 - 失败与降级：无 Web Audio 时仍可播放；停止会清理节点、URL 与动画帧。
 - 测试：`test/audio-player.test.js`。
 - 练习：用静音、爆音和不同音量样本校准嘴型阈值。
+
+### P11 极速浏览器语音
+
+- 文件：`src/browser-speech.js`
+- 单一职责：把完整短句直接交给浏览器 Web Speech Synthesis，消除新句等待项目云端 PCM 的合成阶段。
+- 输入 / 输出：短句、本机可用音色 → 可取消朗读句柄与 0–1 节奏信号。
+- 依赖：浏览器 `speechSynthesis` 与 `SpeechSynthesisUtterance`；不访问密钥或服务端。
+- 正常路径：存在本地普通话音色时只在本地候选中优先男声音色提示，采用较沉稳的语速与音高；页面可显式切换回 Gemini 云端音色。
+- 失败与降级：浏览器不支持时不展示模式切换并继续使用云端 PCM；失败不影响文字回答。
+- 测试：`test/browser-speech.test.js` 与视图模式切换测试。
+- 练习：在 Chrome / Edge / Safari 和不同系统建立真实首声 P50 / P95 与音色矩阵。
 
 ## 四、领域与安全池
 
