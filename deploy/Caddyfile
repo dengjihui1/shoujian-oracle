@@ -11,7 +11,11 @@
   }
 
   reverse_proxy app:8000 {
-    health_uri /healthz
+    health_uri /readyz
+    health_interval 10s
+    health_timeout 3s
+    fail_duration 30s
+    max_fails 3
     flush_interval -1
   }
 }

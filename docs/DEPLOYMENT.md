@@ -62,7 +62,7 @@ curl -fsS https://你的域名/readyz
 
 ## 四、HTTPS 与代理边界
 
-Caddy 负责 80 → 443、证书申请、续期、HSTS、压缩和 SSE 透传；Node 容器不向公网映射端口。`flush_interval -1` 避免代理缓冲逐字流。
+Caddy 负责 80 → 443、证书申请、续期、HSTS、压缩和 SSE 透传；Node 容器不向公网映射端口。`flush_interval -1` 避免代理缓冲逐字流。主动健康检查访问 `/readyz`，每 10 秒一次、3 秒超时；连续被动失败会临时摘除上游，因此 Redis 不可用时不会继续把新请求送进应用。
 
 只有当 Node 确实位于你控制的反向代理后时才设置 `TRUST_PROXY=true`。代理必须覆盖外部传入的 `X-Forwarded-For`，不能把客户端自带值原样信任。若直接暴露 Node 端口，设为 `false`，否则攻击者可伪造限流身份。
 
