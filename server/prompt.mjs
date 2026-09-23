@@ -27,7 +27,9 @@ export function buildSystemInstruction({ stage, question, reading, evidence = []
   if (reading) {
     context.push(`程序排卦结果（只读）：本卦第${reading.primary.number}卦 ${reading.primary.fullName}；动爻${reading.movingLines.length ? reading.movingLines.join("、") : "无"}；之卦${reading.changed?.fullName ?? "无"}；下卦${reading.primary.lower.name}/${reading.primary.lower.image}；上卦${reading.primary.upper.name}/${reading.primary.upper.image}。`);
   } else {
-    context.push("目前还没有程序排出的卦象，不得声称已经看见卦象。");
+    context.push(stage === "reading"
+      ? "本轮是独立普通对话，不提供此前卦象上下文；不要主动把话题拉回旧卦。"
+      : "目前还没有程序排出的卦象，不得声称已经看见卦象。");
   }
   return `${BASE_RULES}\n\n${context.join("\n")}\n\n${formatEvidenceForPrompt(evidence)}`;
 }

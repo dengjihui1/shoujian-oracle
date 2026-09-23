@@ -80,3 +80,31 @@ test("browser speech reports first sound only after onstart and recovers if spee
   assert.equal(starts, 0);
   assert.equal(cancelled, 1);
 });
+
+test("browser speech recovers if an utterance starts but never ends", async () => {
+  let utterance;
+  const timers = [];
+  let cancelled = 0;
+  class FakeUtterance {
+    constructor(text) { this.text = text; }
+  }
+  const player = new BrowserSpeechPlayer({
+    UtteranceClass: FakeUtterance,
+    speechSynthesis: {
+      getVoices: () => [],
+      speak(value) { utterance = value; },
+      cancel() { cancelled += 1; },
+    },
+    setTimeoutFn(callback) { timers.push(callback); return timers.length; },
+    clearTimeoutFn() {},
+    setIntervalFn: () => 1,
+    clearIntervalFn() {},
+  });
+  let starts = 0;
+  const playback = await player.play(player.prepare("你好。"), { onStart: () => { starts += 1; } });
+  utterance.onstart();
+  assert.equal(starts, 1);
+  timers[1]();
+  await assert.rejects(playback.ended, /播放超时/u);
+  assert.equal(cancelled, 1);
+});

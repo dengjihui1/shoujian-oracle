@@ -17,6 +17,7 @@ export class BrowserSpeechPlayer {
     setTimeoutFn = globalThis.setTimeout,
     clearTimeoutFn = globalThis.clearTimeout,
     startTimeoutMs = 5_000,
+    maxPlaybackMs = 60_000,
   } = {}) {
     this.speechSynthesis = speechSynthesis;
     this.UtteranceClass = UtteranceClass;
@@ -25,6 +26,7 @@ export class BrowserSpeechPlayer {
     this.setTimeoutFn = setTimeoutFn;
     this.clearTimeoutFn = clearTimeoutFn;
     this.startTimeoutMs = startTimeoutMs;
+    this.maxPlaybackMs = maxPlaybackMs;
   }
 
   get supported() {
@@ -51,6 +53,7 @@ export class BrowserSpeechPlayer {
 
     let timer = null;
     let startTimer = null;
+    let playbackTimer = null;
     let pulse = 0;
     let settled = false;
     let finish;
@@ -61,6 +64,7 @@ export class BrowserSpeechPlayer {
       settled = true;
       if (timer !== null) this.clearIntervalFn(timer);
       if (startTimer !== null) this.clearTimeoutFn(startTimer);
+      if (playbackTimer !== null) this.clearTimeoutFn(playbackTimer);
       onLevel(0);
       error ? fail(error) : finish();
     };
@@ -69,6 +73,12 @@ export class BrowserSpeechPlayer {
       if (startTimer !== null) this.clearTimeoutFn(startTimer);
       startTimer = null;
       onStart();
+      const playbackBudget = Math.min(this.maxPlaybackMs, Math.max(12_000, 5_000 + text.length * 800));
+      playbackTimer = this.setTimeoutFn(() => {
+        if (settled) return;
+        release(new Error("本机语音播放超时，请切换云端音色或继续文字对话"));
+        this.speechSynthesis.cancel();
+      }, playbackBudget);
       onLevel(0.42);
       timer = this.setIntervalFn(() => {
         pulse = (pulse + 1) % 5;

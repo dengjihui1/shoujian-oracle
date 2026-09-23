@@ -22,6 +22,21 @@ test("ordinary chat prepares a fast model request without accidental evidence", 
   assert.equal(calls[0].reading, null);
 });
 
+test("ordinary chat after a cast does not send the old question or reading to the model", () => {
+  const calls = [];
+  const prepared = prepareChat({
+    message: "太阳为什么发光？",
+    purpose: "chat",
+    stage: "reading",
+    question: "我是否该换工作？",
+    reading: { lines: [9, 7, 7, 7, 7, 7] },
+  }, fakeKnowledge([], calls), FIXED_NOW);
+  assert.equal(prepared.route, "fast");
+  assert.equal(calls[0].reading, null);
+  assert.doesNotMatch(prepared.systemInstruction, /我是否该换工作|本卦第1卦/u);
+  assert.match(prepared.systemInstruction, /不要主动把话题拉回旧卦/u);
+});
+
 test("divination preparation recomputes reading from six lines and binds the fixed question to retrieval", () => {
   const calls = [];
   const evidence = [{

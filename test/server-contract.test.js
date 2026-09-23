@@ -293,7 +293,8 @@ test("ordinary chat after a cast does not force unrelated reading evidence", asy
     assert.equal(body.grounded, false);
     assert.deepEqual(body.evidence, []);
     assert.match(body.text, /集合众多投资者资金/u);
-    assert.match(capturedInstruction, /本卦第1卦 乾为天/u);
+    assert.doesNotMatch(capturedInstruction, /本卦第1卦 乾为天/u);
+    assert.doesNotMatch(capturedInstruction, /用户固定的原问/u);
   });
 });
 

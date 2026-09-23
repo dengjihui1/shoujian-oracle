@@ -74,6 +74,7 @@
 - 为什么 `synthesize` 完成不等于已开声：队列的 `playing` 状态和首声指标必须等播放器开始事件；本机朗读启动超时须回到可继续文字对话的状态；
 - PCM16 如何直接转换成 Web Audio 浮点采样，并用 RMS 音量驱动嘴部叠层；
 - Web Audio 不可用时，怎样退回 WAV Blob，而不影响文字回答。
+- WAV Blob 路径不能等待 `audio.play()` 完成才交出取消句柄；浏览器朗读开始后也要有终止看门狗，防止一次播放永远占住队列。
 - `server/speech-cache.mjs` 怎样合并相同在途句子，并用哈希键和 LRU / TTL 控制缓存边界。
 - `server/google-cloud-tts-client.mjs` 怎样隔离 Cloud 凭证、固定普通话音色参数，并把 Google 的 LINEAR16 WAV 容器还原成现有播放器需要的裸 PCM；对应测试不需要真实 Cloud 账号。
 

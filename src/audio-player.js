@@ -88,22 +88,23 @@ function playWithAudioContext(context, pcm, { sampleRate, onLevel, onStart }) {
   };
 }
 
-async function playWithAudioElement(pcm, { sampleRate, onLevel, onStart }) {
+function playWithAudioElement(pcm, { sampleRate, onLevel, onStart }) {
   const wav = pcmToWav(pcm, sampleRate);
   const url = URL.createObjectURL(new Blob([wav], { type: "audio/wav" }));
   const audio = new Audio(url);
   let revoked = false;
   let finish;
-  const ended = new Promise((resolve) => { finish = resolve; });
-  const release = () => {
+  let fail;
+  const ended = new Promise((resolve, reject) => { finish = resolve; fail = reject; });
+  const release = (error = null) => {
     if (revoked) return;
     revoked = true;
     onLevel(0);
     URL.revokeObjectURL(url);
-    finish();
+    error ? fail(error) : finish();
   };
-  audio.addEventListener("ended", release, { once: true });
-  audio.addEventListener("error", release, { once: true });
+  audio.addEventListener("ended", () => release(), { once: true });
+  audio.addEventListener("error", () => release(new Error("音频播放失败")), { once: true });
   audio.addEventListener("playing", () => {
     if (!revoked) {
       onStart();
@@ -111,10 +112,9 @@ async function playWithAudioElement(pcm, { sampleRate, onLevel, onStart }) {
     }
   }, { once: true });
   try {
-    await audio.play();
+    Promise.resolve(audio.play()).catch((error) => release(error));
   } catch (error) {
-    release();
-    throw error;
+    release(error);
   }
   return {
     ended,
