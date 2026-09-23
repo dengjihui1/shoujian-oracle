@@ -11,6 +11,7 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
@@ -21,4 +22,24 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npm test
       - run: npm run test:e2e
+      - run: npm run eval:rag
       - run: npm run check
+      - run: npm audit --omit=dev
+      - name: Validate production Compose configuration
+        env:
+          APP_ENV_FILE: ../.env.production.example
+        run: docker compose --env-file deploy/compose.env.example -f deploy/compose.yml config --quiet
+      - name: Build and smoke-test production container
+        shell: bash
+        run: |
+          docker build --tag shoujian-oracle:ci .
+          container_id=$(docker run --detach --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges:true --publish 127.0.0.1:18080:8000 shoujian-oracle:ci)
+          trap 'docker rm --force "$container_id" >/dev/null 2>&1 || true' EXIT
+          for attempt in {1..20}; do
+            if curl --fail --silent --show-error http://127.0.0.1:18080/healthz | grep --quiet '"status":"ok"'; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs "$container_id"
+          exit 1
