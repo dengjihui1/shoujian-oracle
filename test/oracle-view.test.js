@@ -112,6 +112,14 @@ test("recording locks text submission but leaves the stop-recording action avail
   assert.doesNotMatch(html, /data-action="stop-record" disabled/u);
 });
 
+test("pending microphone permission exposes cancellation and locks other send paths", () => {
+  const html = render({ recordingStarting: true, recorderPermissionPending: true });
+  assert.match(html, /data-action="cancel-record"/u);
+  assert.match(html, /data-action="voice-conversation" disabled/u);
+  assert.match(html, /data-action="clear-memory" disabled/u);
+  assert.match(html, /<textarea id="say" maxlength="500" disabled/u);
+});
+
 test("ready stage prevents voice input that cannot be submitted", () => {
   const html = render({ stage: "ready" });
   assert.match(html, /data-action="record" disabled/u);

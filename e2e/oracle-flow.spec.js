@@ -209,7 +209,7 @@ test("录音授权未返回时重复启动只发起一次，离开页面后释�
     host.liveTranscriber = { supported: false, abort() {} };
     host.recorder = {
       start() { starts += 1; return new Promise((resolve) => { grant = resolve; }); },
-      stop() { stops += 1; return Promise.resolve(); },
+      cancel() { if (!this.cancelled) stops += 1; this.cancelled = true; return Promise.resolve(); },
     };
     const first = host.startRecording();
     await host.startRecording();
@@ -219,6 +219,46 @@ test("录音授权未返回时重复启动只发起一次，离开页面后释�
     return { starts, stops, recording: host.recording, starting: host.recordingStarting };
   });
   expect(state).toEqual({ starts: 1, stops: 1, recording: false, starting: false });
+});
+
+test("等待录音授权时可取消并恢复文字输入，迟到的授权不会启动录音", async ({ page }) => {
+  await page.goto("/");
+  const state = await page.locator("shoujian-oracle").evaluate(async (host) => {
+    let grant;
+    let cancellations = 0;
+    host.liveTranscriber = { supported: false, abort() {} };
+    host.recorder = {
+      supported: true,
+      starting: false,
+      start() { this.starting = true; return new Promise((resolve) => { grant = () => { this.starting = false; resolve(); }; }); },
+      cancel() { cancellations += 1; return Promise.resolve(); },
+    };
+    const first = host.startRecording();
+    const pendingButton = host.shadowRoot.querySelector('[data-action="cancel-record"]');
+    const locked = host.shadowRoot.querySelector("textarea#say").disabled;
+    pendingButton.click();
+    const unlocked = !host.shadowRoot.querySelector("textarea#say").disabled;
+    grant();
+    await first;
+    return {
+      pendingLabel: pendingButton.textContent,
+      locked,
+      unlocked,
+      cancellations,
+      recording: host.recording,
+      starting: host.recordingStarting,
+      errors: host.messages.filter((message) => message.error).length,
+    };
+  });
+  expect(state).toEqual({
+    pendingLabel: "等待麦克风授权 · 取消",
+    locked: true,
+    unlocked: true,
+    cancellations: 2,
+    recording: false,
+    starting: false,
+    errors: 0,
+  });
 });
 
 function composer(page) {

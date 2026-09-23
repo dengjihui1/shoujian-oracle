@@ -16,7 +16,7 @@ export function renderOracleView(state) {
   const messages = Array.isArray(state.messages) ? state.messages : [];
   const liveSupported = Boolean(state.liveTranscriberSupported);
   const recorderSupported = Boolean(state.recorderSupported);
-  const interactionLocked = Boolean(state.busy || state.recording || state.transcribing);
+  const interactionLocked = Boolean(state.busy || state.recording || state.recordingStarting || state.transcribing);
   const intakeReview = stage === "intake" && state.intake?.status === "review";
   const composerLocked = stage === "ready" || intakeReview || interactionLocked;
   const avatar = deriveAvatarPresentation({ ...state, stage });
@@ -65,7 +65,9 @@ export function renderOracleView(state) {
               ${state.canRetryResponse && !interactionLocked ? `<button type="button" data-action="retry-response">重试本次回答</button>` : ""}
               ${state.cloud && !state.voiceConversationActive && (liveSupported || recorderSupported) ? state.transcribing
                 ? `<button type="button" data-action="cancel-transcription">取消转写</button>`
-                : `<button type="button" data-action="${state.recording ? "stop-record" : "record"}" ${(stage === "ready" || intakeReview || state.busy) && !state.recording ? "disabled" : ""}>${state.recording ? state.recordingMode === "live" ? "停止并采用文字" : "停止并转文字" : liveSupported ? "实时语音输入" : "按下说话"}</button>` : ""}
+                : state.recordingStarting
+                  ? `<button type="button" data-action="cancel-record">等待麦克风授权 · 取消</button>`
+                  : `<button type="button" data-action="${state.recording ? "stop-record" : "record"}" ${((stage === "ready" || intakeReview || state.busy || state.recorderPermissionPending) && !state.recording) ? "disabled" : ""}>${state.recording ? state.recordingMode === "live" ? "停止并采用文字" : "停止并转文字" : state.recorderPermissionPending ? "正在关闭麦克风授权" : liveSupported ? "实时语音输入" : "按下说话"}</button>` : ""}
               ${state.busy && !state.transcribing ? `<button type="button" data-action="cancel-response">停止回答</button>` : ""}
               ${state.cloud && !state.voiceConversationActive ? `<button type="button" data-action="voice" aria-pressed="${Boolean(state.voiceReplies)}">${escapeHtml(state.voiceButtonLabel)}</button>` : ""}
               ${state.cloud && state.voiceReplies && state.fastVoiceSupported && !state.voiceConversationActive ? `<button type="button" data-action="voice-mode" aria-label="切换语音模式">${escapeHtml(state.voiceModeButtonLabel)}</button>` : ""}
@@ -84,7 +86,7 @@ export function renderOracleView(state) {
 function voiceConversationPanel(state, stage, intakeReview) {
   const active = Boolean(state.voiceConversationActive);
   const conversationState = String(state.voiceConversationState ?? "off");
-  const disabled = !active && (state.busy || stage === "ready" || intakeReview);
+  const disabled = !active && (state.busy || state.recording || state.recordingStarting || state.transcribing || stage === "ready" || intakeReview);
   const labels = {
     listening: "正在听，请自然说完",
     heard: "已经听清，准备送问",
