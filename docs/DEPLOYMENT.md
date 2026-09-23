@@ -45,13 +45,16 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
 docker compose --env-file deploy/compose.env -f deploy/compose.yml up -d --build
 docker compose --env-file deploy/compose.env -f deploy/compose.yml ps
 curl -fsS https://你的域名/healthz
+curl -fsS https://你的域名/readyz
 ```
 
-健康响应应类似：
+存活响应应类似：
 
 ```json
 {"status":"ok","cloud":true,"knowledge":{"schema":"shoujian.oracle-rag.v1","version":"1.0.0"}}
 ```
+
+就绪响应的 `status` 应为 `ready`。`/healthz` 只说明 Node 进程活着；`/readyz` 还会验证 Redis `PING`，失败时返回 503 与 `{"status":"unavailable"}`，不会泄露 Redis 地址或错误详情。Docker 健康检查使用 `/readyz`；两个探针都不会占用用户 API 限流或调用 Gemini。
 
 `cloud:false` 表示页面能运行本地有限模式，但生产 Gemini 未配置成功。健康接口不返回密钥、模型、用户问题或原始 IP，也不占用聊天限流额度。
 
@@ -101,7 +104,7 @@ Redis 键不包含原始 IP，而是 `RATE_LIMIT_HASH_SALT` 生成的 HMAC 摘�
 git rev-parse HEAD
 git pull --ff-only
 docker compose --env-file deploy/compose.env -f deploy/compose.yml up -d --build
-curl -fsS https://你的域名/healthz
+curl -fsS https://你的域名/readyz
 ```
 
 出现回归时，切回刚才记录的已验证提交再重新构建。不要删除 `caddy_data` 卷；它包含证书状态。用户对话默认只在各自浏览器，本服务没有需要备份的用户档案数据库。

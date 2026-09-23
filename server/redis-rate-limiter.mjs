@@ -37,6 +37,10 @@ export class RedisSlidingWindowRateLimiter {
     });
     return Number(result) === 1;
   }
+
+  async ready() {
+    return await this.client.ping() === "PONG";
+  }
 }
 
 export async function rateLimiterFromEnv(env = process.env, { createClientFn = createClient, onRedisError = () => {} } = {}) {

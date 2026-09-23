@@ -5,6 +5,7 @@ const configured = await rateLimiterFromEnv(process.env);
 assert.equal(configured.mode, "redis", "REDIS_URL must enable the shared limiter");
 
 try {
+  assert.equal(await configured.rateLimiter.ready(), true);
   const now = Date.now();
   assert.equal(await configured.rateLimiter.allow("ci-client", now), true);
   assert.equal(await configured.rateLimiter.allow("ci-client", now + 1), true);
@@ -14,4 +15,3 @@ try {
 } finally {
   await configured.close();
 }
-

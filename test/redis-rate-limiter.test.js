@@ -6,6 +6,7 @@ import { SlidingWindowRateLimiter } from "../server/rate-limiter.mjs";
 test("Redis limiter hashes client identities and executes one atomic window script", async () => {
   const calls = [];
   const client = {
+    async ping() { return "PONG"; },
     async eval(script, options) {
       calls.push({ script, options });
       return 1;
@@ -20,6 +21,7 @@ test("Redis limiter hashes client identities and executes one atomic window scri
   });
 
   assert.equal(await limiter.allow("203.0.113.9", 2_000), true);
+  assert.equal(await limiter.ready(), true);
   assert.equal(calls.length, 1);
   assert.match(calls[0].script, /ZREMRANGEBYSCORE/u);
   assert.deepEqual(calls[0].options.arguments, ["1000", "2000", "2", "2000:request-1", "1000"]);
@@ -32,6 +34,14 @@ test("Redis limiter fails closed when the atomic command is unavailable", async 
     hashSalt: "0123456789abcdef",
   });
   await assert.rejects(limiter.allow("client"), /redis unavailable/u);
+});
+
+test("Redis readiness rejects a non-PONG dependency response", async () => {
+  const limiter = new RedisSlidingWindowRateLimiter({
+    client: { async eval() { return 1; }, async ping() { return "LOADING"; } },
+    hashSalt: "0123456789abcdef",
+  });
+  assert.equal(await limiter.ready(), false);
 });
 
 test("environment adapter keeps local mode dependency-free and bounded", async () => {
@@ -71,4 +81,3 @@ test("Redis mode refuses to start without a private hashing salt", async () => {
     /RATE_LIMIT_HASH_SALT/u,
   );
 });
-

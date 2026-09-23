@@ -62,6 +62,18 @@ export function createApp({
           knowledge: { schema: knowledgeBase.schema, version: knowledgeBase.version },
         });
       }
+      if (request.method === "GET" && url.pathname === "/readyz") {
+        try {
+          const ready = typeof rateLimiter.ready === "function" ? await rateLimiter.ready() : true;
+          return json(response, ready ? 200 : 503, {
+            status: ready ? "ready" : "unavailable",
+            cloud: apiEnabled,
+            knowledge: { schema: knowledgeBase.schema, version: knowledgeBase.version },
+          });
+        } catch {
+          return json(response, 503, { status: "unavailable" });
+        }
+      }
       if (url.pathname.startsWith("/api/")) {
         if (!await rateLimiter.allow(clientAddress, now())) return json(response, 429, { error: "rate_limited", message: "请求太频繁，请稍后再试。" });
         if (request.method === "GET" && url.pathname === "/api/status") {

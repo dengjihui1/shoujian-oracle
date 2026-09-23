@@ -29,5 +29,6 @@ export class SlidingWindowRateLimiter {
   }
 
   get size() { return this.store.size; }
-}
 
+  ready() { return true; }
+}

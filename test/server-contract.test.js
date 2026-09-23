@@ -64,6 +64,32 @@ test("API routes await an asynchronous shared rate limiter", async () => {
   });
 });
 
+test("readiness checks shared dependencies without consuming request limits", async () => {
+  const calls = [];
+  const rateLimiter = {
+    allow() { calls.push("allow"); return true; },
+    async ready() { calls.push("ready"); return true; },
+  };
+  await withServer(createApp({ rateLimiter }), async (base) => {
+    const response = await fetch(`${base}/readyz`);
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).status, "ready");
+    assert.deepEqual(calls, ["ready"]);
+  });
+});
+
+test("readiness fails closed without exposing dependency errors", async () => {
+  const rateLimiter = {
+    allow() { return true; },
+    async ready() { throw new Error("redis://secret-host:6379 unavailable"); },
+  };
+  await withServer(createApp({ rateLimiter }), async (base) => {
+    const response = await fetch(`${base}/readyz`);
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), { status: "unavailable" });
+  });
+});
+
 test("environment adapter recognizes named and generic compatible providers only when complete", () => {
   const providers = compatibleProvidersFromEnv({
     GROQ_API_KEY: "groq-secret",

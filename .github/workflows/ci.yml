@@ -50,7 +50,7 @@ jobs:
           container_id=$(docker run --detach --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges:true --publish 127.0.0.1:18080:8000 shoujian-oracle:ci)
           trap 'docker rm --force "$container_id" >/dev/null 2>&1 || true' EXIT
           for attempt in {1..20}; do
-            if curl --fail --silent --show-error http://127.0.0.1:18080/healthz | grep --quiet '"status":"ok"'; then
+            if curl --fail --silent --show-error http://127.0.0.1:18080/readyz | grep --quiet '"status":"ready"'; then
               exit 0
             fi
             sleep 1
