@@ -1,0 +1,143 @@
+import { expect, test } from "@playwright/test";
+
+const STATUS = {
+  cloud: true,
+  knowledge: { hexagrams: 64, trigrams: 8, fragments: 456 },
+  serverTime: "2026年9月23日 12:00:00（Asia/Shanghai）",
+};
+
+test.beforeEach(async ({ context, page }) => {
+  await context.addInitScript(() => {
+    localStorage.clear();
+    class FakeUtterance {
+      constructor(text) { this.text = text; }
+    }
+    Object.defineProperty(globalThis, "SpeechSynthesisUtterance", { configurable: true, value: FakeUtterance });
+    Object.defineProperty(globalThis, "speechSynthesis", {
+      configurable: true,
+      value: { speak() {}, cancel() {}, getVoices() { return []; } },
+    });
+  });
+  await page.route("**/api/status", (route) => route.fulfill({ json: STATUS }));
+});
+
+test("连续三轮文字对话都能用 Enter 发送并恢复输入", async ({ page }) => {
+  let turn = 0;
+  await mockChatStream(page, () => `第 ${++turn} 轮回答完成。`);
+  await page.goto("/");
+
+  for (const prompt of ["你是谁", "你能做什么", "今天适合聊什么"]) {
+    await sendWithEnter(page, prompt);
+    await expect(page.locator(".message.user p", { hasText: prompt })).toBeVisible();
+    await expect(page.locator(".message.master p", { hasText: `第 ${turn} 轮回答完成。` })).toBeVisible();
+    await expect(composer(page)).toBeEnabled();
+  }
+
+  await expect(page.locator(".message.user")).toHaveCount(3);
+});
+
+test("停止长回答后仍可继续下一轮", async ({ page }) => {
+  let turn = 0;
+  await mockChatStream(page, async () => {
+    if (++turn === 1) {
+      await new Promise((resolve) => setTimeout(resolve, 10_000));
+      return "这段回答应该已经被取消。";
+    }
+    return "停止以后仍然可以继续回答。";
+  });
+  await page.goto("/");
+
+  await sendWithEnter(page, "先给我一个很长的回答", { waitForReply: false });
+  await page.locator('[data-action="cancel-response"]').click();
+  await expect(page.locator(".message.master p", { hasText: "已停止" })).toBeVisible();
+  await expect(composer(page)).toBeEnabled();
+
+  await sendWithEnter(page, "停止后再问一轮");
+  await expect(page.locator(".message.master p", { hasText: "停止以后仍然可以继续回答。" })).toBeVisible();
+  await expect(composer(page)).toBeEnabled();
+});
+
+test("起卦必须经过访谈、摘要确认，再由程序排卦", async ({ page }) => {
+  await mockChatStream(page, () => "我只依据程序给出的卦象作参考解读。卦象不替你决定。" );
+  await page.goto("/");
+
+  await composer(page).fill("未来三个月，我已经投入半年且预算有限，这个项目要不要继续？");
+  await page.locator('[data-submit-mode="divination"]').click();
+  await expect(page.locator(".intake-card")).toContainText("1 / 2");
+  await expect(page.locator('[data-action="cast"]')).toHaveCount(0);
+
+  await answerIntake(page, "我最看重能否稳定回款");
+  await answerIntake(page, "最大疑点是两个月后现金流");
+  const summary = page.locator("[data-intake-summary]");
+  await expect(summary).toBeVisible();
+  await expect(summary).toContainText("稳定回款");
+  await expect(page.locator('[data-action="cast"]')).toHaveCount(0);
+
+  await page.locator('[data-action="intake-confirm"]').click();
+  await expect(page.locator('[data-action="cast"]')).toBeVisible();
+  await page.locator('[data-action="cast"]').click();
+  await expect(page.locator(".reading")).toBeVisible();
+  await expect(page.locator(".reading .question")).toContainText("稳定回款");
+  await expect(page.locator(".message.master p", { hasText: "卦象不替你决定" })).toBeVisible();
+  await expect(composer(page)).toBeEnabled();
+});
+
+test("云端 TTS 失败只降级语音，不锁死文字输入", async ({ page }) => {
+  await page.route("**/api/speech", (route) => route.fulfill({
+    status: 503,
+    contentType: "application/json",
+    body: JSON.stringify({ error: "tts_unavailable", message: "测试中的语音服务不可用" }),
+  }));
+  await mockChatStream(page, () => "第一句用于触发语音。第二句确认文字回答完整。" );
+  await page.goto("/");
+
+  await page.locator('[data-action="voice"]').click();
+  await page.locator('[data-action="voice-mode"]').click();
+  await expect(page.locator('[data-action="voice"]')).toContainText("云端");
+  await sendWithEnter(page, "请朗读这一轮");
+
+  await expect(page.locator("[data-voice-notice]")).toContainText("测试中的语音服务不可用");
+  await expect(page.locator(".message.master p", { hasText: "文字回答完整" })).toBeVisible();
+  await expect(composer(page)).toBeEnabled();
+  await composer(page).fill("语音失败后仍能输入");
+  await expect(composer(page)).toHaveValue("语音失败后仍能输入");
+});
+
+function composer(page) {
+  return page.locator("textarea#say");
+}
+
+async function sendWithEnter(page, text, { waitForReply = true } = {}) {
+  const field = composer(page);
+  await expect(field).toBeEnabled();
+  await field.fill(text);
+  await field.press("Enter");
+  if (waitForReply) await expect(page.locator(".message.streaming")).toHaveCount(0);
+}
+
+async function answerIntake(page, text) {
+  const field = composer(page);
+  await field.fill(text);
+  await field.press("Enter");
+}
+
+async function mockChatStream(page, answer) {
+  await page.route("**/api/chat/stream", async (route) => {
+    const payload = route.request().postDataJSON();
+    const text = await answer(payload);
+    await route.fulfill({
+      status: 200,
+      contentType: "text/event-stream; charset=utf-8",
+      headers: { "cache-control": "no-store", "x-accel-buffering": "no" },
+      body: [
+        event("meta", { evidence: [], grounded: false, purpose: payload.purpose ?? "chat" }),
+        event("delta", { text }),
+        event("done", { text, evidence: [], grounded: false, purpose: payload.purpose ?? "chat" }),
+      ].join(""),
+    });
+  });
+}
+
+function event(name, data) {
+  return `event: ${name}\ndata: ${JSON.stringify(data)}\n\n`;
+}
