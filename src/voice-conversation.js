@@ -7,8 +7,8 @@ export class VoiceConversationController {
     interruptOutput = () => {},
     onUpdate = () => {},
     now = () => globalThis.performance?.now?.() ?? Date.now(),
-    setTimeoutFn = globalThis.setTimeout,
-    clearTimeoutFn = globalThis.clearTimeout,
+    setTimeoutFn = (...args) => globalThis.setTimeout(...args),
+    clearTimeoutFn = (...args) => globalThis.clearTimeout(...args),
     finalPauseMs = 420,
     interimPauseMs = 1_100,
   } = {}) {
@@ -31,6 +31,7 @@ export class VoiceConversationController {
     this.metrics = emptyMetrics();
     this.epoch = 0;
     this.speechState = "idle";
+    this.quietRetries = 0;
   }
 
   get snapshot() {
@@ -52,6 +53,7 @@ export class VoiceConversationController {
     this.error = "";
     this.transcript = "";
     this.metrics = emptyMetrics();
+    this.quietRetries = 0;
     this.epoch += 1;
     this.#emit();
     void this.#listen(this.epoch);
@@ -63,7 +65,9 @@ export class VoiceConversationController {
     this.active = false;
     this.autoSubmit = false;
     this.epoch += 1;
+    this.quietRetries = 0;
     this.#clearCommitTimer();
+    this.#clearQuietRetry();
     this.recognizer.abort();
     this.state = "off";
     this.transcript = "";
@@ -77,9 +81,11 @@ export class VoiceConversationController {
     this.epoch += 1;
     const epoch = this.epoch;
     this.#clearCommitTimer();
+    this.#clearQuietRetry();
     this.recognizer.abort();
     this.interruptOutput();
     this.speechState = "idle";
+    this.quietRetries = 0;
     this.state = "interrupted";
     this.transcript = "";
     this.error = "";
@@ -114,6 +120,7 @@ export class VoiceConversationController {
   async #listen(epoch) {
     if (!this.active || epoch !== this.epoch) return;
     this.#clearCommitTimer();
+    this.#clearQuietRetry();
     this.state = "listening";
     this.transcript = "";
     this.error = "";
@@ -126,6 +133,7 @@ export class VoiceConversationController {
       });
     } catch (error) {
       if (!this.active || epoch !== this.epoch || error?.name === "AbortError") return;
+      if (error?.code === "no_speech") return this.#retryAfterQuiet(epoch);
       this.state = "error";
       this.error = String(error?.message ?? "语音识别暂不可用");
       this.#emit();
@@ -135,11 +143,9 @@ export class VoiceConversationController {
     this.#clearCommitTimer();
     const text = String(result || this.transcript).trim();
     if (!text) {
-      this.state = "error";
-      this.error = "没有听到清晰语音，可重试或改用文字输入";
-      this.#emit();
-      return;
+      return this.#retryAfterQuiet(epoch);
     }
+    this.quietRetries = 0;
     this.transcript = text;
     this.state = "heard";
     this.metrics.finalAt = this.now();
@@ -199,6 +205,25 @@ export class VoiceConversationController {
   #clearCommitTimer() {
     if (this.commitTimer !== undefined) this.clearTimeoutFn(this.commitTimer);
     this.commitTimer = undefined;
+  }
+
+  #retryAfterQuiet(epoch) {
+    if (!this.active || epoch !== this.epoch) return;
+    const delay = Math.min(3_000, 250 * 2 ** Math.min(this.quietRetries, 4));
+    this.quietRetries += 1;
+    this.state = "listening";
+    this.transcript = "";
+    this.error = "";
+    this.#emit();
+    this.quietRetryTimer = this.setTimeoutFn(() => {
+      this.quietRetryTimer = undefined;
+      if (this.active && epoch === this.epoch) void this.#listen(epoch);
+    }, delay);
+  }
+
+  #clearQuietRetry() {
+    if (this.quietRetryTimer !== undefined) this.clearTimeoutFn(this.quietRetryTimer);
+    this.quietRetryTimer = undefined;
   }
 
   #emit() {

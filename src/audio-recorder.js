@@ -102,7 +102,9 @@ export class BrowserSpeechRecognizer {
           "no-speech": "没有听到清晰语音",
           network: "浏览器实时转写网络不可用",
         };
-        finish("", new Error(messages[event.error] ?? "实时语音转写失败"));
+        const error = new Error(messages[event.error] ?? "实时语音转写失败");
+        if (event.error === "no-speech") error.code = "no_speech";
+        finish("", error);
       };
       recognition.onend = () => this.abortRequested
         ? finish("", abortError())

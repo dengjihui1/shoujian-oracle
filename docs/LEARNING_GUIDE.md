@@ -102,6 +102,7 @@
 - `speech-segmenter.js` 与 `speech-queue.js` 让首句不必等待整篇回答，并限制最多两句并发预取；
 - 录音、转写、文字回答和后台 TTS 使用分离的取消边界，录音期间禁止并发提交文字。
 - `voice-conversation.js` 把连续轮流说话从 Web Component 中拆出；Web Component 只把 ASR、`sendText()`、SSE 首字和 TTS 状态接到它的端口。
+- 浏览器原生 `setTimeout`/`setInterval` 不能脱离 `window` 后当作对象方法调用：Node 假定时器测试可能仍通过，但浏览器会抛 `Illegal invocation`；连续语音停顿提交和 TTS 看门狗须有端到端回归。
 
 再看 `server/knowledge-routing.mjs`：普通问答会丢弃弱相关误召回；经传问题保留冻结证据，漏引或错引只允许一次受约束修复，第二次仍失败则返回自然说明。这样“自由问答”和“古籍可追溯”不再用同一条僵硬规则互相伤害。
 

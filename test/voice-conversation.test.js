@@ -4,7 +4,9 @@ import { VoiceConversationController } from "../src/voice-conversation.js";
 
 class FakeRecognizer {
   supported = true;
+  starts = 0;
   start({ onText }) {
+    this.starts += 1;
     this.onText = onText;
     this.promise = new Promise((resolve, reject) => {
       this.resolve = resolve;
@@ -66,6 +68,48 @@ test("interim speech waits for the longer silence window", async () => {
   void session.start({ autoSubmit: true });
   recognizer.hear("我还在说", { final: "", interim: "我还在说" });
   assert.equal(timers[0].delay, 1_100);
+  session.stop();
+});
+
+test("quiet recognition endings restart listening with bounded backoff", async () => {
+  const recognizer = new FakeRecognizer();
+  const timers = [];
+  const session = new VoiceConversationController({
+    recognizer,
+    submit: async () => {},
+    setTimeoutFn(callback, delay) { timers.push({ callback, delay }); return timers.length; },
+    clearTimeoutFn() {},
+  });
+  session.start({ autoSubmit: true });
+  recognizer.resolve("");
+  await tick();
+  assert.equal(session.snapshot.state, "listening");
+  assert.equal(timers[0].delay, 250);
+  timers[0].callback();
+  assert.equal(recognizer.starts, 2);
+  recognizer.reject(Object.assign(new Error("没有听到清晰语音"), { code: "no_speech" }));
+  await tick();
+  assert.equal(timers[1].delay, 500);
+  session.stop();
+  timers[1].callback();
+  assert.equal(recognizer.starts, 2);
+  assert.equal(session.snapshot.state, "off");
+});
+
+test("microphone permission errors do not restart listening", async () => {
+  const recognizer = new FakeRecognizer();
+  const timers = [];
+  const session = new VoiceConversationController({
+    recognizer,
+    submit: async () => {},
+    setTimeoutFn(callback) { timers.push(callback); return timers.length; },
+  });
+  session.start({ autoSubmit: true });
+  recognizer.reject(new Error("麦克风权限未开启"));
+  await tick();
+  assert.equal(session.snapshot.state, "error");
+  assert.match(session.snapshot.error, /麦克风权限/u);
+  assert.equal(timers.length, 0);
   session.stop();
 });
 

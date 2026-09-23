@@ -37,7 +37,7 @@ test("browser speech recognition converts provider errors into stable Chinese me
   const recognizer = new BrowserSpeechRecognizer({ RecognitionClass: FakeRecognition });
   const result = recognizer.start();
   FakeRecognition.instance.onerror({ error: "no-speech" });
-  await assert.rejects(result, /没有听到清晰语音/u);
+  await assert.rejects(result, { message: "没有听到清晰语音", code: "no_speech" });
   assert.equal(recognizer.active, false);
 });
 

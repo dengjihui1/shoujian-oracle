@@ -12,10 +12,10 @@ export class BrowserSpeechPlayer {
   constructor({
     speechSynthesis = globalThis.speechSynthesis,
     UtteranceClass = globalThis.SpeechSynthesisUtterance,
-    setIntervalFn = globalThis.setInterval,
-    clearIntervalFn = globalThis.clearInterval,
-    setTimeoutFn = globalThis.setTimeout,
-    clearTimeoutFn = globalThis.clearTimeout,
+    setIntervalFn = (...args) => globalThis.setInterval(...args),
+    clearIntervalFn = (...args) => globalThis.clearInterval(...args),
+    setTimeoutFn = (...args) => globalThis.setTimeout(...args),
+    clearTimeoutFn = (...args) => globalThis.clearTimeout(...args),
     startTimeoutMs = 5_000,
     maxPlaybackMs = 60_000,
   } = {}) {

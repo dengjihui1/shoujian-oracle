@@ -60,10 +60,9 @@ export function prepareChat(body, knowledgeBase, now = Date.now) {
     serverTime,
     route,
     knowledgeReason: knowledgeRoute.reason,
-    input: buildChatInput(message, history),
+    input: buildChatInput(message, history, { fixedQuestion: useReadingEvidence ? question : "" }),
     systemInstruction: buildSystemInstruction({
       stage,
-      question: useReadingEvidence ? question : "",
       reading: useReadingEvidence ? reading : null,
       evidence,
       currentDateTime: serverTime,

@@ -14,7 +14,10 @@ test.beforeEach(async ({ context, page }) => {
       constructor(text) { this.text = text; }
     }
     class FakeRecognition {
-      start() {}
+      start() {
+        globalThis.__shoujianRecognition = this;
+        globalThis.__shoujianRecognitionStarts = (globalThis.__shoujianRecognitionStarts ?? 0) + 1;
+      }
       stop() { this.onend?.(); }
       abort() { this.onerror?.({ error: "aborted" }); }
     }
@@ -152,6 +155,30 @@ test("语音验收报告只导出延迟，不包含转写内容", async ({ page 
   expect(report.schema).toBe("shoujian.voice-performance");
   expect(report.samples).toEqual([{ asrFinalMs: 80, firstTokenMs: 620, firstAudioMs: 980 }]);
   expect(reportText).not.toContain("不应导出");
+});
+
+test("连续语音遇到安静结束后会重新倾听并完成下一轮", async ({ page }) => {
+  await mockChatStream(page, () => "我是墨衡。" );
+  await page.goto("/");
+  await page.evaluate(() => {
+    speechSynthesis.speak = (utterance) => {
+      utterance.onstart?.();
+      utterance.onend?.();
+    };
+  });
+  await page.locator('[data-action="voice-conversation"]').click();
+  await page.waitForFunction(() => globalThis.__shoujianRecognitionStarts === 1);
+  await page.evaluate(() => globalThis.__shoujianRecognition.onerror({ error: "no-speech" }));
+  await page.waitForFunction(() => globalThis.__shoujianRecognitionStarts >= 2);
+  await page.evaluate(() => {
+    const result = [{ transcript: "你是谁" }];
+    result.isFinal = true;
+    globalThis.__shoujianRecognition.onresult({ resultIndex: 0, results: [result] });
+  });
+  await expect(page.locator(".message.user p", { hasText: "你是谁" })).toBeVisible();
+  await expect(page.locator(".message.master p", { hasText: "我是墨衡。" })).toBeVisible();
+  await page.waitForFunction(() => globalThis.__shoujianRecognitionStarts >= 3);
+  await expect(page.locator('[data-action="voice-conversation"]')).toContainText("结束");
 });
 
 function composer(page) {
