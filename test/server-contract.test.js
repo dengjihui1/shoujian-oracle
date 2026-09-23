@@ -34,6 +34,26 @@ test("status exposes local fallback without leaking credentials", async () => {
   });
 });
 
+test("health check bypasses API limits and exposes no provider credentials", async () => {
+  const keys = [];
+  const rateLimiter = { allow(key) { keys.push(key); return false; } };
+  await withServer(createApp({ rateLimiter }), async (base) => {
+    const health = await fetch(`${base}/healthz`);
+    assert.equal(health.status, 200);
+    assert.match(health.headers.get("x-request-id"), /^[0-9a-f-]{36}$/u);
+    assert.deepEqual(await health.json(), {
+      status: "ok",
+      cloud: false,
+      knowledge: { schema: "shoujian.oracle-rag.v1", version: "1.0.0" },
+    });
+    assert.deepEqual(keys, []);
+
+    const status = await fetch(`${base}/api/status`);
+    assert.equal(status.status, 429);
+    assert.deepEqual(keys, ["127.0.0.1"]);
+  });
+});
+
 test("environment adapter recognizes named and generic compatible providers only when complete", () => {
   const providers = compatibleProvidersFromEnv({
     GROQ_API_KEY: "groq-secret",

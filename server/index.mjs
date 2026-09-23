@@ -15,25 +15,54 @@ import { citationRepairInstruction, groundedUnavailableReply } from "./knowledge
 import { withDivinationDisclaimer } from "../src/response-policy.js";
 import { SlidingWindowRateLimiter } from "./rate-limiter.mjs";
 import { prepareChat } from "./chat-preparation.mjs";
+import { enabledByEnvironment, resolveClientAddress } from "./request-context.mjs";
+import { clientFingerprint, createJsonLogger, requestId } from "./observability.mjs";
 
 const projectRoot = fileURLToPath(new URL("../", import.meta.url));
 const AUDIO_TYPES = new Set(["audio/webm", "audio/ogg", "audio/mp4", "audio/mpeg", "audio/wav", "audio/x-wav"]);
 const BODY_LIMIT = 9 * 1024 * 1024;
 const defaultKnowledgeBase = await loadKnowledgeBase();
 
-export function createApp({ client = null, knowledgeBase = defaultKnowledgeBase, rootPath = projectRoot, now = Date.now } = {}) {
-  const rateLimiter = new SlidingWindowRateLimiter();
+export function createApp({
+  client = null,
+  knowledgeBase = defaultKnowledgeBase,
+  rootPath = projectRoot,
+  now = Date.now,
+  rateLimiter = new SlidingWindowRateLimiter(),
+  trustProxy = false,
+  logger = null,
+  logHashSalt = "",
+} = {}) {
   const apiEnabled = Boolean(client);
   const speechService = typeof client?.speech === "function"
     ? new CachedSpeechService({ synthesize: (payload) => client.speech(payload), now })
     : null;
 
   return async function app(request, response) {
+    const startedAt = performance.now();
+    const id = requestId();
+    const clientAddress = resolveClientAddress(request, { trustProxy });
+    response.setHeader("x-request-id", id);
+    response.once("finish", () => safeLog(logger, "http_request", {
+      requestId: id,
+      method: request.method,
+      path: safePathname(request.url),
+      status: response.statusCode,
+      durationMs: Math.max(0, Math.round(performance.now() - startedAt)),
+      client: clientFingerprint(clientAddress, logHashSalt),
+    }));
     setSecurityHeaders(response);
     try {
       const url = new URL(request.url, `http://${request.headers.host ?? "localhost"}`);
+      if (request.method === "GET" && url.pathname === "/healthz") {
+        return json(response, 200, {
+          status: "ok",
+          cloud: apiEnabled,
+          knowledge: { schema: knowledgeBase.schema, version: knowledgeBase.version },
+        });
+      }
       if (url.pathname.startsWith("/api/")) {
-        if (!rateLimiter.allow(request.socket.remoteAddress ?? "unknown", now())) return json(response, 429, { error: "rate_limited", message: "请求太频繁，请稍后再试。" });
+        if (!rateLimiter.allow(clientAddress, now())) return json(response, 429, { error: "rate_limited", message: "请求太频繁，请稍后再试。" });
         if (request.method === "GET" && url.pathname === "/api/status") {
           return json(response, 200, {
             cloud: apiEnabled,
@@ -333,6 +362,14 @@ function contentType(path) {
   return ({ ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".md": "text/markdown; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".webp": "image/webp" })[extname(path)] ?? "application/octet-stream";
 }
 
+function safePathname(value) {
+  try { return new URL(value, "http://localhost").pathname.slice(0, 256); } catch { return "/invalid"; }
+}
+
+function safeLog(logger, event, details) {
+  try { logger?.info(event, details); } catch { /* observability must not break a user request */ }
+}
+
 function setSecurityHeaders(response) {
   response.setHeader("x-content-type-options", "nosniff");
   response.setHeader("referrer-policy", "no-referrer");
@@ -449,8 +486,16 @@ function boundedTimeout(value) {
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   await loadEnv();
   const port = Number.parseInt(process.env.PORT ?? "8000", 10);
+  const host = process.env.HOST ?? "127.0.0.1";
   const client = clientFromEnv();
-  createHttpServer(createApp({ client })).listen(port, "127.0.0.1", () => {
-    console.log(`Shoujian Oracle: http://127.0.0.1:${port} (${client ? "Gemini cloud enabled" : "local fallback"})`);
+  const logger = enabledByEnvironment(process.env.STRUCTURED_LOGS) ? createJsonLogger() : null;
+  createHttpServer(createApp({
+    client,
+    trustProxy: enabledByEnvironment(process.env.TRUST_PROXY),
+    logger,
+    logHashSalt: process.env.LOG_HASH_SALT ?? "",
+  })).listen(port, host, () => {
+    if (logger) safeLog(logger, "server_started", { host, port, cloud: Boolean(client) });
+    else console.log(`Shoujian Oracle: http://${host}:${port} (${client ? "Gemini cloud enabled" : "local fallback"})`);
   });
 }

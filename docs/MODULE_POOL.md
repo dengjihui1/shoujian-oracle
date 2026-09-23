@@ -18,6 +18,8 @@ index.html
       └─ P08 分句 → P09 TTS 队列 → P10 PCM 播放 / P11 浏览器语音 │
                                                ↓
 D01 问题边界 → D02 响应策略 → S11 对话请求准备 → S01 HTTP 服务 → S07 云端供应商池
+                                              ├─ S12 请求来源 / 代理边界
+                                              └─ S13 请求 ID / 脱敏日志
                   └─ D03 本地降级对话       ├─ S03 Gemini 适配器
 D04 起卦纯计算 ──────────────────────────────├─ S06 OpenAI-compatible 适配器
                                              ├─ S02 提示词 / 时间 / 上下文
@@ -63,6 +65,8 @@ Q01 行为测试 + Q02 项目体检 + Q03 RAG 评测 + Q04 浏览器 E2E 覆盖�
 | S09 | Google Cloud TTS 适配 | `server/google-cloud-tts-client.mjs` | 已实现，待真实凭证验收 | `test/google-cloud-tts-client.test.js` |
 | S10 | 知识路由与引用修复 | `server/knowledge-routing.mjs` | 稳定 | `test/knowledge-routing.test.js`、服务器契约测试 |
 | S11 | 对话请求准备 | `server/chat-preparation.mjs` | 稳定 | `test/chat-preparation.test.js` |
+| S12 | 请求来源与代理边界 | `server/request-context.mjs` | 稳定 | `test/request-context.test.js` |
+| S13 | 脱敏可观测性 | `server/observability.mjs` | 稳定 | `test/observability.test.js`、服务器契约测试 |
 | K01 | 冻结经传知识包 | `knowledge/shoujian-rag.v1.json` | 稳定 | 完整性体检、检索测试 |
 | K02 | 公开知识导入 | `scripts/import-open-knowledge.mjs` | 工具 | 人工来源复核、项目体检 |
 | A01 | 墨衡人物与品牌素材 | `assets/` | 稳定 | 视图渲染、人工视觉检查 |
@@ -295,9 +299,9 @@ Q01 行为测试 + Q02 项目体检 + Q03 RAG 评测 + Q04 浏览器 E2E 覆盖�
 
 - 文件：`server/index.mjs`
 - 单一职责：密钥隔离、HTTP 路由、模型调用、引用校验、静态文件和安全响应头；请求准备委托给 S11。
-- 输入 / 输出：`/api/status`、`chat`、`chat/stream`、`transcribe`、`speech` → 稳定 JSON / SSE。
+- 输入 / 输出：`/healthz`、`/api/status`、`chat`、`chat/stream`、`transcribe`、`speech` → 稳定 JSON / SSE。
 - 依赖：S02–S11。
-- 正常路径：先验证，再决定直接响应或调用检索和模型；浏览器断线会中止上游流；供应商在已有分片后断开时，用相同输入和证据恢复完整答案并发出 `replace`。
+- 正常路径：健康检查不占聊天限流；再验证请求并决定直接响应或调用检索和模型；浏览器断线会中止上游流；供应商在已有分片后断开时，用相同输入和证据恢复完整答案并发出 `replace`。
 - 失败与降级：恢复失败后才发脱敏 4xx / 5xx；未配置密钥返回 503；静态路径阻断点文件和目录穿越。
 - 测试：`test/server-contract.test.js`。
 - 练习：保持 HTTP 读写、SSE 生命周期和领域决策分离，不把 S11 逻辑重新塞回服务壳。
@@ -353,6 +357,22 @@ Q01 行为测试 + Q02 项目体检 + Q03 RAG 评测 + Q04 浏览器 E2E 覆盖�
 - 失败与降级：空白和超长文字保留稳定 400 / 413 契约；非法阶段回退到自由对话；非法卦象按无卦处理。
 - 测试：`test/chat-preparation.test.js` 覆盖普通聊天、起卦证据、危机短路与输入边界；S01 契约测试继续验证 HTTP 组合。
 - 练习：增加新路由维度时先扩展本模块返回契约和直接测试，再接服务壳。
+
+### S12 请求来源与代理边界
+
+- 文件：`server/request-context.mjs`。
+- 单一职责：规范化 Socket / `X-Forwarded-For` 地址，并且只在部署显式开启 `TRUST_PROXY` 后信任代理头。
+- 正常路径：本机直连按 Socket 限流；受控反向代理部署按首个规范 IP 限流；非法代理值回退 Socket。
+- 失败与降级：未开启信任时完全忽略外部代理头，避免匿名用户伪造限流身份。
+- 测试：`test/request-context.test.js`。
+
+### S13 脱敏可观测性
+
+- 文件：`server/observability.mjs`。
+- 单一职责：生成请求 ID、按固定元数据输出 JSON，并递归遮蔽正文、提示词、Cookie、令牌和密钥字段。
+- 正常路径：记录方法、纯路径、状态码、耗时；配置日志盐值时只记录 HMAC 短指纹，不记录原始 IP。
+- 失败与降级：日志写出失败不会中断用户请求；未配置盐值时客户端字段为 `null`。
+- 测试：`test/observability.test.js` 与健康检查服务器契约。
 
 ### S05 滑动窗口限流
 
@@ -446,7 +466,7 @@ Q01 行为测试 + Q02 项目体检 + Q03 RAG 评测 + Q04 浏览器 E2E 覆盖�
 - 输入 / 输出：整个仓库 → 发布前通过 / 失败。
 - 正常路径：`npm run check`，再配合 `git diff --check` 和 GitHub CI。
 - 失败与降级：这是静态守门，不代替依赖漏洞扫描、浏览器兼容测试或生产监控。
-- 练习：部署前增加端口、环境变量和 HTTPS 健康检查脚本。
+- 练习：在真实域名部署后，把证书续期、上游配额和 P95 延迟接入外部监控。
 
 ### Q03 固定 RAG 质量 / 性能评测
 
@@ -484,8 +504,8 @@ Q01 行为测试 + Q02 项目体检 + Q03 RAG 评测 + Q04 浏览器 E2E 覆盖�
 | P1 | 真实设备语音性能预算 | 首字、首句开声、转写完成 P50 / P95 有记录 | 待实测 |
 | P1 | `prepareChat` 纯模块化 | 请求策略、检索和提示词准备可不启动服务器单测 | 已完成（0.19.0，4 个直接测试） |
 | P2 | 本地记忆导出 / 导入 | 用户可审阅、清除和迁移，默认仍不上云 | 已完成（0.20.0，JSON v1 + E2E） |
-| P2 | 生产部署适配 | HTTPS、反向代理、共享限流、日志脱敏和健康检查有独立指南 | 发布前任务 |
+| P2 | 生产部署适配 | HTTPS、反向代理、共享限流、日志脱敏和健康检查有独立指南 | 已完成代码与配置（0.21.0）；真实域名、凭证和多实例共享存储待外部部署 |
 
 “待补”不等于当前功能不可用；它表示要从本地教学组件升级为面向公众的长期服务时，还需要完成的工程层。
 
-当前自动化、真实云端链路和浏览器人工验收结果见 [0.20.0 质量基线](QUALITY_BASELINE.md)。
+当前自动化、真实云端链路和浏览器人工验收结果见 [0.21.0 质量基线](QUALITY_BASELINE.md)。
