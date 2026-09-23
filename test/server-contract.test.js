@@ -130,7 +130,7 @@ test("API routes enforce boundary and preserve deterministic reading context", a
     assert.match(advisoryBody.text, /仅供传统文化体验与自我反思参考/u);
     assert.equal(calls.length, 1);
 
-    const reading = { primary: { number: 1, fullName: "乾为天", lower: { name: "乾", image: "天" }, upper: { name: "乾", image: "天" } }, movingLines: [1], changed: { fullName: "天风姤" } };
+    const reading = { lines: [9, 7, 7, 7, 7, 7] };
     const chat = await fetch(`${base}/api/chat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message: "这卦和我的问题有什么关系", stage: "reading", question: "未来三天先做什么", reading }) });
     const chatBody = await chat.json();
     assert.match(chatBody.text, /^先核对眼前条件【ZY-01-OVERVIEW】。/u);
@@ -280,7 +280,7 @@ test("ordinary chat after a cast does not force unrelated reading evidence", asy
       return { text: "基金是集合众多投资者资金、按既定策略投资的一类工具。" };
     },
   };
-  const reading = { primary: { number: 1, fullName: "乾为天", lower: { name: "乾", image: "天" }, upper: { name: "乾", image: "天" } }, movingLines: [1], changed: { fullName: "天风姤" } };
+  const reading = { lines: [9, 7, 7, 7, 7, 7] };
   await withServer(createApp({ client }), async (base) => {
     const response = await fetch(`${base}/api/chat`, {
       method: "POST",
@@ -407,7 +407,7 @@ test("upstream failure returns a stable error without terminating the server", a
     const failed = await fetch(`${base}/api/chat`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ message: "这卦与原问有什么关系？", stage: "reading", question: "未来三天先做什么", reading: { primary: { number: 1, fullName: "乾为天" }, movingLines: [] } }),
+      body: JSON.stringify({ message: "这卦与原问有什么关系？", stage: "reading", question: "未来三天先做什么", reading: { lines: [7, 7, 7, 7, 7, 7] } }),
     });
     assert.equal(failed.status, 502);
     assert.deepEqual(await failed.json(), { error: "network_error", message: "服务暂时不可用。" });

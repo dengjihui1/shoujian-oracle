@@ -1,7 +1,8 @@
 import { buildChatInput, buildSystemInstruction, formatShanghaiDateTime } from "./prompt.mjs";
-import { decideKnowledgeRoute } from "./knowledge-routing.mjs";
+import { decideKnowledgeRoute, groundedUnavailableReply, isExplicitZhouyiQuery } from "./knowledge-routing.mjs";
 import { assessQuestion } from "../src/question-boundary.js";
 import { inferConversationPurpose, resolveResponsePolicy } from "../src/response-policy.js";
+import { castHexagram } from "../src/oracle-engine.js";
 
 const CHAT_STAGES = new Set(["question", "ready", "reading"]);
 const CHAT_PURPOSES = new Set(["chat", "divination"]);
@@ -38,6 +39,20 @@ export function prepareChat(body, knowledgeBase, now = Date.now) {
   });
   const knowledgeRoute = decideKnowledgeRoute({ message, purpose: policy.purpose, evidence: candidates });
   const evidence = knowledgeRoute.evidence;
+  if (!evidence.length && (isExplicitZhouyiQuery(message) || (useReadingEvidence && reading))) {
+    return Object.freeze({
+      response: Object.freeze({
+        text: groundedUnavailableReply(policy.purpose),
+        evidence: Object.freeze([]),
+        grounded: false,
+        groundingUnavailable: true,
+        purpose: policy.purpose,
+      }),
+      evidence: Object.freeze([]),
+      purpose: policy.purpose,
+      serverTime,
+    });
+  }
   const route = knowledgeRoute.groundingRequested ? "grounded" : "fast";
   return Object.freeze({
     evidence,
@@ -58,21 +73,12 @@ function sanitizeHistory(value) {
 }
 
 function sanitizeReading(value) {
-  if (!value || typeof value !== "object") return null;
-  const primary = value.primary;
-  if (!primary || !Number.isInteger(primary.number) || primary.number < 1 || primary.number > 64) return null;
-  return {
-    primary: {
-      number: primary.number,
-      fullName: String(primary.fullName ?? "").slice(0, 24),
-      lower: { name: String(primary.lower?.name ?? "").slice(0, 4), image: String(primary.lower?.image ?? "").slice(0, 4) },
-      upper: { name: String(primary.upper?.name ?? "").slice(0, 4), image: String(primary.upper?.image ?? "").slice(0, 4) },
-    },
-    movingLines: Array.isArray(value.movingLines)
-      ? value.movingLines.filter((line) => Number.isInteger(line) && line >= 1 && line <= 6).slice(0, 6)
-      : [],
-    changed: value.changed ? { fullName: String(value.changed.fullName ?? "").slice(0, 24) } : null,
-  };
+  if (value == null) return null;
+  try {
+    return castHexagram(value.lines);
+  } catch {
+    throw requestError(400, "invalid_reading", "卦象数据无效，请重新起卦。");
+  }
 }
 
 function cleanRequiredText(value, maxLength, label) {

@@ -630,8 +630,8 @@ export class ShoujianOracle extends HTMLElement {
         ? async (text) => this.browserSpeech.prepare(text)
         : (text, { signal }) => this.api.speech(text, { signal }),
       play: useFastBrowserSpeech
-        ? (payload, { onLevel }) => this.browserSpeech.play(payload, { onLevel })
-        : (audio, { onLevel }) => playPcmBase64(audio.data, { sampleRate: audio.sampleRate, onLevel }),
+        ? (payload, { onLevel, onStart }) => this.browserSpeech.play(payload, { onLevel, onStart })
+        : (audio, { onLevel, onStart }) => playPcmBase64(audio.data, { sampleRate: audio.sampleRate, onLevel, onStart }),
       onState: (state) => {
         if (this.speechQueue !== queue) return;
         this.voiceState = state;

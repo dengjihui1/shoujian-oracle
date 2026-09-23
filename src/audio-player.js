@@ -7,15 +7,15 @@ export function primeAudioPlayback() {
   return true;
 }
 
-export async function playPcmBase64(data, { sampleRate = 24_000, onLevel = () => {} } = {}) {
+export async function playPcmBase64(data, { sampleRate = 24_000, onLevel = () => {}, onStart = () => {} } = {}) {
   const pcm = base64ToBytes(data);
   const context = getAudioContext();
-  if (!context) return playWithAudioElement(pcm, { sampleRate, onLevel });
+  if (!context) return playWithAudioElement(pcm, { sampleRate, onLevel, onStart });
   try {
     if (context.state === "suspended") await context.resume();
-    return playWithAudioContext(context, pcm, { sampleRate, onLevel });
+    return playWithAudioContext(context, pcm, { sampleRate, onLevel, onStart });
   } catch {
-    return playWithAudioElement(pcm, { sampleRate, onLevel });
+    return playWithAudioElement(pcm, { sampleRate, onLevel, onStart });
   }
 }
 
@@ -38,7 +38,7 @@ export function calculateVoiceLevel(samples) {
   return Math.max(0, Math.min(1, (rms - 0.012) * 4.2));
 }
 
-function playWithAudioContext(context, pcm, { sampleRate, onLevel }) {
+function playWithAudioContext(context, pcm, { sampleRate, onLevel, onStart }) {
   const samples = pcm16BytesToFloat32(pcm);
   const buffer = context.createBuffer(1, samples.length, sampleRate);
   buffer.copyToChannel(samples, 0);
@@ -76,6 +76,7 @@ function playWithAudioContext(context, pcm, { sampleRate, onLevel }) {
   source.addEventListener("ended", release, { once: true });
   onLevel(0);
   source.start();
+  onStart();
   frameId = requestFrame(sampleLevel);
   return {
     ended,
@@ -87,7 +88,7 @@ function playWithAudioContext(context, pcm, { sampleRate, onLevel }) {
   };
 }
 
-async function playWithAudioElement(pcm, { sampleRate, onLevel }) {
+async function playWithAudioElement(pcm, { sampleRate, onLevel, onStart }) {
   const wav = pcmToWav(pcm, sampleRate);
   const url = URL.createObjectURL(new Blob([wav], { type: "audio/wav" }));
   const audio = new Audio(url);
@@ -103,7 +104,12 @@ async function playWithAudioElement(pcm, { sampleRate, onLevel }) {
   };
   audio.addEventListener("ended", release, { once: true });
   audio.addEventListener("error", release, { once: true });
-  onLevel(0.46);
+  audio.addEventListener("playing", () => {
+    if (!revoked) {
+      onStart();
+      onLevel(0.46);
+    }
+  }, { once: true });
   try {
     await audio.play();
   } catch (error) {

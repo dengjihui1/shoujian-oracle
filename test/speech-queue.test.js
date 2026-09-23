@@ -81,6 +81,46 @@ test("prefetch window does not synthesize the whole answer ahead of playback", a
   assert.deepEqual(synthesized, ["一。", "二。", "三。", "四。"]);
 });
 
+test("speech stays in generating until playback actually starts", async () => {
+  const states = [];
+  let beginPlayback;
+  let endPlayback;
+  const queue = new StreamingSpeechQueue({
+    async synthesize() { return "audio"; },
+    async play(_audio, { onStart }) {
+      beginPlayback = onStart;
+      return { ended: new Promise((resolve) => { endPlayback = resolve; }), stop() {} };
+    },
+    onState: (state) => states.push(state),
+  });
+  queue.enqueue("一句话。");
+  await tick();
+  assert.deepEqual(states, ["generating"]);
+  beginPlayback();
+  assert.deepEqual(states, ["generating", "playing"]);
+  endPlayback();
+  await queue.close();
+  assert.equal(states.at(-1), "idle");
+});
+
+test("late playback start after cancellation cannot revive the voice state", async () => {
+  const states = [];
+  let beginPlayback;
+  const queue = new StreamingSpeechQueue({
+    async synthesize() { return "audio"; },
+    async play(_audio, { onStart }) {
+      beginPlayback = onStart;
+      return { ended: new Promise(() => {}), stop() {} };
+    },
+    onState: (state) => states.push(state),
+  });
+  queue.enqueue("旧回答。");
+  await tick();
+  queue.cancel();
+  beginPlayback();
+  assert.deepEqual(states, ["generating", "idle"]);
+});
+
 function tick() {
   return new Promise((resolve) => setImmediate(resolve));
 }

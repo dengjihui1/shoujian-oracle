@@ -14,11 +14,17 @@ export class BrowserSpeechPlayer {
     UtteranceClass = globalThis.SpeechSynthesisUtterance,
     setIntervalFn = globalThis.setInterval,
     clearIntervalFn = globalThis.clearInterval,
+    setTimeoutFn = globalThis.setTimeout,
+    clearTimeoutFn = globalThis.clearTimeout,
+    startTimeoutMs = 5_000,
   } = {}) {
     this.speechSynthesis = speechSynthesis;
     this.UtteranceClass = UtteranceClass;
     this.setIntervalFn = setIntervalFn;
     this.clearIntervalFn = clearIntervalFn;
+    this.setTimeoutFn = setTimeoutFn;
+    this.clearTimeoutFn = clearTimeoutFn;
+    this.startTimeoutMs = startTimeoutMs;
   }
 
   get supported() {
@@ -30,7 +36,7 @@ export class BrowserSpeechPlayer {
     return { kind: "browser-speech", text: String(text ?? "").trim() };
   }
 
-  async play(payload, { onLevel = () => {} } = {}) {
+  async play(payload, { onLevel = () => {}, onStart = () => {} } = {}) {
     if (!this.supported) throw new Error("当前浏览器不支持极速本机语音");
     const text = String(payload?.text ?? "").trim();
     if (!text) throw new Error("朗读内容为空");
@@ -44,6 +50,7 @@ export class BrowserSpeechPlayer {
     if (voice) utterance.voice = voice;
 
     let timer = null;
+    let startTimer = null;
     let pulse = 0;
     let settled = false;
     let finish;
@@ -53,10 +60,15 @@ export class BrowserSpeechPlayer {
       if (settled) return;
       settled = true;
       if (timer !== null) this.clearIntervalFn(timer);
+      if (startTimer !== null) this.clearTimeoutFn(startTimer);
       onLevel(0);
       error ? fail(error) : finish();
     };
     utterance.onstart = () => {
+      if (settled) return;
+      if (startTimer !== null) this.clearTimeoutFn(startTimer);
+      startTimer = null;
+      onStart();
       onLevel(0.42);
       timer = this.setIntervalFn(() => {
         pulse = (pulse + 1) % 5;
@@ -71,9 +83,14 @@ export class BrowserSpeechPlayer {
     };
 
     try {
+      startTimer = this.setTimeoutFn(() => {
+        if (settled) return;
+        release(new Error("本机语音未能开始播放，请切换云端音色或继续文字对话"));
+        this.speechSynthesis.cancel();
+      }, this.startTimeoutMs);
       this.speechSynthesis.speak(utterance);
     } catch (error) {
-      release(error);
+      release();
       throw error;
     }
     return {

@@ -25,7 +25,7 @@ export class StreamingSpeechQueue {
     const text = String(value ?? "").trim();
     if (!text) return false;
     this.items.push({ text, status: "pending", controller: null, audio: null });
-    this.#setState(this.playbackPumping ? "playing" : "generating");
+    this.#setState(this.state === "playing" ? "playing" : "generating");
     this.#pumpSynthesis();
     return true;
   }
@@ -99,9 +99,13 @@ export class StreamingSpeechQueue {
           continue;
         }
         if (item.status !== "ready") break;
-        this.#setState("playing");
         try {
-          const playback = await this.play(item.audio, { onLevel: this.onLevel });
+          const playback = await this.play(item.audio, {
+            onLevel: this.onLevel,
+            onStart: () => {
+              if (!this.cancelled) this.#setState("playing");
+            },
+          });
           if (this.cancelled) {
             playback?.stop?.();
             break;

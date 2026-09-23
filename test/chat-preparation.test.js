@@ -22,7 +22,7 @@ test("ordinary chat prepares a fast model request without accidental evidence", 
   assert.equal(calls[0].reading, null);
 });
 
-test("divination preparation sanitizes reading and binds the fixed question to retrieval", () => {
+test("divination preparation recomputes reading from six lines and binds the fixed question to retrieval", () => {
   const calls = [];
   const evidence = [{
     id: "ZY-01-LINE-1",
@@ -39,14 +39,10 @@ test("divination preparation sanitizes reading and binds the fixed question to r
     stage: "reading",
     question: "未来三个月是否继续项目",
     reading: {
-      primary: {
-        number: 1,
-        fullName: "乾为天以及应被截断的额外文字",
-        lower: { name: "乾乾乾乾乾", image: "天天天天天" },
-        upper: { name: "乾", image: "天" },
-      },
-      movingLines: [1, 7, "2", 6],
-      changed: { fullName: "坤为地" },
+      lines: [9, 7, 7, 7, 7, 7],
+      primary: { number: 2, fullName: "伪造的坤卦" },
+      movingLines: [6],
+      changed: { fullName: "伪造的变卦" },
     },
   }, fakeKnowledge(evidence, calls), FIXED_NOW);
 
@@ -54,8 +50,9 @@ test("divination preparation sanitizes reading and binds the fixed question to r
   assert.equal(prepared.knowledgeReason, "divination");
   assert.deepEqual(prepared.evidence, evidence);
   assert.equal(calls[0].query, "结合本卦解释动爻\n未来三个月是否继续项目");
-  assert.deepEqual(calls[0].reading.movingLines, [1, 6]);
-  assert.equal(calls[0].reading.primary.lower.name.length, 4);
+  assert.deepEqual(calls[0].reading.movingLines, [1]);
+  assert.equal(calls[0].reading.primary.fullName, "乾为天");
+  assert.equal(calls[0].reading.changed.fullName, "天风姤");
   assert.match(prepared.systemInstruction, /【ZY-01-LINE-1】/);
 });
 
@@ -74,6 +71,30 @@ test("chat preparation rejects blank or oversized text before retrieval", () => 
   const knowledgeBase = fakeKnowledge([]);
   assert.throws(() => prepareChat({ message: "   " }, knowledgeBase, FIXED_NOW), { code: "invalid_text", status: 400 });
   assert.throws(() => prepareChat({ message: "问".repeat(2_001) }, knowledgeBase, FIXED_NOW), { code: "text_too_long", status: 413 });
+});
+
+test("chat preparation rejects a forged reading without six valid lines", () => {
+  const knowledgeBase = fakeKnowledge([]);
+  assert.throws(() => prepareChat({ message: "请解释这卦", reading: { primary: { number: 1 } } }, knowledgeBase, FIXED_NOW), { code: "invalid_reading", status: 400 });
+  assert.throws(() => prepareChat({ message: "请解释这卦", reading: { lines: [7, 7, 7, 7, 7, 0] } }, knowledgeBase, FIXED_NOW), { code: "invalid_reading", status: 400 });
+});
+
+test("an explicit classics question without retrieved evidence never asks the model to invent a source", () => {
+  const prepared = prepareChat({ message: "乾卦初九原文是什么？" }, fakeKnowledge([]), FIXED_NOW);
+  assert.equal(prepared.response.groundingUnavailable, true);
+  assert.match(prepared.response.text, /经传依据/u);
+  assert.equal("input" in prepared, false);
+});
+
+test("a reading without retrieved evidence does not invite a fabricated hexagram explanation", () => {
+  const prepared = prepareChat({
+    message: "这对我的问题意味着什么？",
+    purpose: "divination",
+    stage: "reading",
+    reading: { lines: [9, 7, 7, 7, 7, 7] },
+  }, fakeKnowledge([]), FIXED_NOW);
+  assert.equal(prepared.response.groundingUnavailable, true);
+  assert.equal("input" in prepared, false);
 });
 
 function fakeKnowledge(evidence, calls = []) {
