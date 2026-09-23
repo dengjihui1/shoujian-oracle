@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { readFile } from "node:fs/promises";
 
 const STATUS = {
   cloud: true,
@@ -101,6 +102,28 @@ test("云端 TTS 失败只降级语音，不锁死文字输入", async ({ page }
   await expect(composer(page)).toBeEnabled();
   await composer(page).fill("语音失败后仍能输入");
   await expect(composer(page)).toHaveValue("语音失败后仍能输入");
+});
+
+test("本机会话可导出、清除并从文件恢复", async ({ page }) => {
+  await mockChatStream(page, () => "这轮会话会被保存在导出文件里。" );
+  await page.goto("/");
+  await sendWithEnter(page, "请保存这一轮");
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.locator('[data-action="export-memory"]').click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/^shoujian-session-\d{4}-\d{2}-\d{2}\.json$/u);
+  const path = await download.path();
+  const exported = JSON.parse(await readFile(path, "utf8"));
+  expect(exported.schema).toBe("shoujian.oracle-session");
+  expect(exported.session.messages.some(({ text }) => text === "请保存这一轮")).toBe(true);
+
+  await page.locator('[data-action="clear-memory"]').click();
+  await expect(page.locator(".message.user")).toHaveCount(0);
+  await page.locator("[data-session-import]").setInputFiles(path);
+  await expect(page.locator(".message.user p", { hasText: "请保存这一轮" })).toBeVisible();
+  await expect(page.locator(".message.master p", { hasText: "本机会话已导入" })).toBeVisible();
+  await expect(composer(page)).toBeEnabled();
 });
 
 function composer(page) {

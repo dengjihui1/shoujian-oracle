@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ConversationMemory, recentConversation } from "../src/conversation-memory.js";
+import { ConversationMemory, createConversationExport, parseConversationExport, recentConversation } from "../src/conversation-memory.js";
 import { castHexagram } from "../src/oracle-engine.js";
 import { answerIntakeQuestion, createDivinationIntake, prepareIntakeReview } from "../src/divination-intake.js";
 
@@ -116,4 +116,31 @@ test("legacy message-only snapshots remain readable and corrupt session state is
   assert.equal(restored.stage, "question");
   assert.equal(restored.reading, null);
   assert.equal(restored.messages[0].text, "保留文字");
+});
+
+test("local session export round-trips completed messages and deterministic reading", () => {
+  const reading = castHexagram([9, 7, 8, 8, 7, 6]);
+  const document = createConversationExport({
+    messages: [
+      { role: "user", text: "导出这一卦" },
+      { role: "master", text: "已经排好。" },
+      { role: "user", text: "未完成问题" },
+    ],
+    stage: "reading",
+    question: "导出这一卦",
+    reading,
+  }, { now: () => Date.parse("2026-09-23T04:00:00.000Z") });
+
+  assert.equal(document.schema, "shoujian.oracle-session");
+  assert.equal(document.exportedAt, "2026-09-23T04:00:00.000Z");
+  const imported = parseConversationExport(JSON.stringify(document));
+  assert.equal(imported.stage, "reading");
+  assert.deepEqual(imported.reading.lines, reading.lines);
+  assert.deepEqual(imported.messages.map(({ text }) => text), ["导出这一卦", "已经排好。"]);
+});
+
+test("local session import rejects malformed, unsupported, and oversized files", () => {
+  assert.throws(() => parseConversationExport("not-json"), /不是有效 JSON/u);
+  assert.throws(() => parseConversationExport({ schema: "unknown", version: 1 }), /格式或版本/u);
+  assert.throws(() => parseConversationExport(`{"padding":"${"x".repeat(256 * 1024)}"}`), /文件过大/u);
 });

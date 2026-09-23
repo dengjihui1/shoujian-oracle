@@ -88,6 +88,7 @@
 - `sendText()` 是对话入口；
 - `askCloud()` 在同一条气泡里消费流式分片并逐字符揭示；
 - `restoreMemory()` / `persistMemory()` 通过 `conversation-memory.js` 只在浏览器本机保留最近 24 条完成对话，并从六爻快照恢复相同卦象；
+- `createConversationExport()` / `parseConversationExport()` 为本机迁移提供带 schema 与版本的 JSON，导入时限制大小并复用同一套会话清洗；
 - `cast()` 只负责连接随机适配器与纯计算层；
 - `render()` 只收集状态，`oracle-view.js` 负责转义并投影为 Shadow DOM；
 - `streaming-text.js` 把网络分片变成可取消的字符级显示，并在积压过多时自动提速；
@@ -112,6 +113,7 @@
 7. 用假识别器给 `voice-conversation.js` 增加“识别器自然结束、无清晰文字、旧轮次迟到”测试，再在真实设备记录 P50 / P95。
 8. 为 `avatar-motion.js` 增加一个低幅度手势，但先写状态语义和减少动态模式，再加 CSS；不要用与对话无关的随机大幅循环。
 9. 阅读 `e2e/oracle-flow.spec.js`，观察怎样只模拟外部 API、仍让真实浏览器完整运行 Web Component；修改用户流程后运行 `npm run test:e2e`。
+10. 导出一份本机会话并阅读 JSON，再看 `conversation-memory.js` 如何过滤未完成轮次、重建六爻并拒绝未知版本。
 
 不要把住宅知识、主项目案卷或支付能力作为练习复制进来；它们属于另一个产品边界。新增经传数据必须登记来源、修订、许可和结构改动。
 

@@ -35,7 +35,7 @@ Q01 行为测试 + Q02 项目体检 + Q03 RAG 评测 + Q04 浏览器 E2E 覆盖�
 | P01 | 前端生命周期编排 | `src/shoujian-oracle.js` | 稳定 | 服务器契约、视图与各子模块测试 |
 | P02 | 安全视图投影 | `src/oracle-view.js` | 稳定 | `test/oracle-view.test.js` |
 | P03 | 虚拟人状态选择 | `src/avatar-state.js` | 稳定 | `test/avatar-state.test.js` |
-| P04 | 本机会话记忆 | `src/conversation-memory.js` | 稳定 | `test/conversation-memory.test.js` |
+| P04 | 本机会话记忆与迁移 | `src/conversation-memory.js` | 稳定 | `test/conversation-memory.test.js`、浏览器 E2E |
 | P05 | 流式文字揭示 | `src/streaming-text.js` | 稳定 | `test/streaming-text.test.js` |
 | P06 | 浏览器 API 客户端 | `src/api-client.js` | 稳定 | `test/api-client.test.js` |
 | P07 | 语音输入 | `src/audio-recorder.js` | 稳定 | `test/audio-recorder.test.js` |
@@ -111,13 +111,13 @@ Q01 行为测试 + Q02 项目体检 + Q03 RAG 评测 + Q04 浏览器 E2E 覆盖�
 ### P04 本机会话记忆
 
 - 文件：`src/conversation-memory.js`
-- 单一职责：只保存已完成轮次和可恢复的确定性会话快照。
-- 输入 / 输出：消息、阶段、原问、六爻 → 最多 24 条本机记录；请求时只取最近 16 条，服务端再限制约 6000 字符。
+- 单一职责：只保存已完成轮次和可恢复的确定性会话快照，并提供版本化本机 JSON 迁移。
+- 输入 / 输出：消息、阶段、原问、六爻或导入 JSON → 最多 24 条本机记录、请求上下文或 `shoujian.oracle-session` v1 文件。
 - 依赖：D04 用六爻重建卦象。
-- 正常路径：刷新后恢复上下文、阶段和相同卦象。
-- 失败与降级：损坏 JSON、孤立问题、取消或未完成回复全部忽略；存储不可用时保持内存会话。
-- 测试：`test/conversation-memory.test.js`。
-- 练习：增加用户可导出、可审阅的本地 JSON，不增加服务器档案。
+- 正常路径：刷新后恢复上下文、阶段和相同卦象；用户可导出、清除，再从文件恢复。
+- 失败与降级：导入上限 256 KiB；损坏 JSON、未知 schema / 版本、孤立问题、取消或未完成回复被拒绝或忽略；存储不可用时保持内存会话。
+- 测试：`test/conversation-memory.test.js` 覆盖往返和拒绝路径；E2E 覆盖下载、清除和文件恢复。
+- 练习：增加导入前预览和差异提示，仍不增加服务器档案。
 
 ### P05 流式文字揭示
 
@@ -483,9 +483,9 @@ Q01 行为测试 + Q02 项目体检 + Q03 RAG 评测 + Q04 浏览器 E2E 覆盖�
 | P1 | 固定 RAG 质量评测集 | 经传、取象、当前卦和域外负例同时达到阈值 | 已完成；模型回答评分继续扩展 |
 | P1 | 真实设备语音性能预算 | 首字、首句开声、转写完成 P50 / P95 有记录 | 待实测 |
 | P1 | `prepareChat` 纯模块化 | 请求策略、检索和提示词准备可不启动服务器单测 | 已完成（0.19.0，4 个直接测试） |
-| P2 | 本地记忆导出 / 导入 | 用户可审阅、清除和迁移，默认仍不上云 | 候选功能 |
+| P2 | 本地记忆导出 / 导入 | 用户可审阅、清除和迁移，默认仍不上云 | 已完成（0.20.0，JSON v1 + E2E） |
 | P2 | 生产部署适配 | HTTPS、反向代理、共享限流、日志脱敏和健康检查有独立指南 | 发布前任务 |
 
 “待补”不等于当前功能不可用；它表示要从本地教学组件升级为面向公众的长期服务时，还需要完成的工程层。
 
-当前自动化、真实云端链路和浏览器人工验收结果见 [0.19.0 质量基线](QUALITY_BASELINE.md)。
+当前自动化、真实云端链路和浏览器人工验收结果见 [0.20.0 质量基线](QUALITY_BASELINE.md)。

@@ -6,7 +6,7 @@ import { OracleApiClient } from "./api-client.js";
 import { AudioRecorder, BrowserSpeechRecognizer, blobToBase64 } from "./audio-recorder.js";
 import { playPcmBase64, primeAudioPlayback } from "./audio-player.js";
 import { BrowserSpeechPlayer } from "./browser-speech.js";
-import { ConversationMemory, recentConversation } from "./conversation-memory.js";
+import { ConversationMemory, createConversationExport, parseConversationExport, recentConversation } from "./conversation-memory.js";
 import { SentenceSegmenter } from "./speech-segmenter.js";
 import { StreamingSpeechQueue } from "./speech-queue.js";
 import { StreamingTextRevealer } from "./streaming-text.js";
@@ -68,6 +68,7 @@ export class ShoujianOracle extends HTMLElement {
     this.shadowRoot.addEventListener("click", this.handleClick);
     this.shadowRoot.addEventListener("submit", this.handleSubmit);
     this.shadowRoot.addEventListener("input", this.handleInput);
+    this.shadowRoot.addEventListener("change", this.handleChange);
     this.shadowRoot.addEventListener("keydown", this.handleKeyDown);
     this.shadowRoot.addEventListener("scroll", this.handleScroll, true);
     this.checkCloud();
@@ -77,6 +78,7 @@ export class ShoujianOracle extends HTMLElement {
     this.shadowRoot.removeEventListener("click", this.handleClick);
     this.shadowRoot.removeEventListener("submit", this.handleSubmit);
     this.shadowRoot.removeEventListener("input", this.handleInput);
+    this.shadowRoot.removeEventListener("change", this.handleChange);
     this.shadowRoot.removeEventListener("keydown", this.handleKeyDown);
     this.shadowRoot.removeEventListener("scroll", this.handleScroll, true);
     clearTimeout(this.recordingTimer);
@@ -128,6 +130,37 @@ export class ShoujianOracle extends HTMLElement {
     this.focusComposer();
   }
 
+  exportMemory() {
+    this.persistMemory();
+    const document = createConversationExport({
+      messages: this.messages,
+      stage: this.stage,
+      question: this.question,
+      reading: this.reading,
+      intake: this.intake,
+    });
+    const blob = new Blob([`${JSON.stringify(document, null, 2)}\n`], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = globalThis.document.createElement("a");
+    anchor.href = url;
+    anchor.download = `shoujian-session-${document.exportedAt.slice(0, 10)}.json`;
+    anchor.click();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+
+  applyRestoredSession(session) {
+    this.messages = session.messages.length ? session.messages : [{ role: "master", text: welcomeReply() }];
+    this.stage = session.stage;
+    this.question = session.question;
+    this.reading = session.reading;
+    this.intake = session.intake;
+    this.intakeSummaryDraft = session.intake?.status === "review" ? session.intake.summary : "";
+    this.draft = "";
+    this.retryRequest = null;
+    this.conversationRevision += 1;
+    this.conversationViewport.reset();
+  }
+
   restoreMemory() {
     const session = this.memory.loadSession();
     if (session.messages.length) {
@@ -168,6 +201,28 @@ export class ShoujianOracle extends HTMLElement {
     if (event.target.matches?.("[data-intake-summary]")) this.intakeSummaryDraft = event.target.value;
   };
 
+  handleChange = async (event) => {
+    if (!event.target.matches?.("[data-session-import]")) return;
+    const [file] = event.target.files ?? [];
+    event.target.value = "";
+    if (!file) return;
+    try {
+      const imported = parseConversationExport(await file.text());
+      this.stopVoiceConversation();
+      this.cancelResponse();
+      this.cancelSpeech();
+      this.memory.saveSession(imported);
+      this.applyRestoredSession(imported);
+      this.appendMessage({ role: "master", text: "本机会话已导入。你可以从当前进度继续；导入文件没有上传服务器。" });
+      this.persistMemory();
+      this.render();
+      this.focusLatest();
+    } catch (error) {
+      this.appendMessage({ role: "master", text: `导入失败：${String(error?.message ?? "无法读取会话文件")}`, error: true });
+      this.render();
+    }
+  };
+
   handleKeyDown = (event) => {
     if (!isComposerSendShortcut(event)) return;
     event.preventDefault();
@@ -190,6 +245,8 @@ export class ShoujianOracle extends HTMLElement {
     if (action === "intake-confirm") this.confirmCurrentIntake();
     if (action === "reset") this.resetSession();
     if (action === "clear-memory") this.clearMemory();
+    if (action === "export-memory") this.exportMemory();
+    if (action === "import-memory") this.shadowRoot.querySelector("[data-session-import]")?.click();
     if (action === "jump-latest") {
       this.conversationViewport.jumpToLatest(this.shadowRoot.querySelector(".dialogue"));
       this.syncJumpToLatestButton();

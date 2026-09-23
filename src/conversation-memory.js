@@ -4,6 +4,9 @@ import { restoreDivinationIntake, serializeDivinationIntake } from "./divination
 export const PERSISTED_MEMORY_MESSAGES = 24;
 export const REQUEST_CONTEXT_MESSAGES = 16;
 export const CONVERSATION_MEMORY_KEY = "shoujian-oracle:conversation:v1";
+export const CONVERSATION_EXPORT_SCHEMA = "shoujian.oracle-session";
+export const CONVERSATION_EXPORT_VERSION = 1;
+export const MAX_CONVERSATION_EXPORT_BYTES = 256 * 1024;
 
 export class ConversationMemory {
   constructor({ storage = safeLocalStorage(), key = CONVERSATION_MEMORY_KEY, limit = PERSISTED_MEMORY_MESSAGES } = {}) {
@@ -86,6 +89,37 @@ function restoreSession(value) {
 
 export function recentConversation(messages, limit = REQUEST_CONTEXT_MESSAGES) {
   return sanitizeMessages(messages, limit, { persistentOnly: true });
+}
+
+export function createConversationExport(session, { now = Date.now } = {}) {
+  const snapshot = normalizeSession(session);
+  return Object.freeze({
+    schema: CONVERSATION_EXPORT_SCHEMA,
+    version: CONVERSATION_EXPORT_VERSION,
+    exportedAt: new Date(now()).toISOString(),
+    session: Object.freeze(snapshot),
+  });
+}
+
+export function parseConversationExport(value) {
+  const text = typeof value === "string" ? value : JSON.stringify(value);
+  if (new TextEncoder().encode(text).byteLength > MAX_CONVERSATION_EXPORT_BYTES) {
+    throw new Error("会话文件过大，无法导入");
+  }
+  let document;
+  try { document = typeof value === "string" ? JSON.parse(value) : value; } catch { throw new Error("会话文件不是有效 JSON"); }
+  if (document?.schema !== CONVERSATION_EXPORT_SCHEMA || document?.version !== CONVERSATION_EXPORT_VERSION) {
+    throw new Error("会话文件格式或版本不受支持");
+  }
+  return normalizeSession(document.session);
+}
+
+function normalizeSession({ messages, stage = "question", question = "", reading = null, intake = null } = {}) {
+  const state = restoreSession(serializeSession({ stage, question, reading, intake }));
+  return {
+    messages: sanitizeMessages(messages, PERSISTED_MEMORY_MESSAGES, { persistentOnly: true }),
+    ...state,
+  };
 }
 
 function sanitizeMessages(messages, limit, { persistentOnly = false } = {}) {
