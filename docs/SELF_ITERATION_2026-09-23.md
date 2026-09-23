@@ -13,7 +13,8 @@
 - `npm test`：211 / 211 通过；新增 HTML 音频悬置、播放错误、朗读启动后超时、卦后普通聊天上下文隔离等回归。
 - Playwright：本机 Chromium、WebKit、Pixel 7 与 iPhone 14 仿真 24 / 24 通过；这些测试模拟外部 API，不代表真实语音供应商速度。
 - 本机 Firefox：进一步直接运行 `firefox.exe --version` 也无法启动；Windows Application 的 SideBySide 事件指出 `mozglue` 程序集加载错误。因此它是本机 Playwright Firefox 安装/运行环境故障，**Firefox 页面行为仍未验收**。不要用 24 / 24 代替完整 30 / 30。
-- GitHub：开发机连 `github.com:443` 两次失败，0.28.0 提交目前仅在本地；0.29.0 的远端推送与 Actions 必须待网络恢复后重新核验。
+- `npm run eval:rag`：固定集 recall@4 与负例精度均为 100%，本轮均值 5.03 ms、P95 10.81 ms；这是检索评测，不是模型回答评分。`npm run check`、`git diff --check` 通过；`npm audit --omit=dev --audit-level=low` 报告 0 个已知漏洞。
+- GitHub：0.28.0 与 0.29.0 的提交都已推送；[Actions 35853375739](https://github.com/dengjihui1/shoujian-oracle/actions/runs/35853375739) 对 `b2f8051` 返回 `success`，覆盖仓库配置的 30 条浏览器流程和其他发布门禁。本机 Firefox 故障仍应单独修复，不把远端 Linux 成功当成本机 Windows 验收。
 
 ## 还不能宣称完成
 
