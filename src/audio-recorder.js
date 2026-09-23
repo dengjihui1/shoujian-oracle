@@ -13,8 +13,10 @@ export class AudioRecorder {
       throw new Error("录音正在进行，请先结束本次录音");
     }
     this.starting = true;
+    const token = this.startToken = (this.startToken ?? 0) + 1;
     try {
       this.stream = await this.mediaDevices.getUserMedia({ audio: true });
+      if (token !== this.startToken) throw abortError();
       const preferred = ["audio/webm;codecs=opus", "audio/mp4", "audio/webm"].find((type) => this.MediaRecorderClass.isTypeSupported?.(type));
       this.chunks = [];
       this.recorder = preferred ? new this.MediaRecorderClass(this.stream, { mimeType: preferred }) : new this.MediaRecorderClass(this.stream);
@@ -47,6 +49,13 @@ export class AudioRecorder {
     if (!this.recorder || this.recorder.state === "inactive") return this.result;
     this.recorder.stop();
     return this.result;
+  }
+
+  cancel() {
+    this.startToken = (this.startToken ?? 0) + 1;
+    if (this.starting) return Promise.resolve();
+    if (this.recorder && this.recorder.state !== "inactive") return this.stop();
+    return Promise.resolve();
   }
 
   #releaseStream() {

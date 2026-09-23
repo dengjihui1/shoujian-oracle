@@ -132,3 +132,23 @@ test("a second recorder start cannot acquire another microphone while permission
   await assert.rejects(() => recorder.start(), /正在|已经/u);
   await assert.rejects(recorder.stop(), /没有录到声音/u);
 });
+
+test("cancelling a pending permission releases the late microphone stream", async () => {
+  let allowMicrophone;
+  let stopped = 0;
+  let constructed = 0;
+  class FakeRecorder {
+    constructor() { constructed += 1; }
+  }
+  const recorder = new AudioRecorder({
+    mediaDevices: { getUserMedia: () => new Promise((resolve) => { allowMicrophone = resolve; }) },
+    MediaRecorderClass: FakeRecorder,
+  });
+  const start = recorder.start();
+  await recorder.cancel();
+  allowMicrophone({ getTracks: () => [{ stop: () => { stopped += 1; } }] });
+  await assert.rejects(start, { name: "AbortError" });
+  assert.equal(stopped, 1);
+  assert.equal(constructed, 0);
+  assert.equal(recorder.starting, false);
+});
