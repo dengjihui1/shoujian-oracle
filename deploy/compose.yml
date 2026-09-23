@@ -7,6 +7,9 @@ services:
     expose:
       - "8000"
     restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
     read_only: true
     tmpfs:
       - /tmp
@@ -14,6 +17,26 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "32mb", "--maxmemory-policy", "allkeys-lru"]
+    expose:
+      - "6379"
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /data
+    user: redis
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   caddy:
     image: caddy:2-alpine

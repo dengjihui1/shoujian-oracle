@@ -4,7 +4,7 @@
 
 独立的轻量虚拟卦师与经传 RAG 组件。它保留虚拟人主持、问题边界、三钱六爻和 64 卦确定性映射，并加入可追溯的《周易》《彖》《象》《说卦》冻结知识检索；明确不包含住宅分析、纳甲时证、档案、支付与追验等主项目核心。
 
-![版本](https://img.shields.io/badge/version-0.24.0-8e332a)
+![版本](https://img.shields.io/badge/version-0.25.0-8e332a)
 ![许可](https://img.shields.io/badge/license-MIT-d3b27f)
 
 ## 现在能完成什么
@@ -31,7 +31,7 @@
 20. 支持独立“实时语音对话”：用户明确开启后，interim 转写实时可见，定稿或停顿自动送问；回答首个完整短句即进入朗读，朗读时暂停收音，并可“打断并说话”。
 21. 页面记录本轮 ASR 定稿、首字和首声延迟，并在本机滚动汇总最多 30 轮 P50 / P95；可导出只含毫秒数的验收报告，不保存录音或转写内容。识别、模型或 TTS 失败后仍保留文字输入；该模式不宣称真正全双工。
 22. 本机会话可导出为可审阅 JSON，并在清除或更换浏览器后重新导入；文件只含最近已完成对话和可恢复问卦状态，导入导出不经过项目服务器。
-23. 提供非 root Docker、Caddy 自动 HTTPS、`/healthz`、显式代理信任、可注入共享限流边界和不记录对话正文的结构化日志。
+23. 提供非 root Docker、Caddy 自动 HTTPS、`/healthz`、显式代理信任、Redis 原子共享限流和不记录对话正文的结构化日志；本地仍可零配置使用内存限流。
 
 问题文字不会改变卦象。项目没有账号、遥测或支付；本地模式不上传内容，云端模式会把用户主动提交的文字、录音、最近上下文和必要卦象证据发送给已配置的供应商。对话记忆只存当前浏览器的 `localStorage`，服务端不建立用户档案。
 
@@ -44,7 +44,7 @@
 | `oracleQuestionBoundary` | 7 类公开字规 | 问契签名、验期、准绳与追验 |
 | `iching` | 6/7/8/9、八卦、文王序 64 卦映射 | 古籍全文、爻辞、纳甲、六亲、旬空、六神 |
 
-经传数据另从中文维基文库公开来源建立独立知识包，不复制主项目住宅知识。语音 API 的真实边界、Google Cloud 配置和 RAG 构建全过程见 [语音 API 与 RAG 架构说明](docs/VOICE_RAG_ARCHITECTURE.md)；从上游 Cactus 提取了什么、拒绝照搬什么见 [Cactus 模块拆解](docs/CACTUS_MODULE_EXTRACTION.md)；完整映射见 [组件抽取与流程图](docs/COMPONENT_MAP.md)，逐模块说明见 [守简模块池](docs/MODULE_POOL.md)，发布验收见 [0.24.0 质量基线](docs/QUALITY_BASELINE.md)。
+经传数据另从中文维基文库公开来源建立独立知识包，不复制主项目住宅知识。语音 API 的真实边界、Google Cloud 配置和 RAG 构建全过程见 [语音 API 与 RAG 架构说明](docs/VOICE_RAG_ARCHITECTURE.md)；从上游 Cactus 提取了什么、拒绝照搬什么见 [Cactus 模块拆解](docs/CACTUS_MODULE_EXTRACTION.md)；完整映射见 [组件抽取与流程图](docs/COMPONENT_MAP.md)，逐模块说明见 [守简模块池](docs/MODULE_POOL.md)，发布验收见 [0.25.0 质量基线](docs/QUALITY_BASELINE.md)。
 
 用户实测确认的交互、RAG 降级、问卦访谈和直接语音对话改进，统一记录在 [下一阶段任务池](docs/USER_FEEDBACK_BACKLOG.md)；任务状态以该文件和实际测试为准。
 
@@ -116,6 +116,7 @@ Gemini 失败 → 可选 OpenAI-compatible 供应商池 → 短时熔断与自�
 - `server/knowledge-routing.mjs`：普通 / 经传相关性路由、一次引用修复和自然降级；
 - `server/google-cloud-tts-client.mjs`：官方 Google Cloud TTS 客户端、凭证隔离与 WAV/PCM 适配；
 - `server/request-context.mjs` / `observability.mjs`：显式代理信任、客户端限流键、请求 ID 与脱敏结构化日志；
+- `server/rate-limiter.mjs` / `redis-rate-limiter.mjs`：本地内存限流、生产 Redis 原子共享窗口与 HMAC 客户端键；
 - `knowledge/shoujian-rag.v1.json`：64 卦、384 爻与 8 个说卦取象冻结知识；
 - `evaluation/` / `scripts/evaluate-rag.mjs`：固定 RAG 质量集与检索延迟预算；
 - `test/`：上述各层的确定性测试。

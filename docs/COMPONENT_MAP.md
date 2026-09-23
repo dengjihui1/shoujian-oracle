@@ -69,12 +69,12 @@ Gemini 未配置 → 有限追问：意思 / 动爻 / 算法 / 边界
 | 云端供应商池 | `server/cloud-client.mjs` | 同一聊天请求、供应商列表 | 自动回退、熔断后的统一文本流 | 异步状态可注入时间测试 |
 | TTS 缓存 | `server/speech-cache.mjs` | 句子、音色 | 合并后的 PCM 与缓存指标 | 异步状态可注入时间测试 |
 | 本机会话记忆与迁移 | `src/conversation-memory.js` | 已完成对话、阶段、原问、六爻、导入 JSON | 最近 24 条、可恢复快照与版本化导出 | 核心序列化纯函数；存储仅当前浏览器 |
-| 滑动窗口限流 | `server/rate-limiter.mjs` | IP、服务端时间 | 是否允许本轮 API 请求 | 是，内部状态可注入时间测试 |
+| 滑动窗口限流 | `server/rate-limiter.mjs`、`server/redis-rate-limiter.mjs` | 来源键、服务端时间、可选 Redis | 本机或跨实例原子允许结果 | 内存实现可注入时间；Redis I/O 用假客户端与真实容器验证 |
 | 冻结知识检索器 | `server/knowledge-retriever.mjs` | 自由问题、当前卦象 | 最多 8 条白名单证据 | 检索为确定性；固定质量 / 延迟评测 |
 | 知识路由与修复 | `server/knowledge-routing.mjs` | 问题、目的、匹配分数与命中原因 | `fast / grounded`、证据过滤、一次修复约束 | 是 |
 | 经传知识包 | `knowledge/shoujian-rag.v1.json` | 64 卦、384 爻、8 个取象 | 456 条可引用片段 | 只读数据 |
 | 浏览器端到端回归 | `e2e/oracle-flow.spec.js`、`playwright.config.js` | 模拟 API、3 个浏览器引擎与 2 个移动视口 | 6 条关键用户流程、降级与隐私断言 | 是，不调用外部云服务 |
-| 生产部署边界 | `Dockerfile`、`deploy/` | 域名、服务端环境变量 | 非 root Node、Caddy HTTPS 与健康探针 | 配置已验证，真实域名待部署 |
+| 生产部署边界 | `Dockerfile`、`deploy/` | 域名、服务端环境变量 | 非 root Node、私网 Redis 共享限流、Caddy HTTPS 与健康探针 | 配置已验证，真实域名待部署 |
 
 ## 三、会话状态机
 

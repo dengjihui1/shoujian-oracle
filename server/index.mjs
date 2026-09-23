@@ -14,6 +14,7 @@ import { loadKnowledgeBase } from "./knowledge-retriever.mjs";
 import { citationRepairInstruction, groundedUnavailableReply } from "./knowledge-routing.mjs";
 import { withDivinationDisclaimer } from "../src/response-policy.js";
 import { SlidingWindowRateLimiter } from "./rate-limiter.mjs";
+import { rateLimiterFromEnv } from "./redis-rate-limiter.mjs";
 import { prepareChat } from "./chat-preparation.mjs";
 import { enabledByEnvironment, resolveClientAddress } from "./request-context.mjs";
 import { clientFingerprint, createJsonLogger, requestId } from "./observability.mjs";
@@ -62,7 +63,7 @@ export function createApp({
         });
       }
       if (url.pathname.startsWith("/api/")) {
-        if (!rateLimiter.allow(clientAddress, now())) return json(response, 429, { error: "rate_limited", message: "请求太频繁，请稍后再试。" });
+        if (!await rateLimiter.allow(clientAddress, now())) return json(response, 429, { error: "rate_limited", message: "请求太频繁，请稍后再试。" });
         if (request.method === "GET" && url.pathname === "/api/status") {
           return json(response, 200, {
             cloud: apiEnabled,
@@ -489,13 +490,17 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const host = process.env.HOST ?? "127.0.0.1";
   const client = clientFromEnv();
   const logger = enabledByEnvironment(process.env.STRUCTURED_LOGS) ? createJsonLogger() : null;
+  const limiter = await rateLimiterFromEnv(process.env, {
+    onRedisError: () => safeLog(logger, "rate_limiter_error", { mode: "redis" }),
+  });
   createHttpServer(createApp({
     client,
+    rateLimiter: limiter.rateLimiter,
     trustProxy: enabledByEnvironment(process.env.TRUST_PROXY),
     logger,
     logHashSalt: process.env.LOG_HASH_SALT ?? "",
   })).listen(port, host, () => {
-    if (logger) safeLog(logger, "server_started", { host, port, cloud: Boolean(client) });
+    if (logger) safeLog(logger, "server_started", { host, port, cloud: Boolean(client), rateLimiter: limiter.mode });
     else console.log(`Shoujian Oracle: http://${host}:${port} (${client ? "Gemini cloud enabled" : "local fallback"})`);
   });
 }

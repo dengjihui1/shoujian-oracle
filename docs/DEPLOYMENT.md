@@ -1,6 +1,6 @@
 # 生产部署指南
 
-这份指南把守简放在单实例 Node 容器后，由 Caddy 自动申请和续期 HTTPS 证书。仓库提供的是可复现配置，不代表你的域名、云主机、Gemini 或 Google Cloud 已经审核或上线。
+这份指南把守简放在 Node 容器与私网 Redis 共享限流之后，由 Caddy 自动申请和续期 HTTPS 证书。仓库提供的是可复现配置，不代表你的域名、云主机、Gemini 或 Google Cloud 已经审核或上线。
 
 ## 一、准备条件
 
@@ -27,11 +27,15 @@ cp deploy/compose.env.example deploy/compose.env
 - 保留 `HOST=0.0.0.0`，只让容器网络访问 8000 端口；
 - 保留 `TRUST_PROXY=true`，因为公开流量只经过同一 Compose 内的 Caddy；
 - 保留 `STRUCTURED_LOGS=true`；
-- 用随机值替换 `LOG_HASH_SALT`。可执行：
+- 分别用两个不同随机值替换 `LOG_HASH_SALT` 和 `RATE_LIMIT_HASH_SALT`。前者用于日志短指纹，后者用于 Redis 限流键；不要复用：
 
 ```bash
 node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
+node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
 ```
+
+- 保留 `REDIS_URL=redis://redis:6379`。Redis 只在 Compose 私网中开放，不映射宿主机端口；
+- 按需要调整 `RATE_LIMIT_MAX` 和 `RATE_LIMIT_WINDOW_MS`，默认每个来源 60 秒 40 个 API 请求。
 
 编辑 `deploy/compose.env`，把 `DOMAIN` 改为正式域名。两个生产配置文件均被 Git 忽略，不要提交或发送给他人。
 
@@ -73,18 +77,21 @@ docker compose --env-file deploy/compose.env -f deploy/compose.yml logs -f --tai
 
 ## 六、限流与多实例
 
-默认 `SlidingWindowRateLimiter` 是单进程内存实现，当前 Compose 因此固定单个 `app` 实例。`createApp({ rateLimiter })` 已提供共享限流注入边界；自定义适配器只需实现：
+本地没有 `REDIS_URL` 时使用 `SlidingWindowRateLimiter`，进程重启会清空窗口，适合开发和个人运行。生产 Compose 默认启动不映射公网端口的 Redis，并由 `RedisSlidingWindowRateLimiter` 通过一段 Lua 脚本原子执行“清理旧请求、计数、写入、续期”；多个 Node 实例因此看到同一窗口。
+
+`createApp({ rateLimiter })` 同时保留可注入边界，自定义适配器可同步或异步返回：
 
 ```js
 const rateLimiter = {
-  asyncOrSyncSetup: "在进程外完成",
-  allow(clientKey, nowMs) {
-    return true; // 必须同步返回 boolean
+  async allow(clientKey, nowMs) {
+    return true;
   },
 };
 ```
 
-在增加多个应用副本、公开匿名访问或收费前，必须把它替换为 Redis / 托管网关中的原子滑动窗口，并加入按账户与按成本配额。不要直接横向扩容当前内存限流器，否则每个副本会各算一份额度。
+Redis 键不包含原始 IP，而是 `RATE_LIMIT_HASH_SALT` 生成的 HMAC 摘要；成员只含服务端时间和随机请求 ID。缺少盐值时 Redis 模式拒绝启动；Redis 运行中不可用时请求失败关闭，不会悄悄绕过限流。
+
+这仍是匿名来源级的短窗口，不是付费权益系统。公开收费前还要在独立账户 / 订单服务中增加账号级日配额、模型实际成本上限、退款与审计；不要把 IP 限流当作“三次评估”等购买权益。
 
 ## 七、升级、回滚与备份
 
@@ -104,5 +111,5 @@ curl -fsS https://你的域名/healthz
 - 用你的真实域名验证证书链、HTTP 自动跳转和 SSE 首字；
 - 在云主机出口验证 Gemini / 可选 TTS 的区域可用性、配额和账单告警；
 - 配置云防火墙，只开放 80 / 443 与必要管理入口；
-- 决定账号、共享限流、成本上限、滥用防护和隐私政策；
+- 决定账号、成本上限、账号级滥用防护和隐私政策；Redis 已提供跨实例匿名请求窗口，但不管理付费权益；
 - 若实行收费，支付回调必须使用另一套具备验签、幂等和订单审计的后端，不能复用本示例聊天接口。

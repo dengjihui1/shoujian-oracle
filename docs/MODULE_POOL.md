@@ -25,7 +25,7 @@ D01 问题边界 → D02 响应策略 → S11 对话请求准备 → S01 HTTP �
 D04 起卦纯计算 ──────────────────────────────├─ S06 OpenAI-compatible 适配器
                                              ├─ S02 提示词 / 时间 / 上下文
                                              ├─ S04 RAG 检索 → S10 知识路由 / 引用修复 → K01
-                                             ├─ S05 限流 ├─ S08 TTS 缓存
+                                             ├─ S05 内存 / Redis 共享限流 ├─ S08 TTS 缓存
                                              └─ S09 Google Cloud TTS
 K02 知识导入与来源登记 → K01
 Q01 行为测试 + Q02 项目体检 + Q03 RAG 评测 + Q04 浏览器 E2E 覆盖全部模块
@@ -60,7 +60,7 @@ Q01 行为测试 + Q02 项目体检 + Q03 RAG 评测 + Q04 浏览器 E2E 覆盖�
 | S02 | 人设、约束、时钟与上下文 | `server/prompt.mjs` | 稳定 | `test/prompt.test.js` |
 | S03 | Gemini 供应商适配 | `server/gemini-client.mjs` | 稳定 | `test/gemini-client.test.js` |
 | S04 | 可追溯知识检索 | `server/knowledge-retriever.mjs` | 稳定 | `test/knowledge-retriever.test.js` |
-| S05 | 滑动窗口限流 | `server/rate-limiter.mjs` | 稳定 | `test/rate-limiter.test.js` |
+| S05 | 内存 / Redis 滑动窗口限流 | `server/rate-limiter.mjs`、`server/redis-rate-limiter.mjs` | 稳定 | `test/rate-limiter.test.js`、`test/redis-rate-limiter.test.js`、CI Redis 冒烟 |
 | S06 | OpenAI-compatible 适配 | `server/openai-compatible-client.mjs` | 稳定 | `test/openai-compatible-client.test.js` |
 | S07 | 跨供应商路由与熔断 | `server/cloud-client.mjs` | 稳定 | `test/cloud-client.test.js` |
 | S08 | TTS 合并与有界缓存 | `server/speech-cache.mjs` | 稳定 | `test/speech-cache.test.js` |
@@ -386,16 +386,16 @@ Q01 行为测试 + Q02 项目体检 + Q03 RAG 评测 + Q04 浏览器 E2E 覆盖�
 - 失败与降级：日志写出失败不会中断用户请求；未配置盐值时客户端字段为 `null`。
 - 测试：`test/observability.test.js` 与健康检查服务器契约。
 
-### S05 滑动窗口限流
+### S05 内存 / Redis 滑动窗口限流
 
-- 文件：`server/rate-limiter.mjs`
-- 单一职责：按来源地址限制短时 API 请求并清理陈旧键。
-- 输入 / 输出：键和可注入时间 → 是否允许请求。
-- 依赖：无外部存储。
-- 正常路径：单进程本地服务中防止误操作和简单滥用。
-- 失败与降级：进程重启后窗口清空；它不是多实例生产级配额系统。
-- 测试：`test/rate-limiter.test.js`。
-- 练习：部署多实例前替换成共享限流，而不是继续扩充内存 Map。
+- 文件：`server/rate-limiter.mjs`、`server/redis-rate-limiter.mjs`。
+- 单一职责：按来源地址限制短时 API 请求；本地用内存窗口，生产可用 Redis Lua 原子共享窗口。
+- 输入 / 输出：来源键和可注入时间 → 同步或异步的允许结果。
+- 隐私：Redis 键只保存独立盐值生成的 HMAC 摘要，不保存原始 IP；成员只含时间与随机请求 ID。
+- 正常路径：未配置 `REDIS_URL` 时保持零配置本地运行；生产 Compose 默认启用私网 Redis，多个应用实例共享同一窗口。
+- 失败与降级：Redis 模式缺少私有盐时拒绝启动；运行中 Redis 命令失败时请求返回稳定服务错误，不会静默放开限流。
+- 测试：内存与 Redis 单元测试、异步服务契约、CI 中真实 Redis 容器冒烟。
+- 练习：在有账号的商业系统中，再叠加账号级日配额和供应商实际成本预算；不要把 IP 窗口当付费权益系统。
 
 ### S06 OpenAI-compatible 适配
 
@@ -517,8 +517,8 @@ Q01 行为测试 + Q02 项目体检 + Q03 RAG 评测 + Q04 浏览器 E2E 覆盖�
 | P1 | 真实设备语音性能预算 | 首字、首句开声、转写完成 P50 / P95 有记录 | 汇总与隐私导出已完成（0.22.0）；真实设备样本待用户授权 |
 | P1 | `prepareChat` 纯模块化 | 请求策略、检索和提示词准备可不启动服务器单测 | 已完成（0.19.0，4 个直接测试） |
 | P2 | 本地记忆导出 / 导入 | 用户可审阅、清除和迁移，默认仍不上云 | 已完成（0.20.0，JSON v1 + E2E） |
-| P2 | 生产部署适配 | HTTPS、反向代理、共享限流、日志脱敏和健康检查有独立指南 | 已完成代码与配置（0.21.0）；真实域名、凭证和多实例共享存储待外部部署 |
+| P2 | 生产部署适配 | HTTPS、反向代理、共享限流、日志脱敏和健康检查有独立指南 | 代码与配置已完成；0.25.0 增加 Redis 原子共享限流，真实域名和凭证待外部部署 |
 
 “待补”不等于当前功能不可用；它表示要从本地教学组件升级为面向公众的长期服务时，还需要完成的工程层。
 
-当前自动化、真实云端链路和浏览器人工验收结果见 [0.24.0 质量基线](QUALITY_BASELINE.md)。
+当前自动化、真实云端链路和浏览器人工验收结果见 [0.25.0 质量基线](QUALITY_BASELINE.md)。

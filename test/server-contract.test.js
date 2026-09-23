@@ -54,6 +54,16 @@ test("health check bypasses API limits and exposes no provider credentials", asy
   });
 });
 
+test("API routes await an asynchronous shared rate limiter", async () => {
+  const keys = [];
+  const rateLimiter = { async allow(key) { keys.push(key); return false; } };
+  await withServer(createApp({ rateLimiter }), async (base) => {
+    const response = await fetch(`${base}/api/status`);
+    assert.equal(response.status, 429);
+    assert.deepEqual(keys, ["127.0.0.1"]);
+  });
+});
+
 test("environment adapter recognizes named and generic compatible providers only when complete", () => {
   const providers = compatibleProvidersFromEnv({
     GROQ_API_KEY: "groq-secret",

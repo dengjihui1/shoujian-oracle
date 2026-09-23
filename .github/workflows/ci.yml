@@ -29,6 +29,20 @@ jobs:
         env:
           APP_ENV_FILE: ../.env.production.example
         run: docker compose --env-file deploy/compose.env.example -f deploy/compose.yml config --quiet
+      - name: Smoke-test Redis shared limiter
+        shell: bash
+        run: |
+          redis_id=$(docker run --detach --publish 127.0.0.1:16379:6379 redis:7-alpine redis-server --save "" --appendonly no)
+          trap 'docker rm --force "$redis_id" >/dev/null 2>&1 || true' EXIT
+          for attempt in {1..20}; do
+            if docker exec "$redis_id" redis-cli ping | grep --quiet PONG; then
+              REDIS_URL=redis://127.0.0.1:16379 RATE_LIMIT_HASH_SALT=ci-only-hash-salt RATE_LIMIT_PREFIX=shoujian:ci RATE_LIMIT_MAX=2 node scripts/smoke-redis-rate-limiter.mjs
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs "$redis_id"
+          exit 1
       - name: Build and smoke-test production container
         shell: bash
         run: |
