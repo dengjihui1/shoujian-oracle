@@ -73,7 +73,7 @@ Gemini 未配置 → 有限追问：意思 / 动爻 / 算法 / 边界
 | 冻结知识检索器 | `server/knowledge-retriever.mjs` | 自由问题、当前卦象 | 最多 8 条白名单证据 | 检索为确定性；固定质量 / 延迟评测 |
 | 知识路由与修复 | `server/knowledge-routing.mjs` | 问题、目的、匹配分数与命中原因 | `fast / grounded`、证据过滤、一次修复约束 | 是 |
 | 经传知识包 | `knowledge/shoujian-rag.v1.json` | 64 卦、384 爻、8 个取象 | 456 条可引用片段 | 只读数据 |
-| 浏览器端到端回归 | `e2e/oracle-flow.spec.js`、`playwright.config.js` | 模拟 API、真实 Chromium 交互 | 四条关键用户流程与降级断言 | 是，不调用外部云服务 |
+| 浏览器端到端回归 | `e2e/oracle-flow.spec.js`、`playwright.config.js` | 模拟 API、3 个浏览器引擎与 2 个移动视口 | 6 条关键用户流程、降级与隐私断言 | 是，不调用外部云服务 |
 | 生产部署边界 | `Dockerfile`、`deploy/` | 域名、服务端环境变量 | 非 root Node、Caddy HTTPS 与健康探针 | 配置已验证，真实域名待部署 |
 
 ## 三、会话状态机

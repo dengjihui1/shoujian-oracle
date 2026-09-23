@@ -15,7 +15,11 @@ export default defineConfig({
     reducedMotion: "reduce",
   },
   projects: [
-    { name: "chromium", use: { ...devices["Desktop Chrome"] } },
+    { name: "desktop-chromium", use: { ...devices["Desktop Chrome"] } },
+    { name: "desktop-firefox", use: { ...devices["Desktop Firefox"] } },
+    { name: "desktop-webkit", use: { ...devices["Desktop Safari"] } },
+    { name: "mobile-chromium", use: { ...devices["Pixel 7"] } },
+    { name: "mobile-webkit", use: { ...devices["iPhone 14"] } },
   ],
   webServer: {
     command: "node server/index.mjs",

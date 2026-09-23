@@ -13,7 +13,13 @@ test.beforeEach(async ({ context, page }) => {
     class FakeUtterance {
       constructor(text) { this.text = text; }
     }
+    class FakeRecognition {
+      start() {}
+      stop() { this.onend?.(); }
+      abort() { this.onerror?.({ error: "aborted" }); }
+    }
     Object.defineProperty(globalThis, "SpeechSynthesisUtterance", { configurable: true, value: FakeUtterance });
+    Object.defineProperty(globalThis, "SpeechRecognition", { configurable: true, value: FakeRecognition });
     Object.defineProperty(globalThis, "speechSynthesis", {
       configurable: true,
       value: { speak() {}, cancel() {}, getVoices() { return []; } },
@@ -128,10 +134,13 @@ test("本机会话可导出、清除并从文件恢复", async ({ page }) => {
 
 test("语音验收报告只导出延迟，不包含转写内容", async ({ page }) => {
   await page.goto("/");
-  await page.locator("shoujian-oracle").evaluate((host) => {
+  await expect(page.getByText("墨衡云端 · 周易 RAG 已连接")).toBeVisible();
+  const injected = await page.locator("shoujian-oracle").evaluate((host) => {
     host.voicePerformance.record({ listeningAt: 10, submittedAt: 20, asrFinalMs: 80, firstTokenMs: 620, firstAudioMs: 980, turnComplete: true, transcript: "不应导出" });
     host.render();
+    return host.voicePerformance.summary;
   });
+  expect(injected.turns).toBe(1);
   await expect(page.getByText("本机验收 · 1 轮")).toBeVisible();
 
   const downloadPromise = page.waitForEvent("download");
