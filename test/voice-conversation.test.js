@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { VoiceConversationController } from "../src/voice-conversation.js";
+import { BrowserSpeechRecognizer } from "../src/audio-recorder.js";
 
 class FakeRecognizer {
   supported = true;
@@ -68,6 +69,33 @@ test("interim speech waits for the longer silence window", async () => {
   void session.start({ autoSubmit: true });
   recognizer.hear("我还在说", { final: "", interim: "我还在说" });
   assert.equal(timers[0].delay, 1_100);
+  session.stop();
+});
+
+test("identical browser speech snapshots do not postpone automatic submission", async () => {
+  class FakeRecognition {
+    constructor() { FakeRecognition.instance = this; }
+    start() {}
+    stop() { this.onend(); }
+    abort() { this.onend(); }
+  }
+  const timers = [];
+  const submitted = [];
+  const session = new VoiceConversationController({
+    recognizer: new BrowserSpeechRecognizer({ RecognitionClass: FakeRecognition }),
+    submit: async (text) => { submitted.push(text); },
+    setTimeoutFn: (callback, delay) => { timers.push({ callback, delay }); return timers.length; },
+    clearTimeoutFn() {},
+  });
+  session.start({ autoSubmit: true });
+  const result = Object.assign([{ transcript: "今天问天气" }], { isFinal: true });
+  FakeRecognition.instance.onresult({ resultIndex: 0, results: [result] });
+  FakeRecognition.instance.onresult({ resultIndex: 0, results: [result] });
+  FakeRecognition.instance.onresult({ resultIndex: 0, results: [result] });
+  assert.equal(timers.length, 1);
+  timers[0].callback();
+  await tick();
+  assert.deepEqual(submitted, ["今天问天气"]);
   session.stop();
 });
 

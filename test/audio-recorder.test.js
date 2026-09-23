@@ -47,7 +47,6 @@ test("browser speech recognition rebuilds cumulative results without repeating f
   assert.deepEqual(updates, [
     { text: "今天 天气", final: "今天", interim: "天气" },
     { text: "今天 天气不错", final: "今天 天气不错", interim: "" },
-    { text: "今天 天气不错", final: "今天 天气不错", interim: "" },
   ]);
 });
 

@@ -108,8 +108,10 @@ export class BrowserSpeechRecognizer {
           if (event.results[index].isFinal) final = `${final} ${text}`.trim();
           else interim = `${interim} ${text}`.trim();
         }
+        const latest = `${final} ${interim}`.trim();
+        if (final === this.finalText && latest === this.latestText) return;
         this.finalText = final;
-        this.latestText = `${this.finalText} ${interim}`.trim();
+        this.latestText = latest;
         onText?.(this.latestText, { final: this.finalText, interim });
       };
       recognition.onerror = (event) => {
