@@ -9,8 +9,12 @@ export class AudioRecorder {
 
   async start() {
     if (!this.supported) throw new Error("当前浏览器不支持麦克风录音");
-    this.stream = await this.mediaDevices.getUserMedia({ audio: true });
+    if (this.starting || (this.recorder && this.recorder.state !== "inactive")) {
+      throw new Error("录音正在进行，请先结束本次录音");
+    }
+    this.starting = true;
     try {
+      this.stream = await this.mediaDevices.getUserMedia({ audio: true });
       const preferred = ["audio/webm;codecs=opus", "audio/mp4", "audio/webm"].find((type) => this.MediaRecorderClass.isTypeSupported?.(type));
       this.chunks = [];
       this.recorder = preferred ? new this.MediaRecorderClass(this.stream, { mimeType: preferred }) : new this.MediaRecorderClass(this.stream);
@@ -34,6 +38,8 @@ export class AudioRecorder {
     } catch (error) {
       this.#releaseStream();
       throw error;
+    } finally {
+      this.starting = false;
     }
   }
 
@@ -84,13 +90,16 @@ export class BrowserSpeechRecognizer {
       };
       this.finishCurrent = finish;
       recognition.onresult = (event) => {
+        if (settled) return;
+        let final = "";
         let interim = "";
-        for (let index = event.resultIndex ?? 0; index < event.results.length; index += 1) {
+        for (let index = 0; index < event.results.length; index += 1) {
           const text = String(event.results[index]?.[0]?.transcript ?? "").trim();
           if (!text) continue;
-          if (event.results[index].isFinal) this.finalText = `${this.finalText} ${text}`.trim();
+          if (event.results[index].isFinal) final = `${final} ${text}`.trim();
           else interim = `${interim} ${text}`.trim();
         }
+        this.finalText = final;
         this.latestText = `${this.finalText} ${interim}`.trim();
         onText?.(this.latestText, { final: this.finalText, interim });
       };

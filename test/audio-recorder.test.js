@@ -28,6 +28,29 @@ test("browser speech recognition exposes interim text and resolves final text", 
   assert.equal(recognizer.active, false);
 });
 
+test("browser speech recognition rebuilds cumulative results without repeating final segments", async () => {
+  class FakeRecognition {
+    constructor() { FakeRecognition.instance = this; }
+    start() {}
+    stop() { this.onend(); }
+  }
+  const segment = (transcript, isFinal) => Object.assign([{ transcript }], { isFinal });
+  const updates = [];
+  const recognizer = new BrowserSpeechRecognizer({ RecognitionClass: FakeRecognition });
+  const result = recognizer.start({ onText: (text, detail) => updates.push({ text, ...detail }) });
+  FakeRecognition.instance.onresult({ resultIndex: 0, results: [segment("今天", true), segment("天气", false)] });
+  FakeRecognition.instance.onresult({ resultIndex: 1, results: [segment("今天", true), segment("天气不错", true)] });
+  FakeRecognition.instance.onresult({ resultIndex: 0, results: [segment("今天", true), segment("天气不错", true)] });
+  recognizer.stop();
+
+  assert.equal(await result, "今天 天气不错");
+  assert.deepEqual(updates, [
+    { text: "今天 天气", final: "今天", interim: "天气" },
+    { text: "今天 天气不错", final: "今天 天气不错", interim: "" },
+    { text: "今天 天气不错", final: "今天 天气不错", interim: "" },
+  ]);
+});
+
 test("browser speech recognition converts provider errors into stable Chinese messages", async () => {
   class FakeRecognition {
     constructor() { FakeRecognition.instance = this; }
@@ -85,4 +108,27 @@ test("recorder construction failures also release the microphone track", async (
   });
   await assert.rejects(() => recorder.start(), /unsupported recorder/u);
   assert.equal(stopped, 1);
+});
+
+test("a second recorder start cannot acquire another microphone while permission is pending", async () => {
+  let allowMicrophone;
+  let acquisitions = 0;
+  class FakeRecorder {
+    static isTypeSupported() { return false; }
+    constructor() { this.state = "inactive"; this.listeners = {}; this.mimeType = "audio/webm"; }
+    addEventListener(name, handler) { this.listeners[name] = handler; }
+    start() { this.state = "recording"; }
+    stop() { this.state = "inactive"; this.listeners.stop?.(); }
+  }
+  const recorder = new AudioRecorder({
+    mediaDevices: { getUserMedia: () => { acquisitions += 1; return new Promise((resolve) => { allowMicrophone = resolve; }); } },
+    MediaRecorderClass: FakeRecorder,
+  });
+  const first = recorder.start();
+  await assert.rejects(() => recorder.start(), /正在|已经/u);
+  assert.equal(acquisitions, 1);
+  allowMicrophone({ getTracks: () => [{ stop() {} }] });
+  await first;
+  await assert.rejects(() => recorder.start(), /正在|已经/u);
+  await assert.rejects(recorder.stop(), /没有录到声音/u);
 });

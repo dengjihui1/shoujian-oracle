@@ -31,6 +31,8 @@ export class ShoujianOracle extends HTMLElement {
     this.cloud = false;
     this.knowledge = null;
     this.recording = false;
+    this.recordingStarting = false;
+    this.recordingEpoch = 0;
     this.transcribing = false;
     this.busy = false;
     this.voiceReplies = false;
@@ -77,6 +79,7 @@ export class ShoujianOracle extends HTMLElement {
   }
 
   disconnectedCallback() {
+    this.recordingEpoch += 1;
     this.shadowRoot.removeEventListener("click", this.handleClick);
     this.shadowRoot.removeEventListener("submit", this.handleSubmit);
     this.shadowRoot.removeEventListener("input", this.handleInput);
@@ -531,7 +534,9 @@ export class ShoujianOracle extends HTMLElement {
   }
 
   async startRecording() {
-    if (!this.cloud || this.stage === "ready" || this.recording || this.busy || this.transcribing) return;
+    if (!this.cloud || this.stage === "ready" || this.recording || this.recordingStarting || this.busy || this.transcribing) return;
+    this.recordingStarting = true;
+    const epoch = this.recordingEpoch;
     if (this.voiceConversationSnapshot.active) this.stopVoiceConversation();
     try {
       if (this.liveTranscriber.supported) {
@@ -549,6 +554,10 @@ export class ShoujianOracle extends HTMLElement {
       } else {
         this.recordingMode = "recorded";
         await this.recorder.start();
+        if (epoch !== this.recordingEpoch) {
+          this.recorder.stop()?.catch(() => {});
+          return;
+        }
       }
       this.recording = true;
       this.recordingTimer = setTimeout(() => this.stopRecording(), 45_000);
@@ -557,6 +566,8 @@ export class ShoujianOracle extends HTMLElement {
       this.appendMessage({ role: "master", text: error.message });
       this.persistMemory();
       this.render();
+    } finally {
+      this.recordingStarting = false;
     }
   }
 

@@ -181,6 +181,46 @@ test("连续语音遇到安静结束后会重新倾听并完成下一轮", async
   await expect(page.locator('[data-action="voice-conversation"]')).toContainText("结束");
 });
 
+test("连续语音重报累计识别结果时只送问一次且不重复文字", async ({ page }) => {
+  await mockChatStream(page, () => "听到了。" );
+  await page.goto("/");
+  await page.evaluate(() => {
+    speechSynthesis.speak = (utterance) => { utterance.onstart?.(); utterance.onend?.(); };
+  });
+  await page.locator('[data-action="voice-conversation"]').click();
+  await page.evaluate(() => {
+    const segment = (transcript, isFinal) => Object.assign([{ transcript }], { isFinal });
+    const recognition = globalThis.__shoujianRecognition;
+    recognition.onresult({ resultIndex: 0, results: [segment("我想", true), segment("问天气", false)] });
+    recognition.onresult({ resultIndex: 1, results: [segment("我想", true), segment("问天气", true)] });
+    recognition.onresult({ resultIndex: 0, results: [segment("我想", true), segment("问天气", true)] });
+  });
+  await expect(page.locator(".message.user p", { hasText: "我想 问天气" })).toHaveText("我想 问天气");
+  await expect(page.locator(".message.user")).toHaveCount(1);
+  await expect(page.locator(".message.master p", { hasText: "听到了。" })).toBeVisible();
+});
+
+test("录音授权未返回时重复启动只发起一次，离开页面后释放录音", async ({ page }) => {
+  await page.goto("/");
+  const state = await page.locator("shoujian-oracle").evaluate(async (host) => {
+    let grant;
+    let starts = 0;
+    let stops = 0;
+    host.liveTranscriber = { supported: false, abort() {} };
+    host.recorder = {
+      start() { starts += 1; return new Promise((resolve) => { grant = resolve; }); },
+      stop() { stops += 1; return Promise.resolve(); },
+    };
+    const first = host.startRecording();
+    await host.startRecording();
+    host.remove();
+    grant();
+    await first;
+    return { starts, stops, recording: host.recording, starting: host.recordingStarting };
+  });
+  expect(state).toEqual({ starts: 1, stops: 1, recording: false, starting: false });
+});
+
 function composer(page) {
   return page.locator("textarea#say");
 }
