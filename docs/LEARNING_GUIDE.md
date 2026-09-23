@@ -52,9 +52,10 @@
 
 ### 5. 再看云端适配器
 
-按顺序看 `src/api-client.js`、`server/index.mjs`、`server/cloud-client.mjs`、三个供应商适配器和 `server/prompt.mjs`：
+按顺序看 `src/api-client.js`、`server/index.mjs`、`server/chat-preparation.mjs`、`server/cloud-client.mjs`、三个供应商适配器和 `server/prompt.mjs`：
 
 - 浏览器永远不接触 Gemini 密钥；
+- `chat-preparation.mjs` 先把请求清洗、危机直接响应、RAG 路由、可信时钟和提示词组合成只读结果；测试它不需要启动端口；
 - 服务端先做长度、类型和问题边界校验；
 - 每轮由服务端注入可信的 `Asia/Shanghai` 当前时间，模型不得自行猜日期；
 - 自由回答使用 Gemini `streamGenerateContent` SSE，浏览器解析 `meta / delta / replace / done / error` 事件；若上游在已有分片后中断，服务端会重新生成完整答案并通过 `replace` 原位恢复；

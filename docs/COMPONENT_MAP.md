@@ -59,6 +59,7 @@ Gemini 未配置 → 有限追问：意思 / 动爻 / 算法 / 边界
 | 对话视口 | `src/conversation-scroll.js` | 滚动尺寸、旧位置、内容变化 | 跟随、上翻保持、未读提示 | 是，有内部状态 |
 | 键盘提交 | `src/composer-keys.js` | Enter、Shift、IME 状态与表单 | 普通聊天提交或保留换行 | 是 |
 | 本机 API 服务 | `server/index.mjs` | `/api/*` 请求 | 脱敏后的稳定响应 | 否，网络 I/O |
+| 对话请求准备 | `server/chat-preparation.mjs` | 请求体、冻结知识检索端口、可信时钟 | 直接响应或只读模型请求 | 是，依赖显式注入 |
 | Gemini 适配器 | `server/gemini-client.mjs` | 只读卦象、文本、音频 | SSE 分片、转写、PCM | 否，可注入假 `fetch` 测试 |
 | Google Cloud TTS 适配器 | `server/google-cloud-tts-client.mjs` | 完整短句、Cloud 服务端凭证 | 24 kHz LINEAR16 PCM | 否，可注入假官方客户端测试 |
 | 兼容供应商适配器 | `server/openai-compatible-client.mjs` | 系统约束与文本 | OpenAI-compatible JSON / SSE | 否，可注入假 `fetch` 测试 |

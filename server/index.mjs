@@ -9,12 +9,12 @@ import { OpenAiCompatibleClient } from "./openai-compatible-client.mjs";
 import { OracleCloudClient } from "./cloud-client.mjs";
 import { googleCloudTtsFromEnv } from "./google-cloud-tts-client.mjs";
 import { CachedSpeechService } from "./speech-cache.mjs";
-import { buildChatInput, buildSystemInstruction, formatShanghaiDateTime } from "./prompt.mjs";
+import { formatShanghaiDateTime } from "./prompt.mjs";
 import { loadKnowledgeBase } from "./knowledge-retriever.mjs";
-import { citationRepairInstruction, decideKnowledgeRoute, groundedUnavailableReply } from "./knowledge-routing.mjs";
-import { assessQuestion } from "../src/question-boundary.js";
-import { inferConversationPurpose, resolveResponsePolicy, withDivinationDisclaimer } from "../src/response-policy.js";
+import { citationRepairInstruction, groundedUnavailableReply } from "./knowledge-routing.mjs";
+import { withDivinationDisclaimer } from "../src/response-policy.js";
 import { SlidingWindowRateLimiter } from "./rate-limiter.mjs";
+import { prepareChat } from "./chat-preparation.mjs";
 
 const projectRoot = fileURLToPath(new URL("../", import.meta.url));
 const AUDIO_TYPES = new Set(["audio/webm", "audio/ogg", "audio/mp4", "audio/mpeg", "audio/wav", "audio/x-wav"]);
@@ -206,49 +206,6 @@ function canRecoverInterruptedStream(error, client, signal) {
     && ["quota_exceeded", "upstream_error", "network_error", "timeout", "empty_text"].includes(error?.code);
 }
 
-function prepareChat(body, knowledgeBase, now) {
-  const message = cleanText(body.message, 2_000, "对话内容");
-  const stage = ["question", "ready", "reading"].includes(body.stage) ? body.stage : "question";
-  const assessment = assessQuestion(message);
-  const requestedPurpose = body.purpose === "chat" || body.purpose === "divination"
-    ? body.purpose
-    : inferConversationPurpose(message, stage);
-  const policy = resolveResponsePolicy({ message, purpose: requestedPurpose, stage, assessment });
-  if (policy.action === "respond") {
-    return {
-      response: policy.response,
-      evidence: [],
-      purpose: policy.purpose,
-      serverTime: formatShanghaiDateTime(now()),
-    };
-  }
-  const question = typeof body.question === "string" ? body.question.slice(0, 500) : "";
-  const reading = sanitizeReading(body.reading);
-  const history = Array.isArray(body.history) ? body.history.slice(-16).map((item) => ({
-    role: item?.role === "user" ? "user" : "master",
-    text: String(item?.text ?? "").slice(0, 1_000)
-  })) : [];
-  const useReadingEvidence = policy.purpose === "divination";
-  const candidates = knowledgeBase.retrieve({
-    query: [message, useReadingEvidence ? question : ""].filter(Boolean).join("\n"),
-    reading: useReadingEvidence ? reading : null,
-    limit: 8,
-  });
-  const knowledgeRoute = decideKnowledgeRoute({ message, purpose: policy.purpose, evidence: candidates });
-  const evidence = knowledgeRoute.evidence;
-  const serverTime = formatShanghaiDateTime(now());
-  const route = knowledgeRoute.groundingRequested ? "grounded" : "fast";
-  return {
-    evidence,
-    purpose: policy.purpose,
-    serverTime,
-    route,
-    knowledgeReason: knowledgeRoute.reason,
-    input: buildChatInput(message, history),
-    systemInstruction: buildSystemInstruction({ stage, question, reading, evidence, currentDateTime: serverTime }),
-  };
-}
-
 function groundedAnswer(result, prepared) {
   try {
     validateCitations(result?.text, prepared.evidence);
@@ -324,22 +281,6 @@ async function handleSpeech(response, speechService, body) {
     sampleRate: result.sampleRate,
     runtime: { cache: result.cache, synthesisMs: result.synthesisMs },
   });
-}
-
-function sanitizeReading(value) {
-  if (!value || typeof value !== "object") return null;
-  const primary = value.primary;
-  if (!primary || !Number.isInteger(primary.number) || primary.number < 1 || primary.number > 64) return null;
-  return {
-    primary: {
-      number: primary.number,
-      fullName: String(primary.fullName ?? "").slice(0, 24),
-      lower: { name: String(primary.lower?.name ?? "").slice(0, 4), image: String(primary.lower?.image ?? "").slice(0, 4) },
-      upper: { name: String(primary.upper?.name ?? "").slice(0, 4), image: String(primary.upper?.image ?? "").slice(0, 4) }
-    },
-    movingLines: Array.isArray(value.movingLines) ? value.movingLines.filter((line) => Number.isInteger(line) && line >= 1 && line <= 6).slice(0, 6) : [],
-    changed: value.changed ? { fullName: String(value.changed.fullName ?? "").slice(0, 24) } : null
-  };
 }
 
 function cleanText(value, maxLength, label) {

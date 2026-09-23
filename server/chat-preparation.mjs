@@ -1,0 +1,87 @@
+import { buildChatInput, buildSystemInstruction, formatShanghaiDateTime } from "./prompt.mjs";
+import { decideKnowledgeRoute } from "./knowledge-routing.mjs";
+import { assessQuestion } from "../src/question-boundary.js";
+import { inferConversationPurpose, resolveResponsePolicy } from "../src/response-policy.js";
+
+const CHAT_STAGES = new Set(["question", "ready", "reading"]);
+const CHAT_PURPOSES = new Set(["chat", "divination"]);
+
+export function prepareChat(body, knowledgeBase, now = Date.now) {
+  const message = cleanRequiredText(body?.message, 2_000, "对话内容");
+  if (typeof knowledgeBase?.retrieve !== "function") throw new TypeError("knowledgeBase.retrieve is required");
+  if (typeof now !== "function") throw new TypeError("now must be a function");
+
+  const stage = CHAT_STAGES.has(body?.stage) ? body.stage : "question";
+  const assessment = assessQuestion(message);
+  const requestedPurpose = CHAT_PURPOSES.has(body?.purpose)
+    ? body.purpose
+    : inferConversationPurpose(message, stage);
+  const policy = resolveResponsePolicy({ message, purpose: requestedPurpose, stage, assessment });
+  const serverTime = formatShanghaiDateTime(now());
+  if (policy.action === "respond") {
+    return Object.freeze({
+      response: policy.response,
+      evidence: Object.freeze([]),
+      purpose: policy.purpose,
+      serverTime,
+    });
+  }
+
+  const question = typeof body?.question === "string" ? body.question.slice(0, 500) : "";
+  const reading = sanitizeReading(body?.reading);
+  const history = sanitizeHistory(body?.history);
+  const useReadingEvidence = policy.purpose === "divination";
+  const candidates = knowledgeBase.retrieve({
+    query: [message, useReadingEvidence ? question : ""].filter(Boolean).join("\n"),
+    reading: useReadingEvidence ? reading : null,
+    limit: 8,
+  });
+  const knowledgeRoute = decideKnowledgeRoute({ message, purpose: policy.purpose, evidence: candidates });
+  const evidence = knowledgeRoute.evidence;
+  const route = knowledgeRoute.groundingRequested ? "grounded" : "fast";
+  return Object.freeze({
+    evidence,
+    purpose: policy.purpose,
+    serverTime,
+    route,
+    knowledgeReason: knowledgeRoute.reason,
+    input: buildChatInput(message, history),
+    systemInstruction: buildSystemInstruction({ stage, question, reading, evidence, currentDateTime: serverTime }),
+  });
+}
+
+function sanitizeHistory(value) {
+  return Array.isArray(value) ? value.slice(-16).map((item) => ({
+    role: item?.role === "user" ? "user" : "master",
+    text: String(item?.text ?? "").slice(0, 1_000),
+  })) : [];
+}
+
+function sanitizeReading(value) {
+  if (!value || typeof value !== "object") return null;
+  const primary = value.primary;
+  if (!primary || !Number.isInteger(primary.number) || primary.number < 1 || primary.number > 64) return null;
+  return {
+    primary: {
+      number: primary.number,
+      fullName: String(primary.fullName ?? "").slice(0, 24),
+      lower: { name: String(primary.lower?.name ?? "").slice(0, 4), image: String(primary.lower?.image ?? "").slice(0, 4) },
+      upper: { name: String(primary.upper?.name ?? "").slice(0, 4), image: String(primary.upper?.image ?? "").slice(0, 4) },
+    },
+    movingLines: Array.isArray(value.movingLines)
+      ? value.movingLines.filter((line) => Number.isInteger(line) && line >= 1 && line <= 6).slice(0, 6)
+      : [],
+    changed: value.changed ? { fullName: String(value.changed.fullName ?? "").slice(0, 24) } : null,
+  };
+}
+
+function cleanRequiredText(value, maxLength, label) {
+  if (typeof value !== "string" || !value.trim()) throw requestError(400, "invalid_text", `${label}不能为空。`);
+  const text = value.trim();
+  if (text.length > maxLength) throw requestError(413, "text_too_long", `${label}过长。`);
+  return text;
+}
+
+function requestError(status, code, message) {
+  return Object.assign(new Error(message), { status, code, expose: true });
+}
