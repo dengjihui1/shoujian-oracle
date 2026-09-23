@@ -225,3 +225,18 @@ test("voice conversation failure keeps text composer enabled and offers retry", 
   assert.match(html, /data-action="voice-conversation-retry"/u);
   assert.doesNotMatch(html, /<textarea[^>]*disabled/u);
 });
+
+test("voice performance summary exposes P50 P95 and privacy-safe export", () => {
+  const html = render({
+    voicePerformanceSummary: {
+      turns: 12,
+      asrFinalMs: { samples: 12, p50: 480, p95: 920 },
+      firstTokenMs: { samples: 12, p50: 760, p95: 1_450 },
+      firstAudioMs: { samples: 10, p50: 1_100, p95: 2_200 },
+    },
+  });
+  assert.match(html, /本机验收 · 12 轮/u);
+  assert.match(html, /P50 \/ P95/u);
+  assert.match(html, /data-action="export-voice-metrics"/u);
+  assert.match(html, /不保存录音或转写内容/u);
+});

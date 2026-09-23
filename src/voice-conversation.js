@@ -143,7 +143,7 @@ export class VoiceConversationController {
     this.transcript = text;
     this.state = "heard";
     this.metrics.finalAt = this.now();
-    this.metrics.asrFinalMs = elapsed(this.metrics.listeningAt, this.metrics.finalAt);
+    this.metrics.asrFinalMs = elapsed(this.metrics.speechEndedAt ?? this.metrics.listeningAt, this.metrics.finalAt);
     this.#emit();
     if (this.autoSubmit) await this.#submit(epoch, text);
   }
@@ -151,12 +151,14 @@ export class VoiceConversationController {
   #heard(text, detail, epoch) {
     if (!this.active || epoch !== this.epoch || this.state !== "listening") return;
     this.transcript = String(text ?? "").trim();
+    if (String(detail?.final ?? "").trim() && this.metrics.speechEndedAt === null) this.metrics.speechEndedAt = this.now();
     this.#emit();
     if (!this.autoSubmit || !this.transcript) return;
     this.#clearCommitTimer();
     const delay = String(detail?.final ?? "").trim() ? this.finalPauseMs : this.interimPauseMs;
     this.commitTimer = this.setTimeoutFn(() => {
       if (this.active && epoch === this.epoch && this.state === "listening") {
+        if (this.metrics.speechEndedAt === null) this.metrics.speechEndedAt = this.now();
         this.state = "heard";
         this.#emit();
         this.recognizer.stop();
@@ -207,6 +209,7 @@ export class VoiceConversationController {
 function emptyMetrics() {
   return {
     listeningAt: null,
+    speechEndedAt: null,
     finalAt: null,
     submittedAt: null,
     firstTokenAt: null,

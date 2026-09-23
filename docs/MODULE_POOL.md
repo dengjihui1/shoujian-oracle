@@ -13,6 +13,7 @@ index.html
       ├─ P12 对话视口跟随 ├─ P13 键盘提交契约
       ├─ P14 问卦情境访谈 / 摘要确认
       ├─ P15 语音对话状态机
+      ├─ P17 本机语音性能汇总
       ├─ P06 浏览器 API 客户端 ─────────────┐
       ├─ P07 录音 / 浏览器实时识别          │
       └─ P08 分句 → P09 TTS 队列 → P10 PCM 播放 / P11 浏览器语音 │
@@ -50,6 +51,7 @@ Q01 行为测试 + Q02 项目体检 + Q03 RAG 评测 + Q04 浏览器 E2E 覆盖�
 | P14 | 问卦情境访谈 | `src/divination-intake.js` | 稳定 | `test/divination-intake.test.js`、会话记忆与视图测试 |
 | P15 | 直接语音对话状态机 | `src/voice-conversation.js` | 代码稳定，待真实设备指标 | `test/voice-conversation.test.js`、人物与视图测试 |
 | P16 | 虚拟人动作编排 | `src/avatar-motion.js`、`src/oracle-view.js` | 稳定 | `test/avatar-motion.test.js`、视图与人物状态测试 |
+| P17 | 本机语音性能汇总 | `src/voice-performance.js` | 代码稳定，待真实设备数据 | `test/voice-performance.test.js`、视图测试 |
 | D01 | 起卦问题边界 | `src/question-boundary.js` | 稳定 | `test/question-boundary.test.js` |
 | D02 | 场景响应策略 | `src/response-policy.js` | 稳定 | `test/response-policy.test.js` |
 | D03 | 无云端降级对话 | `src/dialogue-engine.js` | 稳定 | `test/dialogue-engine.test.js` |
@@ -235,6 +237,16 @@ Q01 行为测试 + Q02 项目体检 + Q03 RAG 评测 + Q04 浏览器 E2E 覆盖�
 - 指标：每轮记录 ASR 定稿、提交后首字、提交后首声；仓库只提供单轮可视值，P50 / P95 需要真实设备样本。
 - 测试：`test/voice-conversation.test.js`、`test/oracle-view.test.js`、`test/avatar-state.test.js`。
 - 练习：把真实设备指标导出为本机 JSON，仍不上传服务器或保存原始音频。
+
+### P17 本机语音性能汇总
+
+- 文件：`src/voice-performance.js`、`docs/DEVICE_ACCEPTANCE.md`。
+- 单一职责：汇总最近 30 个完整语音轮次的 ASR 定稿、首字和首声毫秒数，计算各自 P50 / P95。
+- 输入 / 输出：状态机指标 → 页面汇总与 `shoujian.voice-performance` v1 JSON；没有转写文本、问题、回答或音频。
+- 正常路径：同一轮迟到的首声会补全原样本而不重复计数；不完整指标各自使用独立样本数。
+- 失败与降级：不足 10 轮时页面明确提示样本不足；刷新后清空，避免建立隐形长期遥测。
+- 测试：`test/voice-performance.test.js` 覆盖窗口、去重、百分位、隐私和清空；`test/oracle-view.test.js` 覆盖页面投影。
+- 成熟度边界：记录器已完成，真实麦克风、噪声、回声和设备性能仍必须由用户亲自授权并执行。
 
 ### P16 虚拟人动作编排
 
@@ -479,7 +491,7 @@ Q01 行为测试 + Q02 项目体检 + Q03 RAG 评测 + Q04 浏览器 E2E 覆盖�
 
 - 文件：`e2e/oracle-flow.spec.js`、`playwright.config.js`。
 - 单一职责：在真实 Chromium 页面中验证前端、Shadow DOM、网络契约和交互状态机的组合行为。
-- 输入 / 输出：拦截的稳定 `/api/status`、SSE 与 TTS 失败响应 → 连续三轮、停止后再问、访谈至起卦、语音故障降级的用户可见断言。
+- 输入 / 输出：拦截的稳定 `/api/status`、SSE 与 TTS 失败响应 → 连续三轮、停止后再问、访谈至起卦、语音故障降级、会话迁移与延迟报告的用户可见断言。
 - 正常路径：`npm run test:e2e` 启动独立 8018 端口；不读取密钥、不消耗模型或语音额度。CI 会安装固定 Playwright Chromium 后执行同一套流程。
 - 失败与降级：API 模拟验证的是浏览器集成契约，不等于真实 Gemini 质量、真实麦克风权限或 Cloud TTS 延迟验收。
 - 练习：新增用户可见故障时，先写一个稳定路由模拟，再补真实外部服务抽样，不让 CI 依赖云端配额。
@@ -499,13 +511,13 @@ Q01 行为测试 + Q02 项目体检 + Q03 RAG 评测 + Q04 浏览器 E2E 覆盖�
 
 | 优先级 | 候选任务 | 验收标准 | 状态 |
 | --- | --- | --- | --- |
-| P0 | 浏览器端到端回归 | 连续三轮文字、停止、再问、起卦、TTS 失败均不锁死 | 已完成（0.18.0，Chromium 4 / 4） |
+| P0 | 浏览器端到端回归 | 连续三轮文字、停止、再问、起卦、TTS 失败均不锁死 | 已完成；0.22.0 当前 Chromium 6 / 6 |
 | P1 | 固定 RAG 质量评测集 | 经传、取象、当前卦和域外负例同时达到阈值 | 已完成；模型回答评分继续扩展 |
-| P1 | 真实设备语音性能预算 | 首字、首句开声、转写完成 P50 / P95 有记录 | 待实测 |
+| P1 | 真实设备语音性能预算 | 首字、首句开声、转写完成 P50 / P95 有记录 | 汇总与隐私导出已完成（0.22.0）；真实设备样本待用户授权 |
 | P1 | `prepareChat` 纯模块化 | 请求策略、检索和提示词准备可不启动服务器单测 | 已完成（0.19.0，4 个直接测试） |
 | P2 | 本地记忆导出 / 导入 | 用户可审阅、清除和迁移，默认仍不上云 | 已完成（0.20.0，JSON v1 + E2E） |
 | P2 | 生产部署适配 | HTTPS、反向代理、共享限流、日志脱敏和健康检查有独立指南 | 已完成代码与配置（0.21.0）；真实域名、凭证和多实例共享存储待外部部署 |
 
 “待补”不等于当前功能不可用；它表示要从本地教学组件升级为面向公众的长期服务时，还需要完成的工程层。
 
-当前自动化、真实云端链路和浏览器人工验收结果见 [0.21.0 质量基线](QUALITY_BASELINE.md)。
+当前自动化、真实云端链路和浏览器人工验收结果见 [0.22.0 质量基线](QUALITY_BASELINE.md)。

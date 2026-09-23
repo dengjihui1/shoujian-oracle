@@ -47,6 +47,7 @@ Gemini 未配置 → 有限追问：意思 / 动爻 / 算法 / 边界
 | 问题边界 | `src/question-boundary.js` | 原问文本 | `clear/advisory/blocked` | 是 |
 | 问卦访谈 | `src/divination-intake.js` | 原问、逐项回答、跳过与摘要编辑 | 2–4 个必要问题、可确认摘要 | 是，有冻结状态 |
 | 语音对话状态机 | `src/voice-conversation.js` | interim / final、停顿、流式首字、TTS 状态与打断 | 倾听 / 听清 / 思考 / 说话 / 打断 / 错误及三项延迟 | 异步状态可注入识别器、时间和定时器测试 |
+| 语音性能汇总 | `src/voice-performance.js` | 已完成轮次的三项毫秒数 | 最近 30 轮 P50 / P95 与无内容 JSON | 是 |
 | 响应策略 | `src/response-policy.js` | 文本、聊天/起卦目的、阶段与边界评估 | 放行、危机支持或带替代路径的起卦边界 | 是 |
 | 起卦计算 | `src/oracle-engine.js` | 六个 6/7/8/9 | 本卦、动爻、之卦、审计轨迹 | 是 |
 | 随机适配器 | `castWithCoins()` | `crypto.getRandomValues` | 六个爻值 | 外层有随机，排卦仍纯计算 |

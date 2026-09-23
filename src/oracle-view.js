@@ -104,6 +104,7 @@ function voiceConversationPanel(state, stage, intakeReview) {
       ${active && conversationState === "error" ? `<button type="button" data-action="voice-conversation-retry">重新听</button>` : ""}
     </div>
     ${active ? `<p class="voice-conversation-status" role="status"><b>${escapeHtml(labels[conversationState] ?? "语音对话已开启")}</b><span data-voice-transcript ${transcript ? "" : "hidden"}>${transcript ? `“${escapeHtml(transcript)}”` : ""}</span>${error ? `<span>${escapeHtml(error)}</span>` : ""}</p>${latencyHtml(state.voiceConversationMetrics)}` : ""}
+    ${voicePerformanceHtml(state.voicePerformanceSummary)}
   </section>`;
 }
 
@@ -117,7 +118,19 @@ function latencyHtml(metrics = {}) {
   return `<dl class="voice-latency" aria-label="本轮语音延迟">${items.map(([label, value]) => `<div><dt>${label}</dt><dd>${formatLatency(value)}</dd></div>`).join("")}</dl>`;
 }
 
+function voicePerformanceHtml(summary = {}) {
+  const turns = Number(summary.turns) || 0;
+  if (!turns) return "";
+  const metrics = [
+    ["ASR", summary.asrFinalMs],
+    ["首字", summary.firstTokenMs],
+    ["首声", summary.firstAudioMs],
+  ];
+  return `<section class="voice-performance" aria-label="本机语音性能汇总"><div><strong>本机验收 · ${turns} 轮</strong><small>${turns < 10 ? "建议至少完成 10 轮再看 P95" : "已达到基础样本数"}</small></div><dl>${metrics.map(([label, metric]) => `<div><dt>${label} P50 / P95</dt><dd>${formatLatency(metric?.p50)} / ${formatLatency(metric?.p95)} · n=${Number(metric?.samples) || 0}</dd></div>`).join("")}</dl><div class="voice-performance-actions"><button type="button" data-action="export-voice-metrics">导出延迟报告</button><button type="button" data-action="clear-voice-metrics">清空指标</button></div><small>只记录毫秒数，不保存录音或转写内容。</small></section>`;
+}
+
 function formatLatency(value) {
+  if (!Number.isFinite(value)) return "—";
   const milliseconds = Math.max(0, Number(value) || 0);
   return milliseconds < 1_000 ? `${Math.round(milliseconds)} ms` : `${(milliseconds / 1_000).toFixed(1)} s`;
 }
@@ -279,6 +292,7 @@ const styles = `<style>
   .submit-actions { display: grid; gap: 8px; align-content: start; } .submit-actions .primary { width: auto; } .quick { display: flex; flex-wrap: wrap; gap: 7px; } .quick button { min-height: 38px; padding: 7px 12px; font-size: 13px; } .rag-invitation { margin: 0; padding: 10px 12px; color: #d5c2a2; background: #88713b18; border: 1px solid #74623e; border-radius: 12px; font: 13px/1.65 system-ui,sans-serif; }
   .voice-tools { display: flex; flex-wrap: wrap; gap: 8px; } .voice-tools button { background: #25201b; } .memory-tools { display: flex; gap: 10px; align-items: center; justify-content: space-between; color: #938674; font: 11px/1.5 system-ui,sans-serif; } .memory-tools>div{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px}.memory-tools button { min-height: 32px; padding: 5px 10px; background: transparent; color: #bda987; font-size: 11px; }
   .voice-conversation { display:grid; gap:10px; padding:13px; background:linear-gradient(135deg,#17322966,#241b16); border:1px solid #527565; border-radius:14px; } .voice-conversation-copy{display:grid;gap:3px}.voice-conversation-copy strong{color:#d7eadf}.voice-conversation-copy small{color:#aebfb5;font:11px/1.55 system-ui,sans-serif}.voice-conversation-actions{display:flex;flex-wrap:wrap;gap:8px}.voice-conversation-actions .primary{width:auto;background:#315d4d;border-color:#65917e}.voice-conversation-actions .interrupt{background:#8e332a;border-color:#bb6b5d}.voice-conversation-status{display:grid;gap:4px;margin:0;padding:9px 11px;color:#cbdcd2;background:#07130f88;border-radius:10px;font:12px/1.55 system-ui,sans-serif}.voice-conversation-status span{color:#aebfb5;overflow-wrap:anywhere}.voice-conversation-status span[hidden]{display:none}.voice-latency{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}.voice-latency div{padding:7px;background:#06100d88}.voice-latency dd{font:600 12px/1.3 system-ui,sans-serif;color:#d7eadf}
+  .voice-performance{display:grid;gap:8px;padding-top:10px;border-top:1px solid #527565}.voice-performance>div:first-child,.voice-performance dl div{display:flex;gap:8px;align-items:baseline;justify-content:space-between}.voice-performance dl{display:grid;gap:4px;margin:0}.voice-performance dt{color:#aebfb5}.voice-performance dd{margin:0;color:#d7eadf}.voice-performance-actions{display:flex;flex-wrap:wrap;gap:6px}.voice-performance-actions button{min-height:32px;padding:5px 10px;background:transparent;color:#bda987;font-size:11px}
   .voice-notice { margin: -3px 0 0; padding: 8px 10px; color: #e0b9ad; background: #7a2c2422; border: 1px solid #8d4c43; border-radius: 10px; font: 12px/1.55 system-ui,sans-serif; } .voice-notice[hidden] { display:none; }
   footer { margin-top: 18px; color: #8f8578; font: 11px/1.65 system-ui,sans-serif; } textarea:focus,button:focus-visible,[data-latest]:focus { outline: 3px solid #d2a15b; outline-offset: 3px; }
   @keyframes cursor-blink{50%{opacity:0}}@keyframes halo-turn{to{rotate:360deg}}@keyframes breathe{50%{transform:translateY(-4px) scale(1.007)}}@keyframes blink{0%,45%,48%,100%{opacity:0;transform:scaleY(.08)}46%,47%{opacity:.88;transform:scaleY(1)}}@keyframes soft-blink{0%,68%,72%,100%{opacity:0;transform:scaleY(.08)}70%{opacity:.78;transform:scaleY(.78)}}@keyframes listen-lean{to{transform:translateY(-5px) scale(1.018) rotate(-.28deg)}}@keyframes acknowledge{0%{transform:translateY(-2px)}38%{transform:translateY(6px) scale(.995)}72%{transform:translateY(-2px) scale(1.004)}100%{transform:none}}@keyframes ponder{to{transform:translate(-3px,-2px) rotate(-.22deg)}}@keyframes inhale{0%{transform:scale(.998)}70%{transform:translateY(-4px) scale(1.012)}100%{transform:translateY(-2px) scale(1.006)}}@keyframes speaking-body{to{transform:translateY(-2px) scale(1.004)}}@keyframes interrupt-recover{0%{transform:translateY(-2px) scale(1.006)}35%{transform:translateX(-7px) rotate(-.65deg)}100%{transform:translateY(-3px) scale(1.014)}}@keyframes present-reading{from{transform:translateY(5px);filter:brightness(.9)}to{transform:translate(-1.2%,-2px);filter:brightness(1.04)}}@keyframes attention{0%{opacity:.65;transform:scale(.7)}100%{opacity:0;transform:scale(1.28)}}@keyframes token-reveal{from{opacity:0;transform:translateY(18px) rotate(4deg)}to{opacity:1;transform:translateY(0) rotate(0)}}@keyframes pulse{50%{opacity:.38;box-shadow:0 0 0 8px currentColor}}@keyframes meter{to{height:var(--amp)}}

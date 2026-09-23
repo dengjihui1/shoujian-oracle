@@ -17,6 +17,7 @@ import { isComposerSendShortcut, preferredComposerSubmitter } from "./composer-k
 import { answerIntakeQuestion, confirmIntakeSummary, createDivinationIntake, currentIntakeQuestion, prepareIntakeReview, skipIntakeQuestion } from "./divination-intake.js";
 import { VoiceConversationController } from "./voice-conversation.js";
 import { deriveAvatarMotion, mouthStateForLevel } from "./avatar-motion.js";
+import { VoicePerformanceTracker } from "./voice-performance.js";
 
 export class ShoujianOracle extends HTMLElement {
   constructor() {
@@ -53,6 +54,7 @@ export class ShoujianOracle extends HTMLElement {
       error: "",
       metrics: {},
     };
+    this.voicePerformance = new VoicePerformanceTracker();
     this.voiceConversation = new VoiceConversationController({
       recognizer: this.liveTranscriber,
       submit: (text) => this.sendVoiceConversationText(text),
@@ -144,6 +146,17 @@ export class ShoujianOracle extends HTMLElement {
     const anchor = globalThis.document.createElement("a");
     anchor.href = url;
     anchor.download = `shoujian-session-${document.exportedAt.slice(0, 10)}.json`;
+    anchor.click();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+
+  exportVoiceMetrics() {
+    const document = this.voicePerformance.createExport();
+    const blob = new Blob([`${JSON.stringify(document, null, 2)}\n`], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = globalThis.document.createElement("a");
+    anchor.href = url;
+    anchor.download = `shoujian-voice-performance-${document.generatedAt.slice(0, 10)}.json`;
     anchor.click();
     setTimeout(() => URL.revokeObjectURL(url), 0);
   }
@@ -269,6 +282,11 @@ export class ShoujianOracle extends HTMLElement {
     }
     if (action === "voice-conversation-retry") this.voiceConversation.interruptAndListen();
     if (action === "voice-interrupt") this.voiceConversation.interruptAndListen();
+    if (action === "export-voice-metrics") this.exportVoiceMetrics();
+    if (action === "clear-voice-metrics") {
+      this.voicePerformance.clear();
+      this.render();
+    }
     if (action === "voice") {
       this.voiceReplies = !this.voiceReplies;
       if (this.voiceReplies) primeAudioPlayback();
@@ -710,6 +728,7 @@ export class ShoujianOracle extends HTMLElement {
   handleVoiceConversationUpdate(snapshot) {
     const previous = this.voiceConversationSnapshot;
     this.voiceConversationSnapshot = snapshot;
+    if (snapshot.metrics?.turnComplete) this.voicePerformance.record(snapshot.metrics);
     if (snapshot.state === "listening") this.draft = snapshot.transcript;
     const metricsChanged = ["asrFinalMs", "firstTokenMs", "firstAudioMs"]
       .some((key) => previous.metrics?.[key] !== snapshot.metrics?.[key]);
@@ -798,6 +817,7 @@ export class ShoujianOracle extends HTMLElement {
       voiceConversationTranscript: this.voiceConversationSnapshot.transcript,
       voiceConversationError: this.voiceConversationSnapshot.error,
       voiceConversationMetrics: this.voiceConversationSnapshot.metrics,
+      voicePerformanceSummary: this.voicePerformance.summary,
     });
     this.renderedConversationRevision = this.conversationRevision;
     this.conversationViewport.restore(this.shadowRoot.querySelector(".dialogue"), viewportSnapshot, { contentChanged });

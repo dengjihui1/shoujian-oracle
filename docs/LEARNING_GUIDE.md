@@ -115,6 +115,7 @@
 9. 阅读 `e2e/oracle-flow.spec.js`，观察怎样只模拟外部 API、仍让真实浏览器完整运行 Web Component；修改用户流程后运行 `npm run test:e2e`。
 10. 导出一份本机会话并阅读 JSON，再看 `conversation-memory.js` 如何过滤未完成轮次、重建六爻并拒绝未知版本。
 11. 阅读 `request-context.mjs`、`observability.mjs` 与 `docs/DEPLOYMENT.md`，理解为什么代理信任必须显式开启、日志不应含用户正文，以及多实例前必须替换内存限流。
+12. 阅读 `voice-performance.js`，用 `docs/DEVICE_ACCEPTANCE.md` 在真实设备完成至少 10 轮，确认 P50 / P95 报告不含录音或转写文字。
 
 不要把住宅知识、主项目案卷或支付能力作为练习复制进来；它们属于另一个产品边界。新增经传数据必须登记来源、修订、许可和结构改动。
 

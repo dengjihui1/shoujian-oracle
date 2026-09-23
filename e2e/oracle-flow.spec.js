@@ -126,6 +126,25 @@ test("本机会话可导出、清除并从文件恢复", async ({ page }) => {
   await expect(composer(page)).toBeEnabled();
 });
 
+test("语音验收报告只导出延迟，不包含转写内容", async ({ page }) => {
+  await page.goto("/");
+  await page.locator("shoujian-oracle").evaluate((host) => {
+    host.voicePerformance.record({ listeningAt: 10, submittedAt: 20, asrFinalMs: 80, firstTokenMs: 620, firstAudioMs: 980, turnComplete: true, transcript: "不应导出" });
+    host.render();
+  });
+  await expect(page.getByText("本机验收 · 1 轮")).toBeVisible();
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.locator('[data-action="export-voice-metrics"]').click();
+  const download = await downloadPromise;
+  const path = await download.path();
+  const reportText = await readFile(path, "utf8");
+  const report = JSON.parse(reportText);
+  expect(report.schema).toBe("shoujian.voice-performance");
+  expect(report.samples).toEqual([{ asrFinalMs: 80, firstTokenMs: 620, firstAudioMs: 980 }]);
+  expect(reportText).not.toContain("不应导出");
+});
+
 function composer(page) {
   return page.locator("textarea#say");
 }

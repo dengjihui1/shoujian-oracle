@@ -4,7 +4,7 @@
 
 独立的轻量虚拟卦师与经传 RAG 组件。它保留虚拟人主持、问题边界、三钱六爻和 64 卦确定性映射，并加入可追溯的《周易》《彖》《象》《说卦》冻结知识检索；明确不包含住宅分析、纳甲时证、档案、支付与追验等主项目核心。
 
-![版本](https://img.shields.io/badge/version-0.21.0-8e332a)
+![版本](https://img.shields.io/badge/version-0.22.0-8e332a)
 ![许可](https://img.shields.io/badge/license-MIT-d3b27f)
 
 ## 现在能完成什么
@@ -29,7 +29,7 @@
 18. 对话在底部时自动跟随流式内容，用户上翻时保持原位并显示“回到最新”；`Enter` 发送、`Shift+Enter` 换行，中文输入法组字不会误发。
 19. 选择起卦后先进入 2–4 项情境访谈；可跳过、提前整理并编辑问卦摘要，只有确认摘要后才随机排卦，不索取生辰八字，文字不会影响六爻结果。
 20. 支持独立“实时语音对话”：用户明确开启后，interim 转写实时可见，定稿或停顿自动送问；回答首个完整短句即进入朗读，朗读时暂停收音，并可“打断并说话”。
-21. 页面记录本轮 ASR 定稿、首字和首声延迟；识别、模型或 TTS 失败后仍保留文字输入。该模式是可靠轮流对话与显式打断，不宣称真正全双工。
+21. 页面记录本轮 ASR 定稿、首字和首声延迟，并在本机滚动汇总最多 30 轮 P50 / P95；可导出只含毫秒数的验收报告，不保存录音或转写内容。识别、模型或 TTS 失败后仍保留文字输入；该模式不宣称真正全双工。
 22. 本机会话可导出为可审阅 JSON，并在清除或更换浏览器后重新导入；文件只含最近已完成对话和可恢复问卦状态，导入导出不经过项目服务器。
 23. 提供非 root Docker、Caddy 自动 HTTPS、`/healthz`、显式代理信任、可注入共享限流边界和不记录对话正文的结构化日志。
 
@@ -44,7 +44,7 @@
 | `oracleQuestionBoundary` | 7 类公开字规 | 问契签名、验期、准绳与追验 |
 | `iching` | 6/7/8/9、八卦、文王序 64 卦映射 | 古籍全文、爻辞、纳甲、六亲、旬空、六神 |
 
-经传数据另从中文维基文库公开来源建立独立知识包，不复制主项目住宅知识。语音 API 的真实边界、Google Cloud 配置和 RAG 构建全过程见 [语音 API 与 RAG 架构说明](docs/VOICE_RAG_ARCHITECTURE.md)；从上游 Cactus 提取了什么、拒绝照搬什么见 [Cactus 模块拆解](docs/CACTUS_MODULE_EXTRACTION.md)；完整映射见 [组件抽取与流程图](docs/COMPONENT_MAP.md)，逐模块说明见 [守简模块池](docs/MODULE_POOL.md)，发布验收见 [0.21.0 质量基线](docs/QUALITY_BASELINE.md)。
+经传数据另从中文维基文库公开来源建立独立知识包，不复制主项目住宅知识。语音 API 的真实边界、Google Cloud 配置和 RAG 构建全过程见 [语音 API 与 RAG 架构说明](docs/VOICE_RAG_ARCHITECTURE.md)；从上游 Cactus 提取了什么、拒绝照搬什么见 [Cactus 模块拆解](docs/CACTUS_MODULE_EXTRACTION.md)；完整映射见 [组件抽取与流程图](docs/COMPONENT_MAP.md)，逐模块说明见 [守简模块池](docs/MODULE_POOL.md)，发布验收见 [0.22.0 质量基线](docs/QUALITY_BASELINE.md)。
 
 用户实测确认的交互、RAG 降级、问卦访谈和直接语音对话改进，统一记录在 [下一阶段任务池](docs/USER_FEEDBACK_BACKLOG.md)；任务状态以该文件和实际测试为准。
 
@@ -97,6 +97,7 @@ Gemini 失败 → 可选 OpenAI-compatible 供应商池 → 短时熔断与自�
 - `src/streaming-text.js`：可取消、积压自适应的字符级显示队列；
 - `src/conversation-scroll.js` / `composer-keys.js`：智能跟随、未读提示和输入法安全的键盘发送契约；
 - `src/voice-conversation.js`：显式开启、自动送问、回声隔离、打断恢复与 ASR / 首字 / 首声指标状态机；
+- `src/voice-performance.js`：最多 30 轮语音延迟 P50 / P95 与不含内容的本机报告；
 - `src/avatar-state.js`：虚拟人的可测试语义状态与优先级；
 - `src/avatar-motion.js`：人物状态到身体动作、嘴部约束和手势语义的纯映射；无声音时强制闭口；
 - `src/speech-segmenter.js`：面向中文流式文本的分句、长句切分与引用标记清理；
@@ -121,6 +122,7 @@ Gemini 失败 → 可选 OpenAI-compatible 供应商池 → 短时熔断与自�
 - `e2e/` / `playwright.config.js`：真实 Chromium 中的关键用户流程回归；
 - `docs/MODULE_POOL.md`：全项目模块的学习、测试、成熟度与后续迭代池。
 - `docs/DEPLOYMENT.md`：Docker + Caddy HTTPS、健康检查、日志、限流和回滚步骤。
+- `docs/DEVICE_ACCEPTANCE.md`：真实麦克风、回声、打断和语音延迟的人工验收步骤与阈值。
 
 ## 验证
 
