@@ -199,6 +199,32 @@ test("a late completion from an interrupted turn cannot restart or overwrite the
   session.stop();
 });
 
+test("barge-in waits for the cancelled submission before sending the new question", async () => {
+  const recognizer = new FakeRecognizer();
+  const submitted = [];
+  let finishOldTurn;
+  const session = new VoiceConversationController({
+    recognizer,
+    submit: (text) => {
+      submitted.push(text);
+      return text === "旧问题" ? new Promise((resolve) => { finishOldTurn = resolve; }) : Promise.resolve();
+    },
+  });
+  session.start({ autoSubmit: true });
+  recognizer.hear("旧问题", { final: "旧问题" });
+  recognizer.stop();
+  await tick();
+  session.interruptAndListen();
+  recognizer.hear("新问题", { final: "新问题" });
+  recognizer.stop();
+  await tick();
+  assert.deepEqual(submitted, ["旧问题"]);
+  finishOldTurn();
+  await tick();
+  assert.deepEqual(submitted, ["旧问题", "新问题"]);
+  session.stop();
+});
+
 test("session records ASR final, first token and first audio latency", async () => {
   const recognizer = new FakeRecognizer();
   let clock = 100;

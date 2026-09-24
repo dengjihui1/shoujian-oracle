@@ -32,6 +32,7 @@ export class VoiceConversationController {
     this.epoch = 0;
     this.speechState = "idle";
     this.quietRetries = 0;
+    this.pendingSubmission = null;
   }
 
   get snapshot() {
@@ -178,14 +179,23 @@ export class VoiceConversationController {
     this.metrics.submittedAt = this.now();
     this.metrics.autoSubmitted = true;
     this.#emit();
+    const previousSubmission = this.pendingSubmission;
+    if (previousSubmission) {
+      try { await previousSubmission; } catch { /* previous turn already handles its error */ }
+      if (!this.active || epoch !== this.epoch) return;
+    }
+    const submission = Promise.resolve().then(() => this.submit(text));
+    this.pendingSubmission = submission;
     try {
-      await this.submit(text);
+      await submission;
     } catch (error) {
       if (!this.active || epoch !== this.epoch || error?.name === "AbortError") return;
       this.error = String(error?.message ?? "本轮回答失败，可改用文字继续");
       this.state = "error";
       this.#emit();
       return;
+    } finally {
+      if (this.pendingSubmission === submission) this.pendingSubmission = null;
     }
     if (!this.active || epoch !== this.epoch) return;
     this.metrics.turnComplete = true;
