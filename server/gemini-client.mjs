@@ -101,14 +101,14 @@ export class GeminiClient {
     return route === "fast" ? this.chatModelsByRoute.fast : this.chatModelsByRoute.grounded;
   }
 
-  async transcribe({ bytes, mimeType }) {
+  async transcribe({ bytes, mimeType, signal }) {
     const buffer = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
     try {
       const data = await this.#interaction({
         model: this.models.transcribe,
         input: [{ type: "audio", data: Buffer.from(buffer).toString("base64"), mime_type: mimeType }],
         generation_config: { transcription_config: { language_codes: ["zh-CN"] } }
-      });
+      }, signal);
       const text = extractText(data);
       if (!text) throw new GeminiError("Gemini returned no transcription", { code: "empty_transcript" });
       return { text, transport: "inline" };
@@ -116,13 +116,13 @@ export class GeminiClient {
       if (!shouldFallbackToFileUpload(error)) throw error;
     }
 
-    const file = await this.#upload(buffer, mimeType);
+    const file = await this.#upload(buffer, mimeType, signal);
     try {
       const data = await this.#interaction({
         model: this.models.transcribe,
         input: [{ type: "audio", uri: file.uri, mime_type: mimeType }],
         generation_config: { transcription_config: { language_codes: ["zh-CN"] } }
-      });
+      }, signal);
       const text = extractText(data);
       if (!text) throw new GeminiError("Gemini returned no transcription", { code: "empty_transcript" });
       return { text, fileUri: file.uri, transport: "file" };
@@ -143,7 +143,7 @@ export class GeminiClient {
     return { data: audio.data, mimeType: audio.mimeType ?? "audio/pcm;rate=24000", sampleRate: 24_000 };
   }
 
-  async #upload(bytes, mimeType) {
+  async #upload(bytes, mimeType, signal) {
     const buffer = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
     const start = await this.#fetch(`${this.baseUrl}/upload/v1beta/files`, {
       method: "POST",
@@ -155,7 +155,8 @@ export class GeminiClient {
         "x-goog-upload-header-content-type": mimeType,
         "content-type": "application/json"
       },
-      body: JSON.stringify({ file: { display_name: "shoujian-voice" } })
+      body: JSON.stringify({ file: { display_name: "shoujian-voice" } }),
+      signal,
     });
     await ensureOk(start);
     const uploadUrl = start.headers.get("x-goog-upload-url");
@@ -168,7 +169,8 @@ export class GeminiClient {
         "x-goog-upload-offset": "0",
         "x-goog-upload-command": "upload, finalize"
       },
-      body: buffer
+      body: buffer,
+      signal,
     });
     const data = await readJson(uploaded);
     const uri = data.file?.uri;

@@ -113,7 +113,7 @@ export function createApp({
         }
         activeUpstream += 1;
         try {
-          if (url.pathname === "/api/transcribe") return await handleTranscribe(response, client, body);
+          if (url.pathname === "/api/transcribe") return await handleTranscribe(response, client, body, upstreamDeadlineMs);
           if (url.pathname === "/api/chat") return await handleChat(response, client, knowledgeBase, body, now, upstreamDeadlineMs);
           if (url.pathname === "/api/chat/stream") return await handleChatStream(response, client, knowledgeBase, body, now, upstreamDeadlineMs);
           return await handleSpeech(response, speechService, body);
@@ -142,14 +142,22 @@ export function createHttpAppServer(options = {}) {
   return server;
 }
 
-async function handleTranscribe(response, client, body) {
+async function handleTranscribe(response, client, body, deadlineMs) {
   const mimeType = String(body.mimeType ?? "").split(";")[0].toLowerCase();
   if (!AUDIO_TYPES.has(mimeType)) throw httpError(415, "unsupported_audio", "不支持这种录音格式。");
   if (typeof body.data !== "string" || !/^[A-Za-z0-9+/]*={0,2}$/u.test(body.data)) throw httpError(400, "invalid_audio", "录音数据无效。");
   const bytes = Buffer.from(body.data, "base64");
   if (!bytes.length || bytes.length > 6 * 1024 * 1024) throw httpError(413, "audio_too_large", "录音需小于 6 MB。请缩短到 45 秒以内。");
-  const result = await client.transcribe({ bytes, mimeType });
-  return json(response, 200, { text: result.text });
+  const guard = upstreamGuard(response, deadlineMs);
+  try {
+    const result = await client.transcribe({ bytes, mimeType, signal: guard.controller.signal });
+    return json(response, 200, { text: result.text });
+  } catch (error) {
+    if (guard.timedOut()) throw httpError(504, "timeout", "语音转写超时，请稍后重试。");
+    throw error;
+  } finally {
+    guard.dispose();
+  }
 }
 
 async function handleChat(response, client, knowledgeBase, body, now, deadlineMs) {

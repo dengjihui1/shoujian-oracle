@@ -60,6 +60,35 @@ test("transcription falls back to Files API when inline audio is rejected", asyn
   assert.equal(calls[4].options.method, "DELETE");
 });
 
+test("cancelled transcription still deletes an uploaded Gemini file", async () => {
+  const controller = new AbortController();
+  const calls = [];
+  let interactionStarted;
+  const started = new Promise((resolve) => { interactionStarted = resolve; });
+  const client = new GeminiClient({
+    apiKey: "test-only",
+    fetchFn: async (url, options) => {
+      calls.push({ url, options });
+      if (calls.length === 1) return Response.json({ error: { message: "inline audio unsupported" } }, { status: 400 });
+      if (calls.length === 2) return new Response("", { status: 200, headers: { "x-goog-upload-url": "https://upload.test/session" } });
+      if (calls.length === 3) return Response.json({ file: { uri: "https://files.test/audio", name: "files/audio-1" } });
+      if (calls.length === 4) {
+        interactionStarted();
+        await new Promise((resolve) => options.signal.addEventListener("abort", resolve, { once: true }));
+        throw Object.assign(new Error("aborted"), { name: "AbortError" });
+      }
+      return new Response("", { status: 200 });
+    },
+  });
+  const pending = client.transcribe({ bytes: Uint8Array.from([1, 2, 3]), mimeType: "audio/webm", signal: controller.signal });
+  await started;
+  controller.abort();
+  await assert.rejects(pending, (error) => error.code === "cancelled");
+  assert.equal(calls[4].options.method, "DELETE");
+  assert.match(calls[4].url, /v1beta\/files\/audio-1$/u);
+  assert.equal(calls[4].options.signal.aborted, false);
+});
+
 test("transcription does not add a slow upload retry for provider outages", async () => {
   let calls = 0;
   const client = new GeminiClient({

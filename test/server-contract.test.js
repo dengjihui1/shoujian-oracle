@@ -207,6 +207,55 @@ test("citation repair uses the original chat deadline", async () => {
   assert.equal(signals[1].aborted, true);
 });
 
+test("transcription timeout aborts upstream and releases the shared capacity", async () => {
+  let calls = 0;
+  const client = {
+    models: { transcribe: "test" },
+    async transcribe({ signal }) {
+      calls += 1;
+      if (calls > 1) return { text: "恢复" };
+      await new Promise((resolve) => signal.addEventListener("abort", resolve, { once: true }));
+      throw Object.assign(new Error("cancelled"), { code: "cancelled", status: 499 });
+    },
+  };
+  await withServer(createApp({ client, upstreamDeadlineMs: 40, maxConcurrentUpstream: 1 }), async (base) => {
+    const options = { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ data: "AQID", mimeType: "audio/webm" }) };
+    const timedOut = await fetch(`${base}/api/transcribe`, options);
+    assert.equal(timedOut.status, 504);
+    assert.equal((await timedOut.json()).error, "timeout");
+    const recovered = await fetch(`${base}/api/transcribe`, options);
+    assert.equal(recovered.status, 200);
+    assert.equal((await recovered.json()).text, "恢复");
+  });
+});
+
+test("disconnecting transcription cancels its upstream request", async () => {
+  let markStarted;
+  let markAborted;
+  const started = new Promise((resolve) => { markStarted = resolve; });
+  const aborted = new Promise((resolve) => { markAborted = resolve; });
+  const client = {
+    models: { transcribe: "test" },
+    async transcribe({ signal }) {
+      markStarted();
+      await new Promise((resolve) => signal.addEventListener("abort", resolve, { once: true }));
+      markAborted(signal.aborted);
+      throw Object.assign(new Error("cancelled"), { code: "cancelled", status: 499 });
+    },
+  };
+  await withServer(createApp({ client }), async (base) => {
+    const controller = new AbortController();
+    const pending = fetch(`${base}/api/transcribe`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ data: "AQID", mimeType: "audio/webm" }), signal: controller.signal,
+    }).catch((error) => error);
+    await started;
+    controller.abort();
+    assert.equal(await aborted, true);
+    await pending;
+  });
+});
+
 test("health check bypasses API limits and exposes no provider credentials", async () => {
   const keys = [];
   const rateLimiter = { allow(key) { keys.push(key); return false; } };
