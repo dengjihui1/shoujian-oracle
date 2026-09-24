@@ -35,6 +35,7 @@ export function createApp({
   logger = null,
   logHashSalt = "",
   maxConcurrentUpstream = 16,
+  upstreamDeadlineMs = 90_000,
 } = {}) {
   const apiEnabled = Boolean(client);
   const upstreamLimit = Math.max(1, Math.min(256, Number.parseInt(maxConcurrentUpstream, 10) || 16));
@@ -113,8 +114,8 @@ export function createApp({
         activeUpstream += 1;
         try {
           if (url.pathname === "/api/transcribe") return await handleTranscribe(response, client, body);
-          if (url.pathname === "/api/chat") return await handleChat(response, client, knowledgeBase, body, now);
-          if (url.pathname === "/api/chat/stream") return await handleChatStream(response, client, knowledgeBase, body, now);
+          if (url.pathname === "/api/chat") return await handleChat(response, client, knowledgeBase, body, now, upstreamDeadlineMs);
+          if (url.pathname === "/api/chat/stream") return await handleChatStream(response, client, knowledgeBase, body, now, upstreamDeadlineMs);
           return await handleSpeech(response, speechService, body);
         } finally {
           activeUpstream -= 1;
@@ -151,35 +152,41 @@ async function handleTranscribe(response, client, body) {
   return json(response, 200, { text: result.text });
 }
 
-async function handleChat(response, client, knowledgeBase, body, now) {
+async function handleChat(response, client, knowledgeBase, body, now, deadlineMs) {
   const prepared = prepareChat(body, knowledgeBase, now);
   if (prepared.response) return json(response, 200, prepared.response);
   const startedAt = performance.now();
-  let result = await client.chat({ input: prepared.input, systemInstruction: prepared.systemInstruction, route: prepared.route });
-  if (String(result?.text ?? "").length > MAX_CHAT_REPLY_CHARS) throw httpError(502, "response_too_large", "云端回答过长，请缩小问题后重试。");
-  let answer = groundedAnswer(result, prepared);
-  if (answer.needsRepair) {
-    answer = await repairGroundedAnswer(client, prepared);
-    result = answer.result;
+  const guard = upstreamGuard(response, deadlineMs);
+  try {
+    let result = await client.chat({ input: prepared.input, systemInstruction: prepared.systemInstruction, route: prepared.route, signal: guard.controller.signal });
+    if (String(result?.text ?? "").length > MAX_CHAT_REPLY_CHARS) throw httpError(502, "response_too_large", "云端回答过长，请缩小问题后重试。");
+    let answer = groundedAnswer(result, prepared);
+    if (answer.needsRepair) {
+      answer = await repairGroundedAnswer(client, prepared, { signal: guard.controller.signal });
+      result = answer.result;
+    }
+    const text = withDivinationDisclaimer(answer.text, prepared.purpose);
+    if (text.length > MAX_CHAT_REPLY_CHARS) throw httpError(502, "response_too_large", "云端回答过长，请缩小问题后重试。");
+    return json(response, 200, {
+      text,
+      evidence: answer.evidence,
+      grounded: answer.grounded,
+      repaired: answer.repaired,
+      groundingUnavailable: answer.groundingUnavailable,
+      purpose: prepared.purpose,
+      runtime: runtimeMetadata({ route: prepared.route, result, totalMs: performance.now() - startedAt }),
+    });
+  } catch (error) {
+    if (guard.timedOut()) throw httpError(504, "timeout", "云端回答超时，请稍后重试。");
+    throw error;
+  } finally {
+    guard.dispose();
   }
-  const text = withDivinationDisclaimer(answer.text, prepared.purpose);
-  if (text.length > MAX_CHAT_REPLY_CHARS) throw httpError(502, "response_too_large", "云端回答过长，请缩小问题后重试。");
-  return json(response, 200, {
-    text,
-    evidence: answer.evidence,
-    grounded: answer.grounded,
-    repaired: answer.repaired,
-    groundingUnavailable: answer.groundingUnavailable,
-    purpose: prepared.purpose,
-    runtime: runtimeMetadata({ route: prepared.route, result, totalMs: performance.now() - startedAt }),
-  });
 }
 
-async function handleChatStream(response, client, knowledgeBase, body, now) {
+async function handleChatStream(response, client, knowledgeBase, body, now, deadlineMs) {
   const prepared = prepareChat(body, knowledgeBase, now);
   const startedAt = performance.now();
-  const upstreamController = new AbortController();
-  response.once("close", () => upstreamController.abort());
   response.writeHead(200, {
     "content-type": "text/event-stream; charset=utf-8",
     "cache-control": "no-store, no-transform",
@@ -199,6 +206,8 @@ async function handleChatStream(response, client, knowledgeBase, body, now) {
     return response.end();
   }
 
+  const guard = upstreamGuard(response, deadlineMs);
+  const upstreamController = guard.controller;
   let fullText = "";
   const bufferGrounded = prepared.evidence.length > 0;
   let firstTokenMs = null;
@@ -249,6 +258,7 @@ async function handleChatStream(response, client, knowledgeBase, body, now) {
       });
     }
   } catch (error) {
+    if (guard.timedOut()) error = httpError(504, "timeout", "云端回答超时，请稍后重试。");
     if (fullText && canRecoverInterruptedStream(error, client, upstreamController.signal)) {
       try {
         const recovered = await client.chat({
@@ -281,6 +291,7 @@ async function handleChatStream(response, client, knowledgeBase, body, now) {
     }
   } finally {
     clearInterval(heartbeat);
+    guard.dispose();
   }
   response.end();
 }
@@ -289,6 +300,22 @@ function canRecoverInterruptedStream(error, client, signal) {
   return !signal.aborted
     && typeof client?.chat === "function"
     && ["quota_exceeded", "upstream_error", "network_error", "timeout", "empty_text"].includes(error?.code);
+}
+
+function upstreamGuard(response, deadlineMs) {
+  const controller = new AbortController();
+  let timedOut = false;
+  const abort = () => controller.abort();
+  response.once("close", abort);
+  const parsedDeadline = Number(deadlineMs);
+  const budgetMs = Number.isFinite(parsedDeadline) ? Math.max(1, Math.min(parsedDeadline, 180_000)) : 90_000;
+  const timer = setTimeout(() => { timedOut = true; abort(); }, budgetMs);
+  timer.unref?.();
+  return {
+    controller,
+    timedOut: () => timedOut,
+    dispose() { clearTimeout(timer); response.off("close", abort); },
+  };
 }
 
 function groundedAnswer(result, prepared) {
@@ -444,7 +471,7 @@ function setSecurityHeaders(response) {
 }
 
 function json(response, status, value) {
-  if (response.writableEnded) return;
+  if (response.writableEnded || response.destroyed) return;
   response.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
   response.end(JSON.stringify(value));
 }
@@ -566,6 +593,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     logger,
     logHashSalt: process.env.LOG_HASH_SALT ?? "",
     maxConcurrentUpstream: process.env.MAX_CONCURRENT_UPSTREAM ?? 16,
+    upstreamDeadlineMs: boundedTimeout(process.env.UPSTREAM_DEADLINE_MS ?? 90_000),
   }).listen(port, host, () => {
     if (logger) safeLog(logger, "server_started", { host, port, cloud: Boolean(client), rateLimiter: limiter.mode });
     else console.log(`Shoujian Oracle: http://${host}:${port} (${client ? "Gemini cloud enabled" : "local fallback"})`);

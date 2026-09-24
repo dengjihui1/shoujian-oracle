@@ -128,6 +128,85 @@ test("upstream concurrency limit sheds excess work and releases capacity", async
   });
 });
 
+test("both chat modes enforce a deadline and release capacity after timeout", async () => {
+  let calls = 0;
+  const client = {
+    models: { chat: "test" },
+    async chat({ signal }) {
+      calls += 1;
+      if (calls > 1) return { text: "恢复" };
+      await new Promise((resolve) => signal.addEventListener("abort", resolve, { once: true }));
+      throw Object.assign(new Error("cancelled"), { code: "cancelled", status: 499 });
+    },
+    async *chatStream({ signal }) {
+      await new Promise((resolve) => signal.addEventListener("abort", resolve, { once: true }));
+      throw Object.assign(new Error("cancelled"), { code: "cancelled", status: 499 });
+    },
+  };
+  await withServer(createApp({ client, upstreamDeadlineMs: 40, maxConcurrentUpstream: 1 }), async (base) => {
+    const options = { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message: "你好", purpose: "chat" }) };
+    const standard = await fetch(`${base}/api/chat`, options);
+    assert.equal(standard.status, 504);
+    assert.equal((await standard.json()).error, "timeout");
+    const streaming = await fetch(`${base}/api/chat/stream`, options);
+    assert.match(await streaming.text(), /event: error\ndata: \{"error":"timeout"/u);
+    const recovered = await fetch(`${base}/api/chat`, options);
+    assert.equal(recovered.status, 200);
+    assert.equal((await recovered.json()).text, "恢复");
+  });
+});
+
+test("disconnecting a non-streaming chat aborts its upstream request", async () => {
+  let markStarted;
+  let markAborted;
+  const started = new Promise((resolve) => { markStarted = resolve; });
+  const aborted = new Promise((resolve) => { markAborted = resolve; });
+  const client = {
+    models: { chat: "test" },
+    async chat({ signal }) {
+      markStarted();
+      await new Promise((resolve) => signal.addEventListener("abort", resolve, { once: true }));
+      markAborted(signal.aborted);
+      throw Object.assign(new Error("cancelled"), { code: "cancelled", status: 499 });
+    },
+  };
+  await withServer(createApp({ client }), async (base) => {
+    const controller = new AbortController();
+    const pending = fetch(`${base}/api/chat`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message: "你好", purpose: "chat" }), signal: controller.signal,
+    }).catch((error) => error);
+    await started;
+    controller.abort();
+    assert.equal(await aborted, true);
+    await pending;
+  });
+});
+
+test("citation repair uses the original chat deadline", async () => {
+  const signals = [];
+  const client = {
+    models: { chat: "test" },
+    async chat({ signal }) {
+      signals.push(signal);
+      if (signals.length === 1) return { text: "潜龙勿用提醒先等待。" };
+      await new Promise((resolve) => signal.addEventListener("abort", resolve, { once: true }));
+      throw Object.assign(new Error("cancelled"), { code: "cancelled", status: 499 });
+    },
+  };
+  await withServer(createApp({ client, upstreamDeadlineMs: 40 }), async (base) => {
+    const response = await fetch(`${base}/api/chat`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message: "潜龙勿用是什么意思？", stage: "question" }),
+    });
+    assert.equal(response.status, 504);
+    assert.equal((await response.json()).error, "timeout");
+  });
+  assert.equal(signals.length, 2);
+  assert.equal(signals[0], signals[1]);
+  assert.equal(signals[1].aborted, true);
+});
+
 test("health check bypasses API limits and exposes no provider credentials", async () => {
   const keys = [];
   const rateLimiter = { allow(key) { keys.push(key); return false; } };
