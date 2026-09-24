@@ -14,31 +14,45 @@ export class AudioRecorder {
     }
     this.starting = true;
     const token = this.startToken = (this.startToken ?? 0) + 1;
+    let stream = null;
+    let timer = null;
+    let released = false;
+    const release = () => {
+      if (released) return;
+      released = true;
+      clearTimeout(timer);
+      stream?.getTracks().forEach((track) => track.stop());
+      if (this.stream === stream) this.stream = null;
+      if (this.timer === timer) this.timer = null;
+    };
     try {
-      this.stream = await this.mediaDevices.getUserMedia({ audio: true });
+      stream = await this.mediaDevices.getUserMedia({ audio: true });
       if (token !== this.startToken) throw abortError();
+      this.stream = stream;
       const preferred = ["audio/webm;codecs=opus", "audio/mp4", "audio/webm"].find((type) => this.MediaRecorderClass.isTypeSupported?.(type));
-      this.chunks = [];
-      this.recorder = preferred ? new this.MediaRecorderClass(this.stream, { mimeType: preferred }) : new this.MediaRecorderClass(this.stream);
-      this.recorder.addEventListener("dataavailable", (event) => { if (event.data?.size) this.chunks.push(event.data); });
+      const chunks = [];
+      const recorder = preferred ? new this.MediaRecorderClass(stream, { mimeType: preferred }) : new this.MediaRecorderClass(stream);
+      this.recorder = recorder;
+      recorder.addEventListener("dataavailable", (event) => { if (event.data?.size) chunks.push(event.data); });
       this.result = new Promise((resolve, reject) => {
         let settled = false;
         const finish = (value, error = null) => {
           if (settled) return;
           settled = true;
-          this.#releaseStream();
+          release();
           error ? reject(error) : resolve(value);
         };
-        this.recorder.addEventListener("stop", () => {
-          const blob = new Blob(this.chunks, { type: this.recorder.mimeType || "audio/webm" });
+        recorder.addEventListener("stop", () => {
+          const blob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
           blob.size ? finish(blob) : finish(null, new Error("没有录到声音，请重试"));
         }, { once: true });
-        this.recorder.addEventListener("error", () => finish(null, new Error("录音失败，请检查麦克风权限")), { once: true });
+        recorder.addEventListener("error", () => finish(null, new Error("录音失败，请检查麦克风权限")), { once: true });
       });
-      this.recorder.start();
-      this.timer = setTimeout(() => this.stop(), this.maxDurationMs);
+      recorder.start();
+      timer = setTimeout(() => { if (recorder.state !== "inactive") recorder.stop(); }, this.maxDurationMs);
+      this.timer = timer;
     } catch (error) {
-      this.#releaseStream();
+      release();
       throw error;
     } finally {
       this.starting = false;
@@ -58,11 +72,6 @@ export class AudioRecorder {
     return Promise.resolve();
   }
 
-  #releaseStream() {
-    clearTimeout(this.timer);
-    this.stream?.getTracks().forEach((track) => track.stop());
-    this.stream = null;
-  }
 }
 
 export class BrowserSpeechRecognizer {

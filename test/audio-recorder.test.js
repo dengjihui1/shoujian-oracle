@@ -151,3 +151,37 @@ test("cancelling a pending permission releases the late microphone stream", asyn
   assert.equal(constructed, 0);
   assert.equal(recorder.starting, false);
 });
+
+test("an old stop event cannot mix into or stop a new recording", async () => {
+  const tracks = [];
+  class DelayedRecorder {
+    static instances = [];
+    constructor() { this.state = "inactive"; this.mimeType = "audio/webm"; this.listeners = {}; DelayedRecorder.instances.push(this); }
+    addEventListener(name, handler) { this.listeners[name] = handler; }
+    start() { this.state = "recording"; }
+    stop() { this.state = "inactive"; }
+    complete(text) {
+      this.listeners.dataavailable({ data: new Blob([text]) });
+      this.listeners.stop();
+    }
+  }
+  const recorder = new AudioRecorder({
+    mediaDevices: { getUserMedia: async () => {
+      const track = { stopped: false, stop() { this.stopped = true; } };
+      tracks.push(track);
+      return { getTracks: () => [track] };
+    } },
+    MediaRecorderClass: DelayedRecorder,
+  });
+  await recorder.start();
+  const oldResult = recorder.cancel();
+  await recorder.start();
+  DelayedRecorder.instances[0].complete("old");
+  assert.equal(await (await oldResult).text(), "old");
+  assert.equal(tracks[0].stopped, true);
+  assert.equal(tracks[1].stopped, false);
+  const newResult = recorder.stop();
+  DelayedRecorder.instances[1].complete("new");
+  assert.equal(await (await newResult).text(), "new");
+  assert.equal(tracks[1].stopped, true);
+});
