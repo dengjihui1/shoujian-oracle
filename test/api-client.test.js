@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { OracleApiClient, parseEventStream } from "../src/api-client.js";
+import { MAX_CHAT_REPLY_CHARS, MAX_SSE_CHUNK_BYTES, MAX_SSE_EVENT_CHARS } from "../src/stream-limits.js";
 
 test("default browser fetch keeps its required global receiver", async () => {
   const originalFetch = globalThis.fetch;
@@ -99,4 +100,38 @@ test("browser SSE parsing handles CRLF boundaries split between chunks", async (
   const events = [];
   for await (const event of parseEventStream(body)) events.push(event);
   assert.deepEqual(events, [{ event: "delta", data: { text: "渐进" } }]);
+});
+
+test("browser cancels a stream with an oversized network chunk", async () => {
+  let cancelled = false;
+  const body = new ReadableStream({
+    pull(controller) { controller.enqueue(new Uint8Array(MAX_SSE_CHUNK_BYTES + 1)); },
+    cancel() { cancelled = true; },
+  });
+  await assert.rejects(async () => {
+    for await (const _event of parseEventStream(body)) { /* consume */ }
+  }, (error) => error.code === "invalid_stream");
+  assert.equal(cancelled, true);
+});
+
+test("browser cancels a stream with an unterminated oversized event", async () => {
+  let cancelled = false;
+  const body = new ReadableStream({
+    pull(controller) { controller.enqueue(new TextEncoder().encode(`data: ${"x".repeat(MAX_SSE_EVENT_CHARS)}`)); },
+    cancel() { cancelled = true; },
+  });
+  await assert.rejects(async () => {
+    for await (const _event of parseEventStream(body)) { /* consume */ }
+  }, (error) => error.code === "invalid_stream");
+  assert.equal(cancelled, true);
+});
+
+test("browser rejects an oversized answer before exposing it to the page", async () => {
+  const reply = "甲".repeat(MAX_CHAT_REPLY_CHARS + 1);
+  const sse = `event: delta\ndata: ${JSON.stringify({ text: reply })}\n\n`;
+  let exposed = false;
+  const client = new OracleApiClient({ fetchFn: async () => new Response(sse, { headers: { "content-type": "text/event-stream" } }) });
+  await assert.rejects(() => client.chatStream({ message: "你好" }, { onDelta: () => { exposed = true; } }),
+    (error) => error.code === "response_too_large");
+  assert.equal(exposed, false);
 });

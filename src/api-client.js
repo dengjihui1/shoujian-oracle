@@ -1,3 +1,5 @@
+import { MAX_CHAT_REPLY_CHARS, MAX_SSE_CHUNK_BYTES, MAX_SSE_EVENT_CHARS } from "./stream-limits.js";
+
 export class OracleApiClient {
   constructor({ baseUrl = "", fetchFn = globalThis.fetch } = {}) {
     this.baseUrl = baseUrl.replace(/\/$/u, "");
@@ -30,15 +32,21 @@ export class OracleApiClient {
         onMeta?.(message.data);
       } else if (message.event === "delta") {
         const text = String(message.data.text ?? "");
+        if (result.text.length + text.length > MAX_CHAT_REPLY_CHARS) throw browserError("response_too_large", "云端回答过长，请缩小问题后重试", 502);
         result.text += text;
         onDelta?.(text, result.text);
       } else if (message.event === "replace") {
-        result.text = String(message.data.text ?? "");
+        const text = String(message.data.text ?? "");
+        if (text.length > MAX_CHAT_REPLY_CHARS) throw browserError("response_too_large", "云端回答过长，请缩小问题后重试", 502);
+        result.text = text;
         onReplace?.(result.text, message.data);
       } else if (message.event === "error") {
         throw browserError(message.data.error, message.data.message, 502);
       } else if (message.event === "done") {
-        if (typeof message.data.text === "string") result.text = message.data.text;
+        if (typeof message.data.text === "string") {
+          if (message.data.text.length > MAX_CHAT_REPLY_CHARS) throw browserError("response_too_large", "云端回答过长，请缩小问题后重试", 502);
+          result.text = message.data.text;
+        }
         Object.assign(result, message.data);
         completed = true;
       }
@@ -68,23 +76,31 @@ export async function* parseEventStream(body) {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  let finished = false;
   try {
     while (true) {
       const { done, value } = await reader.read();
+      if (value?.byteLength > MAX_SSE_CHUNK_BYTES) throw browserError("invalid_stream", "回答数据块过大，请稍后重试", 502);
       buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done });
       buffer = buffer.replace(/\r\n/gu, "\n");
       if (done) buffer = buffer.replace(/\r/gu, "\n");
       let boundary;
       while ((boundary = buffer.indexOf("\n\n")) >= 0) {
+        if (boundary > MAX_SSE_EVENT_CHARS) throw browserError("invalid_stream", "回答事件过大，请稍后重试", 502);
         const parsed = parseEvent(buffer.slice(0, boundary));
         buffer = buffer.slice(boundary + 2);
         if (parsed) yield parsed;
       }
+      if (buffer.length > MAX_SSE_EVENT_CHARS) throw browserError("invalid_stream", "回答事件过大，请稍后重试", 502);
       if (done) break;
     }
     const parsed = parseEvent(buffer);
     if (parsed) yield parsed;
+    finished = true;
   } finally {
+    if (!finished) {
+      try { await reader.cancel(); } catch { /* connection may already be closed */ }
+    }
     reader.releaseLock();
   }
 }

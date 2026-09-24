@@ -40,7 +40,7 @@ Q01 行为测试 + Q02 项目体检 + Q03 RAG 评测 + Q04 浏览器 E2E 覆盖�
 | P03 | 虚拟人状态选择 | `src/avatar-state.js` | 稳定 | `test/avatar-state.test.js` |
 | P04 | 本机会话记忆与迁移 | `src/conversation-memory.js` | 稳定 | `test/conversation-memory.test.js`、浏览器 E2E |
 | P05 | 流式文字揭示 | `src/streaming-text.js` | 稳定 | `test/streaming-text.test.js` |
-| P06 | 浏览器 API 客户端 | `src/api-client.js` | 稳定 | `test/api-client.test.js` |
+| P06 | 浏览器 API 客户端 | `src/api-client.js`、`src/stream-limits.js` | 稳定 | `test/api-client.test.js` |
 | P07 | 语音输入 | `src/audio-recorder.js` | 稳定 | `test/audio-recorder.test.js` |
 | P08 | 中文语音分句 | `src/speech-segmenter.js` | 稳定 | `test/speech-segmenter.test.js` |
 | P09 | TTS 预取队列 | `src/speech-queue.js` | 稳定 | `test/speech-queue.test.js` |
@@ -552,3 +552,5 @@ Q01 行为测试 + Q02 项目体检 + Q03 RAG 评测 + Q04 浏览器 E2E 覆盖�
 0.44.0 的录音转写期限见 [0.44.0 发布记录](RELEASE_0.44.0.md)。S01 对内联转写、必要时的文件上传及后续识别传递取消信号；已取得文件名的上传仍尝试删除。
 
 0.45.0 的供应商熔断修复见 [0.45.0 发布记录](RELEASE_0.45.0.md)。S01 在全部聊天供应商冷却时立即返回服务暂不可用，不再强行重试主供应商。
+
+0.46.0 的浏览器流边界见 [0.46.0 发布记录](RELEASE_0.46.0.md)。P06 与供应商解析器共用网络块、事件和回答长度上限；异常数据会取消响应流。
