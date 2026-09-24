@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { once } from "node:events";
-import { clientFromEnv, compatibleProvidersFromEnv, createApp } from "../server/index.mjs";
+import { clientFromEnv, compatibleProvidersFromEnv, createApp, createHttpAppServer } from "../server/index.mjs";
 import { OracleApiClient } from "../src/api-client.js";
 
 async function withServer(app, run) {
@@ -11,6 +11,14 @@ async function withServer(app, run) {
   const { port } = server.address();
   try { await run(`http://127.0.0.1:${port}`); } finally { server.close(); await once(server, "close"); }
 }
+
+test("production HTTP server bounds request headers and body receive time", () => {
+  const server = createHttpAppServer();
+  assert.equal(server.headersTimeout, 10_000);
+  assert.equal(server.requestTimeout, 60_000);
+  assert.equal(server.keepAliveTimeout, 5_000);
+  assert.equal(server.maxHeadersCount, 100);
+});
 
 test("status exposes local fallback without leaking credentials", async () => {
   await withServer(createApp(), async (base) => {

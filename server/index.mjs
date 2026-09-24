@@ -123,6 +123,15 @@ export function createApp({
   };
 }
 
+export function createHttpAppServer(options = {}) {
+  const server = createHttpServer(createApp(options));
+  server.headersTimeout = 10_000;
+  server.requestTimeout = 60_000;
+  server.keepAliveTimeout = 5_000;
+  server.maxHeadersCount = 100;
+  return server;
+}
+
 async function handleTranscribe(response, client, body) {
   const mimeType = String(body.mimeType ?? "").split(";")[0].toLowerCase();
   if (!AUDIO_TYPES.has(mimeType)) throw httpError(415, "unsupported_audio", "不支持这种录音格式。");
@@ -541,14 +550,14 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const limiter = await rateLimiterFromEnv(process.env, {
     onRedisError: () => safeLog(logger, "rate_limiter_error", { mode: "redis" }),
   });
-  createHttpServer(createApp({
+  createHttpAppServer({
     client,
     rateLimiter: limiter.rateLimiter,
     trustProxy: enabledByEnvironment(process.env.TRUST_PROXY),
     logger,
     logHashSalt: process.env.LOG_HASH_SALT ?? "",
     maxConcurrentUpstream: process.env.MAX_CONCURRENT_UPSTREAM ?? 16,
-  })).listen(port, host, () => {
+  }).listen(port, host, () => {
     if (logger) safeLog(logger, "server_started", { host, port, cloud: Boolean(client), rateLimiter: limiter.mode });
     else console.log(`Shoujian Oracle: http://${host}:${port} (${client ? "Gemini cloud enabled" : "local fallback"})`);
   });
