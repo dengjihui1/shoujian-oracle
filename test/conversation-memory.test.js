@@ -143,4 +143,28 @@ test("local session import rejects malformed, unsupported, and oversized files",
   assert.throws(() => parseConversationExport("not-json"), /不是有效 JSON/u);
   assert.throws(() => parseConversationExport({ schema: "unknown", version: 1 }), /格式或版本/u);
   assert.throws(() => parseConversationExport(`{"padding":"${"x".repeat(256 * 1024)}"}`), /文件过大/u);
+  assert.throws(() => parseConversationExport({ schema: "shoujian.oracle-session", version: 1, session: null }), /内容无效/u);
+});
+
+test("imported evidence is bounded and malformed entries cannot break restored rendering", () => {
+  const imported = parseConversationExport({
+    schema: "shoujian.oracle-session",
+    version: 1,
+    session: { messages: [
+      { role: "user", text: "原问" },
+      { role: "master", text: "回答", evidence: [
+        null,
+        "unexpected",
+        { id: "ZY-01-LINE-1", title: "乾", layer: "经传", excerpt: "x".repeat(2_000), sourceUrl: "https://zh.wikisource.org/wiki/周易/乾", ignored: "private" },
+        { id: "BAD", title: "外部来源", sourceUrl: "https://example.com/phishing" },
+      ] },
+    ] },
+  });
+  assert.deepEqual(imported.messages[1].evidence, [{
+    id: "ZY-01-LINE-1",
+    title: "乾",
+    layer: "经传",
+    excerpt: "x".repeat(1_200),
+    sourceUrl: new URL("https://zh.wikisource.org/wiki/周易/乾").href,
+  }]);
 });

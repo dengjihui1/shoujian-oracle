@@ -9,7 +9,10 @@ const STATUS = {
 
 test.beforeEach(async ({ context, page }) => {
   await context.addInitScript(() => {
-    localStorage.clear();
+    if (!sessionStorage.getItem("shoujian-e2e-initialized")) {
+      localStorage.clear();
+      sessionStorage.setItem("shoujian-e2e-initialized", "1");
+    }
     class FakeUtterance {
       constructor(text) { this.text = text; }
     }
@@ -132,6 +135,32 @@ test("本机会话可导出、清除并从文件恢复", async ({ page }) => {
   await page.locator("[data-session-import]").setInputFiles(path);
   await expect(page.locator(".message.user p", { hasText: "请保存这一轮" })).toBeVisible();
   await expect(page.locator(".message.master p", { hasText: "本机会话已导入" })).toBeVisible();
+  await expect(composer(page)).toBeEnabled();
+});
+
+test("导入异常来源记录后页面仍可用，刷新也不会被污染", async ({ page }) => {
+  await page.goto("/");
+  const file = {
+    name: "shoujian-session.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify({
+      schema: "shoujian.oracle-session",
+      version: 1,
+      session: { messages: [
+        { role: "user", text: "测试导入" },
+        { role: "master", text: "保留回答", evidence: [null, { id: "ZY-01-LINE-1", title: "乾", sourceUrl: "https://example.com/source" }] },
+      ] },
+    })),
+  };
+  await page.locator("[data-session-import]").setInputFiles(file);
+  await expect(page.locator(".message.master p", { hasText: "保留回答" })).toBeVisible();
+  await expect(page.locator('a[href="https://example.com/source"]')).toHaveCount(0);
+  await expect(composer(page)).toBeEnabled();
+  expect(await page.evaluate(() => localStorage.getItem("shoujian-oracle:conversation:v1"))).toContain("保留回答");
+  await page.reload();
+  expect(await page.evaluate(() => localStorage.getItem("shoujian-oracle:conversation:v1"))).toContain("保留回答");
+  expect(await page.locator("shoujian-oracle").evaluate((host) => host.memory.loadSession().messages.map((message) => message.text))).toContain("保留回答");
+  await expect(page.locator(".message.master p", { hasText: "保留回答" })).toBeVisible();
   await expect(composer(page)).toBeEnabled();
 });
 

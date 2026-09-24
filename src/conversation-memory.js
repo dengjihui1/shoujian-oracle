@@ -111,6 +111,9 @@ export function parseConversationExport(value) {
   if (document?.schema !== CONVERSATION_EXPORT_SCHEMA || document?.version !== CONVERSATION_EXPORT_VERSION) {
     throw new Error("会话文件格式或版本不受支持");
   }
+  if (!document.session || typeof document.session !== "object" || !Array.isArray(document.session.messages)) {
+    throw new Error("会话文件内容无效");
+  }
   return normalizeSession(document.session);
 }
 
@@ -128,11 +131,42 @@ function sanitizeMessages(messages, limit, { persistentOnly = false } = {}) {
       role: message?.role === "user" ? "user" : "master",
       text: String(message?.text ?? "").slice(0, 2_000),
       cloud: Boolean(message?.cloud),
-      evidence: Array.isArray(message?.evidence) ? message.evidence.slice(0, 8) : [],
+      evidence: sanitizeEvidence(message?.evidence),
       incomplete: Boolean(message?.streaming || message?.error || message?.cancelled),
     }));
   const selected = persistentOnly ? completedMessages(normalized) : normalized.filter(({ text }) => text);
   return selected.slice(-limit).map(({ incomplete: _incomplete, ...message }) => message);
+}
+
+function sanitizeEvidence(value) {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 8).flatMap((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+    const id = boundedEvidenceText(item.id, 80);
+    const sourceUrl = trustedEvidenceUrl(item.sourceUrl);
+    if (!id || !sourceUrl) return [];
+    return [{
+      id,
+      title: boundedEvidenceText(item.title, 160),
+      layer: boundedEvidenceText(item.layer, 80),
+      excerpt: boundedEvidenceText(item.excerpt, 1_200),
+      sourceUrl,
+    }];
+  });
+}
+
+function boundedEvidenceText(value, limit) {
+  return typeof value === "string" ? value.slice(0, limit) : "";
+}
+
+function trustedEvidenceUrl(value) {
+  if (typeof value !== "string" || value.length > 500) return "";
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && url.hostname === "zh.wikisource.org" ? url.href : "";
+  } catch {
+    return "";
+  }
 }
 
 function completedMessages(messages) {
