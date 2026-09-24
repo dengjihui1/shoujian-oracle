@@ -4,7 +4,7 @@
 
 独立的轻量虚拟卦师与经传 RAG 组件。它保留虚拟人主持、问题边界、三钱六爻和 64 卦确定性映射，并加入可追溯的《周易》《彖》《象》《说卦》冻结知识检索；明确不包含住宅分析、纳甲时证、档案、支付与追验等主项目核心。
 
-![版本](https://img.shields.io/badge/version-0.50.0-8e332a)
+![版本](https://img.shields.io/badge/version-0.51.0-8e332a)
 ![许可](https://img.shields.io/badge/license-MIT-d3b27f)
 
 ## 现在能完成什么
@@ -18,7 +18,7 @@
 7. 普通聊天会过滤弱相关误召回；经传 / 解卦保留冻结证据，漏引或错引会自动受约束修复一次，仍失败才给自然资料不足说明；回答通过 SSE 真流式传输，若供应商半途断流会恢复并原位替换；
 8. 每轮注入 `Asia/Shanghai` 服务器时钟，日期与时间问题不再交给模型猜测；
 9. 最近 24 条已完成对话、当前原问和程序卦象保存在当前浏览器本机；刷新后恢复同一阶段与同一卦，每次最多发送最近 16 条且不超过约 6000 字符；
-10. 支持浏览器实时语音转写，并在不支持时退回真实 Gemini 单请求内联转写；这不是 Google Cloud STT v2，接口边界明确记录；
+10. 支持浏览器实时语音转写；浏览器不支持或在线识别网络失败时，可手动录音并调用 Gemini 单请求转写。录音兜底需点“按下说话”和“停止并转文字”，不能自动连续对话；这不是 Google Cloud STT v2；
 11. 语音回答提供“极速浏览器 / 云端音色”切换：配置 Google Cloud 后云端音色自动使用 Google TTS，否则兼容回退 Gemini TTS；两者继续使用两句预取、请求合并和有界缓存；
 12. 浏览器直接把 PCM 放进 Web Audio，按真实音量驱动墨衡嘴型与音量柱；不支持 Web Audio 时才回退到 WAV 播放；
 13. 回答和转写都可以手动停止；新问题、关闭语音或停止回答都会立即清理旧 TTS 请求和播放队列；
@@ -45,7 +45,7 @@
 | `oracleQuestionBoundary` | 7 类公开字规 | 问契签名、验期、准绳与追验 |
 | `iching` | 6/7/8/9、八卦、文王序 64 卦映射 | 古籍全文、爻辞、纳甲、六亲、旬空、六神 |
 
-经传数据另从中文维基文库公开来源建立独立知识包，不复制主项目住宅知识。语音 API 的真实边界、Google Cloud 配置和 RAG 构建全过程见 [语音 API 与 RAG 架构说明](docs/VOICE_RAG_ARCHITECTURE.md)；从上游 Cactus 提取了什么、拒绝照搬什么见 [Cactus 模块拆解](docs/CACTUS_MODULE_EXTRACTION.md)；完整映射见 [组件抽取与流程图](docs/COMPONENT_MAP.md)，逐模块说明见 [守简模块池](docs/MODULE_POOL.md)及[逐模块工程选择复核](docs/ENGINEERING_REVIEW_2026-09-24.md)，最新迭代见 [0.50.0 自检记录](docs/RELEASE_0.50.0.md)，生产审计与待验收项见 [生产审计台账](docs/PRODUCTION_AUDIT_2026-09-24.md)。
+经传数据另从中文维基文库公开来源建立独立知识包，不复制主项目住宅知识。语音 API 的真实边界、Google Cloud 配置和 RAG 构建全过程见 [语音 API 与 RAG 架构说明](docs/VOICE_RAG_ARCHITECTURE.md)；从上游 Cactus 提取了什么、拒绝照搬什么见 [Cactus 模块拆解](docs/CACTUS_MODULE_EXTRACTION.md)；完整映射见 [组件抽取与流程图](docs/COMPONENT_MAP.md)，逐模块说明见 [守简模块池](docs/MODULE_POOL.md)及[逐模块工程选择复核](docs/ENGINEERING_REVIEW_2026-09-24.md)，最新迭代见 [0.51.0 自检记录](docs/RELEASE_0.51.0.md)，生产审计与待验收项见 [生产审计台账](docs/PRODUCTION_AUDIT_2026-09-24.md)。
 
 用户实测确认的交互、RAG 降级、问卦访谈和直接语音对话改进，统一记录在 [下一阶段任务池](docs/USER_FEEDBACK_BACKLOG.md)；任务状态以该文件和实际测试为准。
 
@@ -58,7 +58,7 @@ npm start
 
 访问 `http://127.0.0.1:8000/`。此时可以完整起卦，但对话仅支持固定意图。
 
-## 启用真正的语音虚拟人
+## 启用云端对话与语音
 
 1. 在 [Google AI Studio](https://aistudio.google.com/app/apikey) 创建 Gemini API 密钥；
 2. 复制 `.env.example` 为 `.env`；
@@ -71,9 +71,9 @@ npm start
 云端链路为：
 
 ```text
-麦克风 → 浏览器实时转写（支持时）→ 可编辑文字
+麦克风 → 浏览器实时转写（可用时）→ 可编辑文字
 实时语音对话 → 定稿 / 停顿自动提交 → 回答期间暂停识别 → 首句朗读结束后恢复倾听
-麦克风 → Gemini 3.5 Transcribe 单请求内联音频（兼容兜底）→ 可编辑文字
+浏览器实时识别网络失败 → 停止连续模式 → 手动录音 → Gemini 3.5 Transcribe 单请求内联音频 → 可编辑文字
 普通文字 → Gemini 3.1 Flash Lite SSE（普通 / RAG 场景路由；半途断流恢复）→ 字符级呈现
 经传问题或本地卦象 → 冻结知识检索 → 引用白名单校验 → 带来源回答
 Gemini 失败 → 可选 OpenAI-compatible 供应商池 → 短时熔断与自动回退

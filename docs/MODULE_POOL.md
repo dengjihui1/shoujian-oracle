@@ -41,7 +41,7 @@ Q01 行为测试 + Q02 项目体检 + Q03 RAG 评测 + Q04 浏览器 E2E 覆盖�
 | P04 | 本机会话记忆与迁移 | `src/conversation-memory.js` | 稳定 | `test/conversation-memory.test.js`、浏览器 E2E |
 | P05 | 流式文字揭示 | `src/streaming-text.js` | 稳定 | `test/streaming-text.test.js` |
 | P06 | 浏览器 API 客户端 | `src/api-client.js`、`src/stream-limits.js` | 稳定 | `test/api-client.test.js` |
-| P07 | 语音输入 | `src/audio-recorder.js` | 稳定 | `test/audio-recorder.test.js` |
+| P07 | 语音输入 | `src/audio-recorder.js` | 自动回归通过，待真实设备验收 | `test/audio-recorder.test.js`、`e2e/oracle-flow.spec.js` |
 | P08 | 中文语音分句 | `src/speech-segmenter.js` | 稳定 | `test/speech-segmenter.test.js` |
 | P09 | TTS 预取队列 | `src/speech-queue.js` | 稳定 | `test/speech-queue.test.js` |
 | P10 | PCM 播放与嘴型信号 | `src/audio-player.js` | 稳定 | `test/audio-player.test.js` |
@@ -154,7 +154,7 @@ Q01 行为测试 + Q02 项目体检 + Q03 RAG 评测 + Q04 浏览器 E2E 覆盖�
 - 输入 / 输出：麦克风音频 → 增量可编辑文字或音频 Base64。
 - 依赖：Web Speech API、MediaRecorder、P06。
 - 正常路径：实时 interim / final 更新；不支持时录音后单次转写。
-- 失败与降级：构造、录制或取消失败都会释放媒体轨；供应商错误转成稳定说明。
+- 失败与降级：浏览器在线识别返回 `network` 后本次页面停用实时入口，结束连续模式并提示手动录音转写；构造、录制或取消失败会释放媒体轨。录音兜底不自动连续对话。
 - 测试：`test/audio-recorder.test.js`。
 - 练习：加入 45 秒倒计时和客户端音量过低提示。
 
@@ -562,3 +562,5 @@ Q01 行为测试 + Q02 项目体检 + Q03 RAG 评测 + Q04 浏览器 E2E 覆盖�
 0.49.0 的跨实例时间边界见 [0.49.0 发布记录](RELEASE_0.49.0.md)。S05 让 Redis Lua 脚本从同一个 Redis 时钟取得窗口时间；拒绝请求不再延长键的过期时间。
 
 0.50.0 的状态检查生命周期见 [0.50.0 发布记录](RELEASE_0.50.0.md)。P01 在断开或重试时取消旧状态请求，P06 传递取消信号，旧结果不能覆盖重挂后的新状态。
+
+0.51.0 的语音网络故障降级见 [0.51.0 发布记录](RELEASE_0.51.0.md)。P07 在浏览器在线识别返回 `network` 时停止重复尝试；P01 退出连续模式并引导使用手动录音转写。真实设备效果仍需麦克风验收。

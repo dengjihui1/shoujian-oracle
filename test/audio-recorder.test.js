@@ -63,6 +63,21 @@ test("browser speech recognition converts provider errors into stable Chinese me
   assert.equal(recognizer.active, false);
 });
 
+test("browser network recognition failures disable live input for this page", async () => {
+  class FakeRecognition {
+    constructor() { FakeRecognition.instance = this; }
+    start() {}
+    abort() { this.aborted = true; this.onend?.(); }
+  }
+  const recognizer = new BrowserSpeechRecognizer({ RecognitionClass: FakeRecognition });
+  const result = recognizer.start();
+  FakeRecognition.instance.onerror({ error: "network" });
+  await assert.rejects(result, { code: "network_unavailable" });
+  assert.equal(recognizer.supported, false);
+  assert.equal(FakeRecognition.instance.aborted, true);
+  await assert.rejects(recognizer.start(), /不可用/u);
+});
+
 test("cancelling live recognition rejects as an intentional abort", async () => {
   class FakeRecognition {
     constructor() { FakeRecognition.instance = this; }

@@ -1,6 +1,6 @@
 # 语音 API 与 RAG 架构说明
 
-记录日期：2026-09-22（Asia/Shanghai）。本文把“浏览器能力”“Gemini API”“Google Cloud API”和本地 RAG 分开说明，避免把不同产品混成一个接口。
+更新日期：2026-09-25（Asia/Shanghai）。本文把“浏览器能力”“Gemini API”“Google Cloud API”和本地 RAG 分开说明，避免把不同产品混成一个接口。
 
 ## 一、当前语音链路到底调用了什么
 
@@ -9,11 +9,13 @@
 当前有两层：
 
 1. 浏览器提供 `SpeechRecognition / webkitSpeechRecognition` 时，`src/audio-recorder.js` 使用它做增量转写，用户说话时输入框持续出现 interim / final 文字。这个浏览器接口由浏览器厂商实现，本项目无法承诺它一定使用 Google Cloud Speech-to-Text，也拿不到服务端 SLA、词表适配或计费控制。
-2. 浏览器不支持实时识别时，录音经 `src/api-client.js` 发到 `/api/transcribe`；`server/index.mjs` 校验格式和大小后，由 `server/gemini-client.mjs` 调用 Gemini Interactions API 的 `gemini-3.5-transcribe`。短录音以内联 Base64 发送，只有模型拒绝该格式时才走 Files API。转写有整轮期限，浏览器断开会取消上游；取得文件名后，即使识别被取消也会尽力删除临时文件。上传尚未返回文件名时无法保证删除，实际清理与留存仍须核对供应商条款和真实调用。
+2. 浏览器不支持实时识别，或接口存在但在线识别返回 `network` 错误时，页面改用手动录音。用户点击“按下说话”与“停止并转文字”后，录音经 `src/api-client.js` 发到 `/api/transcribe`；`server/index.mjs` 校验格式和大小后，由 `server/gemini-client.mjs` 调用 Gemini Interactions API 的 `gemini-3.5-transcribe`。短录音以内联 Base64 发送，只有模型拒绝该格式时才走 Files API。转写有整轮期限，浏览器断开会取消上游；取得文件名后，即使识别被取消也会尽力删除临时文件。上传尚未返回文件名时无法保证删除，实际清理与留存仍须核对供应商条款和真实调用。录音兜底不提供自动连续对话。
 
 所以准确说法是：**已经真实调用 Google 的 Gemini 转写 API，但尚未接入 Google Cloud Speech-to-Text v2 StreamingRecognize。**
 
 2026-09-22 的一次真实回环复验使用 Gemini TTS 生成新中文音频，再送入 `/api/transcribe`：TTS 约 16.5 秒，转写约 17.4 秒；“守简”被识别为“手写”。它证明接口真的调用成功，也证明当前 Gemini 录音兜底不应被描述为低延迟生产级 STT。
+
+2026-09-25 再次通过本机服务 `/api/speech` → WAV → `/api/transcribe` 做真实回环：TTS 约 5.8 秒，转写约 4.7 秒；“守简语音回环测试”识别成“手写语音回环测试”。这些是两次单样本接口检查，不能作为准确率或延迟承诺；真实麦克风、权限、噪声和回声仍须在用户设备验收。
 
 ### 文字转语音（TTS）
 

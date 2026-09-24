@@ -39,6 +39,7 @@ export class ShoujianOracle extends HTMLElement {
     this.voiceMode = this.browserSpeech.supported ? "fast" : "cloud";
     this.voiceState = "idle";
     this.voiceError = "";
+    this.voiceInputNotice = "";
     this.draft = "";
     this.intakeSummaryDraft = "";
     this.chatController = null;
@@ -550,6 +551,7 @@ export class ShoujianOracle extends HTMLElement {
   async startRecording() {
     if (!this.cloud || this.stage === "ready" || this.recording || this.recordingStarting || this.busy || this.transcribing) return;
     this.recordingStarting = true;
+    if (this.liveTranscriber.supported) this.voiceInputNotice = "";
     const epoch = this.recordingEpoch;
     if (this.voiceConversationSnapshot.active) this.stopVoiceConversation();
     this.render();
@@ -625,8 +627,7 @@ export class ShoujianOracle extends HTMLElement {
       }
     } catch (error) {
       if (error?.name !== "AbortError") {
-        this.appendMessage({ role: "master", text: `没能听清：${error.message}` });
-        this.persistMemory();
+        this.handleRecognitionFailure(error);
       }
     } finally {
       if (this.transcriptionController === controller) this.transcriptionController = null;
@@ -643,13 +644,27 @@ export class ShoujianOracle extends HTMLElement {
     clearTimeout(this.recordingTimer);
     this.recording = false;
     if (result.error) {
-      this.appendMessage({ role: "master", text: `没能听清：${result.error.message}` });
-      this.persistMemory();
+      this.handleRecognitionFailure(result.error);
     } else if (result.text) {
       this.draft = result.text;
     }
     this.render();
     this.focusComposer();
+  }
+
+  handleRecognitionFailure(error) {
+    if (error?.code === "network_unavailable") {
+      this.voiceInputNotice = this.recordingFallbackNotice();
+      return;
+    }
+    this.appendMessage({ role: "master", text: `没能听清：${error?.message ?? "语音识别失败"}` });
+    this.persistMemory();
+  }
+
+  recordingFallbackNotice() {
+    return this.recorder.supported
+      ? "浏览器实时转写网络不可用，本次页面已切换为录音转文字。请点击“按下说话”，说完后点击“停止并转文字”；刷新页面可重试实时模式。"
+      : "浏览器实时转写网络不可用，当前浏览器也不支持录音转文字；请使用文字输入。";
   }
 
   async speak(text) {
@@ -766,6 +781,11 @@ export class ShoujianOracle extends HTMLElement {
   handleVoiceConversationUpdate(snapshot) {
     const previous = this.voiceConversationSnapshot;
     this.voiceConversationSnapshot = snapshot;
+    if (snapshot.state === "error" && this.liveTranscriber.networkUnavailable) {
+      this.voiceInputNotice = this.recordingFallbackNotice();
+      this.stopVoiceConversation();
+      return;
+    }
     if (snapshot.metrics?.turnComplete) this.voicePerformance.record(snapshot.metrics);
     if (snapshot.state === "listening") this.draft = snapshot.transcript;
     const metricsChanged = ["asrFinalMs", "firstTokenMs", "firstAudioMs"]
@@ -848,6 +868,7 @@ export class ShoujianOracle extends HTMLElement {
       fastVoiceSupported: this.browserSpeech.supported,
       voiceState: this.voiceState,
       voiceError: this.voiceError,
+      voiceInputNotice: this.voiceInputNotice,
       canRetryResponse: Boolean(this.retryRequest),
       showJumpToLatest: this.conversationViewport.unread,
       voiceButtonLabel: this.voiceButtonLabel(),

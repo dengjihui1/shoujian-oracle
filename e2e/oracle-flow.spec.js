@@ -258,6 +258,62 @@ test("连续语音重报累计识别结果时只送问一次且不重复文字",
   await expect(page.locator(".message.master p", { hasText: "听到了。" })).toBeVisible();
 });
 
+test("浏览器实时识别网络失败后切到录音转文字", async ({ page }) => {
+  await page.route("**/api/transcribe", (route) => route.fulfill({ json: { text: "录音转写成功" } }));
+  await page.goto("/");
+  await page.locator("shoujian-oracle").evaluate((host) => {
+    host.recorder = {
+      supported: true,
+      starting: false,
+      async start() {},
+      async stop() { return new Blob(["test-audio"], { type: "audio/webm" }); },
+      async cancel() {},
+    };
+  });
+  await page.locator('[data-action="voice-conversation"]').click();
+  await page.evaluate(() => globalThis.__shoujianRecognition.onerror({ error: "network" }));
+  await expect(page.locator('[data-action="voice-conversation"]')).toHaveCount(0);
+  await expect(page.locator('[data-action="voice"]')).toHaveAttribute("aria-pressed", "false");
+  await expect(page.getByText("已切换为录音转文字", { exact: false })).toBeVisible();
+  await page.locator('[data-action="record"]').click();
+  await expect(page.locator('[data-action="stop-record"]')).toContainText("停止并转文字");
+  await page.locator('[data-action="stop-record"]').click();
+  await expect(page.locator("textarea#say")).toHaveValue("录音转写成功");
+});
+
+test("单次语音输入网络失败后也能改用录音", async ({ page }) => {
+  await page.route("**/api/transcribe", (route) => route.fulfill({ json: { text: "单次录音成功" } }));
+  await page.goto("/");
+  await page.locator("shoujian-oracle").evaluate((host) => {
+    host.recorder = {
+      supported: true,
+      starting: false,
+      async start() {},
+      async stop() { return new Blob(["test-audio"], { type: "audio/webm" }); },
+      async cancel() {},
+    };
+  });
+  await page.locator('[data-action="record"]').click();
+  await page.evaluate(() => globalThis.__shoujianRecognition.onerror({ error: "network" }));
+  await expect(page.getByText("已切换为录音转文字", { exact: false })).toBeVisible();
+  await expect(page.locator('[data-action="record"]')).toContainText("按下说话");
+  await page.locator('[data-action="record"]').click();
+  await page.locator('[data-action="stop-record"]').click();
+  await expect(page.locator("textarea#say")).toHaveValue("单次录音成功");
+});
+
+test("浏览器识别和录音都不可用时保留文字入口", async ({ page }) => {
+  await page.goto("/");
+  await page.locator("shoujian-oracle").evaluate((host) => {
+    host.recorder = { supported: false, cancel() {} };
+  });
+  await page.locator('[data-action="voice-conversation"]').click();
+  await page.evaluate(() => globalThis.__shoujianRecognition.onerror({ error: "network" }));
+  await expect(page.getByText("当前浏览器也不支持录音转文字", { exact: false })).toBeVisible();
+  await expect(page.locator('[data-action="record"]')).toHaveCount(0);
+  await expect(page.locator("textarea#say")).toBeEnabled();
+});
+
 test("录音授权未返回时重复启动只发起一次，离开页面后释放录音", async ({ page }) => {
   await page.goto("/");
   const state = await page.locator("shoujian-oracle").evaluate(async (host) => {

@@ -78,12 +78,13 @@ export class BrowserSpeechRecognizer {
   constructor({ RecognitionClass = globalThis.SpeechRecognition ?? globalThis.webkitSpeechRecognition } = {}) {
     this.RecognitionClass = RecognitionClass;
     this.active = false;
+    this.networkUnavailable = false;
   }
 
-  get supported() { return typeof this.RecognitionClass === "function"; }
+  get supported() { return typeof this.RecognitionClass === "function" && !this.networkUnavailable; }
 
   start({ onText } = {}) {
-    if (!this.supported) return Promise.reject(new Error("当前浏览器不支持实时语音转写"));
+    if (!this.supported) return Promise.reject(new Error(this.networkUnavailable ? "当前浏览器实时语音转写不可用" : "当前浏览器不支持实时语音转写"));
     if (this.active) return Promise.reject(new Error("语音转写已经开始"));
     const recognition = new this.RecognitionClass();
     recognition.lang = "zh-CN";
@@ -124,7 +125,9 @@ export class BrowserSpeechRecognizer {
         onText?.(this.latestText, { final: this.finalText, interim });
       };
       recognition.onerror = (event) => {
+        if (settled) return;
         if (event.error === "aborted" || this.abortRequested) return finish("", abortError());
+        if (event.error === "network") this.networkUnavailable = true;
         const messages = {
           "not-allowed": "麦克风权限未开启",
           "audio-capture": "没有找到可用麦克风",
@@ -133,7 +136,11 @@ export class BrowserSpeechRecognizer {
         };
         const error = new Error(messages[event.error] ?? "实时语音转写失败");
         if (event.error === "no-speech") error.code = "no_speech";
+        if (event.error === "network") error.code = "network_unavailable";
         finish("", error);
+        if (event.error === "network") {
+          try { recognition.abort(); } catch { /* recognition may already have ended */ }
+        }
       };
       recognition.onend = () => this.abortRequested
         ? finish("", abortError())
