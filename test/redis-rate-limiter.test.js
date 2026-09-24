@@ -20,11 +20,12 @@ test("Redis limiter hashes client identities and executes one atomic window scri
     requestId: () => "request-1",
   });
 
-  assert.equal(await limiter.allow("203.0.113.9", 2_000), true);
+  assert.equal(await limiter.allow("203.0.113.9"), true);
   assert.equal(await limiter.ready(), true);
   assert.equal(calls.length, 1);
   assert.match(calls[0].script, /ZREMRANGEBYSCORE/u);
-  assert.deepEqual(calls[0].options.arguments, ["1000", "2000", "2", "2000:request-1", "1000"]);
+  assert.match(calls[0].script, /redis\.call\("TIME"\)/u);
+  assert.deepEqual(calls[0].options.arguments, ["2", "request-1", "1000"]);
   assert.doesNotMatch(calls[0].options.keys[0], /203\.0\.113\.9/u);
 });
 

@@ -3,14 +3,16 @@ import { createClient } from "redis";
 import { SlidingWindowRateLimiter } from "./rate-limiter.mjs";
 
 const WINDOW_SCRIPT = `
-redis.call("ZREMRANGEBYSCORE", KEYS[1], "-inf", ARGV[1])
+local clock = redis.call("TIME")
+local now = tonumber(clock[1]) * 1000 + math.floor(tonumber(clock[2]) / 1000)
+local window = tonumber(ARGV[3])
+redis.call("ZREMRANGEBYSCORE", KEYS[1], "-inf", now - window)
 local count = redis.call("ZCARD", KEYS[1])
-if count >= tonumber(ARGV[3]) then
-  redis.call("PEXPIRE", KEYS[1], ARGV[5])
+if count >= tonumber(ARGV[1]) then
   return 0
 end
-redis.call("ZADD", KEYS[1], ARGV[2], ARGV[4])
-redis.call("PEXPIRE", KEYS[1], ARGV[5])
+redis.call("ZADD", KEYS[1], now, now .. ":" .. ARGV[2])
+redis.call("PEXPIRE", KEYS[1], window)
 return 1
 `;
 
@@ -26,14 +28,12 @@ export class RedisSlidingWindowRateLimiter {
     this.requestId = requestId;
   }
 
-  async allow(key, timestamp = Date.now()) {
-    const now = Number.isFinite(Number(timestamp)) ? Math.trunc(Number(timestamp)) : Date.now();
+  async allow(key) {
     const digest = createHmac("sha256", this.hashSalt).update(String(key)).digest("hex").slice(0, 32);
     const redisKey = `${this.prefix}:${digest}`;
-    const member = `${now}:${this.requestId()}`;
     const result = await this.client.eval(WINDOW_SCRIPT, {
       keys: [redisKey],
-      arguments: [String(now - this.windowMs), String(now), String(this.limit), member, String(this.windowMs)],
+      arguments: [String(this.limit), this.requestId(), String(this.windowMs)],
     });
     return Number(result) === 1;
   }

@@ -96,7 +96,7 @@ const rateLimiter = {
 };
 ```
 
-Redis 键不包含原始 IP，而是 `RATE_LIMIT_HASH_SALT` 生成的 HMAC 摘要；成员只含服务端时间和随机请求 ID。缺少盐值时 Redis 模式拒绝启动；Redis 运行中不可用时请求失败关闭，不会悄悄绕过限流。
+Redis 键不包含原始 IP，而是 `RATE_LIMIT_HASH_SALT` 生成的 HMAC 摘要；成员只含 Redis 时间和随机请求 ID。窗口时间由 Redis Lua 脚本读取，不依赖各 Node 实例的时钟。缺少盐值时 Redis 模式拒绝启动；Redis 运行中不可用时请求失败关闭，不会悄悄绕过限流。
 
 这仍是匿名来源级的短窗口，不是付费权益系统。公开收费前还要在独立账户 / 订单服务中增加账号级日配额、模型实际成本上限、退款与审计；不要把 IP 限流当作“三次评估”等购买权益。
 
