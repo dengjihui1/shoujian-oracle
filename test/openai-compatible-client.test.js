@@ -2,6 +2,18 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { CompatibleApiError, OpenAiCompatibleClient, parseCompatibleSse } from "../server/openai-compatible-client.mjs";
 
+test("compatible SSE rejects an oversized unterminated event", async () => {
+  await assert.rejects(async () => {
+    for await (const _text of parseCompatibleSse(new Response(`data: ${"x".repeat(65_537)}`).body, "test")) { /* consume */ }
+  }, (error) => error instanceof CompatibleApiError && error.code === "invalid_response");
+});
+
+test("compatible SSE rejects a single oversized network chunk", async () => {
+  await assert.rejects(async () => {
+    for await (const _text of parseCompatibleSse(new Response(`data: ${"x".repeat(300_000)}`).body, "test")) { /* consume */ }
+  }, (error) => error instanceof CompatibleApiError && error.code === "invalid_response" && /chunk/u.test(error.message));
+});
+
 test("compatible client uses route models and OpenAI chat contracts", async () => {
   const calls = [];
   const client = new OpenAiCompatibleClient({

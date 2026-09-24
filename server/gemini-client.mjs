@@ -1,3 +1,5 @@
+import { MAX_SSE_CHUNK_BYTES, MAX_SSE_EVENT_CHARS } from "./stream-limits.mjs";
+
 const DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com";
 
 export const DEFAULT_MODELS = Object.freeze({
@@ -232,16 +234,19 @@ export async function* parseGeminiSse(body) {
   try {
     while (true) {
       const { done, value } = await reader.read();
+      if (value?.byteLength > MAX_SSE_CHUNK_BYTES) throw new GeminiError("Gemini stream chunk was too large", { code: "invalid_response" });
       buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done });
       buffer = buffer.replace(/\r\n/gu, "\n");
       if (done) buffer = buffer.replace(/\r/gu, "\n");
       let boundary;
       while ((boundary = buffer.indexOf("\n\n")) >= 0) {
+        if (boundary > MAX_SSE_EVENT_CHARS) throw new GeminiError("Gemini stream event was too large", { code: "invalid_response" });
         const event = buffer.slice(0, boundary);
         buffer = buffer.slice(boundary + 2);
         const text = parseStreamEvent(event);
         if (text) yield text;
       }
+      if (buffer.length > MAX_SSE_EVENT_CHARS) throw new GeminiError("Gemini stream event was too large", { code: "invalid_response" });
       if (done) break;
     }
     const tail = parseStreamEvent(buffer);

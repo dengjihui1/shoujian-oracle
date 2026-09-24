@@ -69,6 +69,30 @@ test("API rejects primitive JSON bodies before calling cloud providers", async (
   assert.equal(providerCalls, 0);
 });
 
+test("oversized cloud answers stop streaming and return a bounded error", async () => {
+  let aborted = false;
+  const client = {
+    models: { chat: "test" },
+    async chat() { return { text: "甲".repeat(16_385) }; },
+    async *chatStream({ signal }) {
+      try { yield { text: "甲".repeat(16_385) }; }
+      finally { aborted = signal.aborted; }
+    },
+  };
+  await withServer(createApp({ client }), async (base) => {
+    const payload = JSON.stringify({ message: "你好", purpose: "chat" });
+    const options = { method: "POST", headers: { "content-type": "application/json" }, body: payload };
+    const standard = await fetch(`${base}/api/chat`, options);
+    assert.equal(standard.status, 502);
+    assert.equal((await standard.json()).error, "response_too_large");
+    const streaming = await fetch(`${base}/api/chat/stream`, options);
+    const events = await streaming.text();
+    assert.match(events, /event: error\ndata: \{"error":"response_too_large"/u);
+    assert.doesNotMatch(events, /event: delta/u);
+  });
+  assert.equal(aborted, true);
+});
+
 test("health check bypasses API limits and exposes no provider credentials", async () => {
   const keys = [];
   const rateLimiter = { allow(key) { keys.push(key); return false; } };

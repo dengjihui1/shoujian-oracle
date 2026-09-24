@@ -16,6 +16,7 @@ import { withDivinationDisclaimer } from "../src/response-policy.js";
 import { SlidingWindowRateLimiter } from "./rate-limiter.mjs";
 import { rateLimiterFromEnv } from "./redis-rate-limiter.mjs";
 import { prepareChat } from "./chat-preparation.mjs";
+import { MAX_CHAT_REPLY_CHARS } from "./stream-limits.mjs";
 import { enabledByEnvironment, resolveClientAddress } from "./request-context.mjs";
 import { clientFingerprint, createJsonLogger, requestId } from "./observability.mjs";
 
@@ -123,12 +124,14 @@ async function handleChat(response, client, knowledgeBase, body, now) {
   if (prepared.response) return json(response, 200, prepared.response);
   const startedAt = performance.now();
   let result = await client.chat({ input: prepared.input, systemInstruction: prepared.systemInstruction, route: prepared.route });
+  if (String(result?.text ?? "").length > MAX_CHAT_REPLY_CHARS) throw httpError(502, "response_too_large", "云端回答过长，请缩小问题后重试。");
   let answer = groundedAnswer(result, prepared);
   if (answer.needsRepair) {
     answer = await repairGroundedAnswer(client, prepared);
     result = answer.result;
   }
   const text = withDivinationDisclaimer(answer.text, prepared.purpose);
+  if (text.length > MAX_CHAT_REPLY_CHARS) throw httpError(502, "response_too_large", "云端回答过长，请缩小问题后重试。");
   return json(response, 200, {
     text,
     evidence: answer.evidence,
@@ -182,6 +185,10 @@ async function handleChatStream(response, client, knowledgeBase, body, now) {
       if (response.destroyed) return;
       if (firstTokenMs === null) firstTokenMs = performance.now() - startedAt;
       lastChunk = chunk;
+      if (fullText.length + chunk.text.length > MAX_CHAT_REPLY_CHARS) {
+        upstreamController.abort();
+        throw httpError(502, "response_too_large", "云端回答过长，请缩小问题后重试。");
+      }
       fullText += chunk.text;
       if (!bufferGrounded) sse(response, "delta", { text: chunk.text });
     }
@@ -189,6 +196,7 @@ async function handleChatStream(response, client, knowledgeBase, body, now) {
     if (answer.needsRepair) {
       answer = await repairGroundedAnswer(client, prepared, { signal: upstreamController.signal });
       const finalText = withDivinationDisclaimer(answer.text, prepared.purpose);
+      if (finalText.length > MAX_CHAT_REPLY_CHARS) throw httpError(502, "response_too_large", "云端回答过长，请缩小问题后重试。");
       sse(response, "replace", { text: finalText, repaired: true, groundingUnavailable: answer.groundingUnavailable });
       sse(response, "done", {
         text: finalText,
@@ -200,6 +208,7 @@ async function handleChatStream(response, client, knowledgeBase, body, now) {
       });
     } else {
       const finalText = withDivinationDisclaimer(answer.text, prepared.purpose);
+      if (finalText.length > MAX_CHAT_REPLY_CHARS) throw httpError(502, "response_too_large", "云端回答过长，请缩小问题后重试。");
       const suffix = bufferGrounded ? finalText : finalText.slice(fullText.length);
       if (suffix) sse(response, "delta", { text: suffix });
       sse(response, "done", {
@@ -219,6 +228,7 @@ async function handleChatStream(response, client, knowledgeBase, body, now) {
         let answer = groundedAnswer(recovered, prepared);
         if (answer.needsRepair) answer = await repairGroundedAnswer(client, prepared, { signal: upstreamController.signal });
         const finalText = withDivinationDisclaimer(answer.text, prepared.purpose);
+        if (finalText.length > MAX_CHAT_REPLY_CHARS) throw httpError(502, "response_too_large", "云端回答过长，请缩小问题后重试。");
         sse(response, "replace", { text: finalText, recovered: true });
         sse(response, "done", {
           text: finalText,
@@ -421,6 +431,7 @@ function publicStreamError(error) {
     network_error: "云端网络连接暂时不可用，请稍后重试。",
     upstream_error: "云端服务暂时不可用，请稍后重试。",
     ungrounded_reply: groundedUnavailableReply(),
+    response_too_large: "云端回答过长，请缩小问题后重试。",
   };
   return { error: code, message: messages[code] ?? "本次回答没有完成，请稍后重试。" };
 }

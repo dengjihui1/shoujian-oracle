@@ -1,3 +1,5 @@
+import { MAX_SSE_CHUNK_BYTES, MAX_SSE_EVENT_CHARS } from "./stream-limits.mjs";
+
 const DEFAULT_TIMEOUT_MS = 30_000;
 
 export class CompatibleApiError extends Error {
@@ -100,15 +102,18 @@ export async function* parseCompatibleSse(body, provider = "compatible") {
   try {
     while (true) {
       const { done, value } = await reader.read();
+      if (value?.byteLength > MAX_SSE_CHUNK_BYTES) throw new CompatibleApiError("Compatible API stream chunk was too large", { code: "invalid_response", provider });
       buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done });
       buffer = buffer.replace(/\r\n/gu, "\n");
       if (done) buffer = buffer.replace(/\r/gu, "\n");
       let boundary;
       while ((boundary = buffer.indexOf("\n\n")) >= 0) {
+        if (boundary > MAX_SSE_EVENT_CHARS) throw new CompatibleApiError("Compatible API stream event was too large", { code: "invalid_response", provider });
         const text = parseEvent(buffer.slice(0, boundary), provider);
         buffer = buffer.slice(boundary + 2);
         if (text) yield text;
       }
+      if (buffer.length > MAX_SSE_EVENT_CHARS) throw new CompatibleApiError("Compatible API stream event was too large", { code: "invalid_response", provider });
       if (done) break;
     }
     const tail = parseEvent(buffer, provider);

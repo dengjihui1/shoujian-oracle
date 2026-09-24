@@ -2,6 +2,18 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { GeminiClient, GeminiError, extractAudio, extractText, parseGeminiSse } from "../server/gemini-client.mjs";
 
+test("Gemini SSE rejects an oversized unterminated event", async () => {
+  await assert.rejects(async () => {
+    for await (const _text of parseGeminiSse(new Response(`data: ${"x".repeat(65_537)}`).body)) { /* consume */ }
+  }, (error) => error instanceof GeminiError && error.code === "invalid_response");
+});
+
+test("Gemini SSE rejects a single oversized network chunk", async () => {
+  await assert.rejects(async () => {
+    for await (const _text of parseGeminiSse(new Response(`data: ${"x".repeat(300_000)}`).body)) { /* consume */ }
+  }, (error) => error instanceof GeminiError && error.code === "invalid_response" && /chunk/u.test(error.message));
+});
+
 test("extractors understand wrapped Interactions API responses", () => {
   assert.equal(extractText({ interaction: { outputs: [{ type: "text", text: " 墨衡答复 " }] } }), "墨衡答复");
   assert.deepEqual(extractAudio({ interaction: { output_audio: { data: "AQI=", mime_type: "audio/pcm" } } }), { data: "AQI=", mimeType: "audio/pcm" });
