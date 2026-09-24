@@ -34,6 +34,19 @@ test("status exposes local fallback without leaking credentials", async () => {
   });
 });
 
+test("static server exposes only browser assets", async () => {
+  await withServer(createApp(), async (base) => {
+    for (const path of ["/", "/src/shoujian-oracle.js", "/assets/avatar/moheng-neutral.webp"]) {
+      const response = await fetch(`${base}${path}`);
+      assert.equal(response.status, 200, `${path} should load`);
+    }
+    for (const path of ["/server/index.mjs", "/package.json", "/knowledge/shoujian-rag.v1.json", "/node_modules/redis/package.json", "/.env"]) {
+      const response = await fetch(`${base}${path}`);
+      assert.equal(response.status, 404, `${path} should be private`);
+    }
+  });
+});
+
 test("API rejects primitive JSON bodies before calling cloud providers", async () => {
   let providerCalls = 0;
   const client = {

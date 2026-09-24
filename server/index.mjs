@@ -360,8 +360,13 @@ async function readJsonBody(request) {
 }
 
 async function serveStatic(response, pathname, rootPath) {
-  const relative = decodeURIComponent(pathname === "/" ? "/index.html" : pathname).replace(/^[/\\]+/u, "");
-  if (relative.split(/[/\\]/u).some((segment) => segment.startsWith("."))) return json(response, 404, { error: "not_found", message: "页面不存在。" });
+  let relative;
+  try { relative = decodeURIComponent(pathname === "/" ? "/index.html" : pathname).replace(/^[/\\]+/u, ""); }
+  catch { return json(response, 400, { error: "invalid_path", message: "页面路径无效。" }); }
+  const browserAsset = relative === "index.html"
+    || /^src\/[a-z0-9-]+\.js$/u.test(relative)
+    || /^assets\/(?:avatar|brand)\/[a-z0-9-]+\.(?:png|webp)$/u.test(relative);
+  if (!browserAsset) return json(response, 404, { error: "not_found", message: "页面不存在。" });
   const target = resolve(rootPath, relative);
   const safeRoot = resolve(rootPath);
   if (target !== safeRoot && !target.startsWith(`${safeRoot}${sep}`)) return json(response, 403, { error: "forbidden", message: "禁止访问。" });
