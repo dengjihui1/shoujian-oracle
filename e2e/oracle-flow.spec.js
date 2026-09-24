@@ -314,6 +314,119 @@ test("浏览器识别和录音都不可用时保留文字入口", async ({ page 
   await expect(page.locator("textarea#say")).toBeEnabled();
 });
 
+test("识别网络失败后真实 MediaRecorder 能录制并释放合成麦克风流", async ({ page }) => {
+  let uploaded = null;
+  await page.route("**/api/transcribe", async (route) => {
+    uploaded = route.request().postDataJSON();
+    await route.fulfill({ json: { text: "合成音频已转写" } });
+  });
+  await page.addInitScript(() => {
+    if (!navigator.mediaDevices || typeof AudioContext !== "function") return;
+    Object.defineProperty(navigator.mediaDevices, "getUserMedia", {
+      configurable: true,
+      value: async () => {
+        const context = new AudioContext();
+        const oscillator = context.createOscillator();
+        const output = context.createMediaStreamDestination();
+        oscillator.connect(output);
+        oscillator.start();
+        globalThis.__syntheticMicrophone = { context, oscillator, stream: output.stream };
+        return output.stream;
+      },
+    });
+  });
+  await page.goto("/");
+  const nativeCapture = await page.evaluate(() => typeof MediaRecorder === "function" && typeof AudioContext === "function" && typeof navigator.mediaDevices?.getUserMedia === "function");
+  await page.locator('[data-action="record"]').click();
+  await page.evaluate(() => globalThis.__shoujianRecognition.onerror({ error: "network" }));
+  if (!nativeCapture) {
+    await expect(page.getByText("当前浏览器也不支持录音转文字", { exact: false })).toBeVisible();
+    await expect(page.locator("textarea#say")).toBeEnabled();
+    return;
+  }
+  await page.locator('[data-action="record"]').click();
+  await expect(page.locator('[data-action="stop-record"]')).toContainText("停止并转文字");
+  await page.waitForTimeout(250);
+  await page.locator('[data-action="stop-record"]').click();
+  await expect(page.locator("textarea#say")).toHaveValue("合成音频已转写");
+  expect(uploaded.mimeType).toMatch(/^audio\//u);
+  expect(uploaded.data.length).toBeGreaterThan(500);
+  const trackStates = await page.evaluate(() => globalThis.__syntheticMicrophone.stream.getTracks().map((track) => track.readyState));
+  expect(trackStates).toEqual(["ended"]);
+});
+
+test("录音器自行停止后页面自动转写并恢复输入", async ({ page }) => {
+  await page.route("**/api/transcribe", (route) => route.fulfill({ json: { text: "自动停止的录音" } }));
+  await page.goto("/");
+  await page.locator('[data-action="record"]').click();
+  await page.evaluate(() => globalThis.__shoujianRecognition.onerror({ error: "network" }));
+  await page.locator("shoujian-oracle").evaluate((host) => {
+    host.recorder = {
+      supported: true,
+      starting: false,
+      async start() {
+        this.result = new Promise((resolve) => { globalThis.__finishRecordedAudio = () => resolve(new Blob(["recorded-audio"], { type: "audio/webm" })); });
+      },
+      stop() { return this.result; },
+      cancel() {},
+    };
+    host.render();
+  });
+  await page.locator('[data-action="record"]').click();
+  await expect(page.locator('[data-action="stop-record"]')).toBeVisible();
+  await page.evaluate(() => globalThis.__finishRecordedAudio());
+  await expect(page.locator("textarea#say")).toHaveValue("自动停止的录音");
+  await expect(page.locator("textarea#say")).toBeEnabled();
+});
+
+test("录音器中途报错后页面解除占用并保留文字输入", async ({ page }) => {
+  await page.goto("/");
+  await page.locator('[data-action="record"]').click();
+  await page.evaluate(() => globalThis.__shoujianRecognition.onerror({ error: "network" }));
+  await page.locator("shoujian-oracle").evaluate((host) => {
+    host.recorder = {
+      supported: true,
+      starting: false,
+      async start() {
+        this.result = new Promise((resolve, reject) => { globalThis.__failRecordedAudio = () => reject(new Error("录音设备已断开")); });
+      },
+      stop() { return this.result; },
+      cancel() {},
+    };
+    host.render();
+  });
+  await page.locator('[data-action="record"]').click();
+  await page.evaluate(() => globalThis.__failRecordedAudio());
+  await expect(page.locator(".message.master p", { hasText: "录音设备已断开" })).toBeVisible();
+  await expect(page.locator("textarea#say")).toBeEnabled();
+  await expect(page.locator('[data-action="record"]')).toBeVisible();
+});
+
+test("旧实时识别的迟到结果不会结束新一轮录音", async ({ page }) => {
+  await page.goto("/");
+  const state = await page.locator("shoujian-oracle").evaluate(async (host) => {
+    const finish = [];
+    const interim = [];
+    host.liveTranscriber = {
+      supported: true,
+      start({ onText }) { interim.push(onText); return new Promise((resolve) => finish.push(resolve)); },
+      abort() {},
+      stop() {},
+    };
+    await host.startRecording();
+    host.cancelRecording();
+    await host.startRecording();
+    interim[0]("上一轮迟到的临时文字");
+    finish[0]("上一轮迟到的文字");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const oldIgnored = host.recording && host.draft === "";
+    finish[1]("本轮文字");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    return { oldIgnored, recording: host.recording, draft: host.draft };
+  });
+  expect(state).toEqual({ oldIgnored: true, recording: false, draft: "本轮文字" });
+});
+
 test("录音授权未返回时重复启动只发起一次，离开页面后释放录音", async ({ page }) => {
   await page.goto("/");
   const state = await page.locator("shoujian-oracle").evaluate(async (host) => {

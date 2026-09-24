@@ -552,7 +552,7 @@ export class ShoujianOracle extends HTMLElement {
     if (!this.cloud || this.stage === "ready" || this.recording || this.recordingStarting || this.busy || this.transcribing) return;
     this.recordingStarting = true;
     if (this.liveTranscriber.supported) this.voiceInputNotice = "";
-    const epoch = this.recordingEpoch;
+    const epoch = ++this.recordingEpoch;
     if (this.voiceConversationSnapshot.active) this.stopVoiceConversation();
     this.render();
     try {
@@ -560,13 +560,14 @@ export class ShoujianOracle extends HTMLElement {
         this.recordingMode = "live";
         this.liveTranscriptPromise = this.liveTranscriber.start({
           onText: (text) => {
+            if (epoch !== this.recordingEpoch || this.recordingMode !== "live") return;
             this.draft = text;
             const field = this.shadowRoot.querySelector("textarea");
             if (field) field.value = text;
           }
         }).then((text) => ({ text }), (error) => ({ error }));
         this.liveTranscriptPromise.then((result) => {
-          if (this.recording && this.recordingMode === "live") this.completeLiveRecognition(result);
+          if (epoch === this.recordingEpoch && this.recording && this.recordingMode === "live") this.completeLiveRecognition(result);
         });
       } else {
         this.recordingMode = "recorded";
@@ -577,6 +578,15 @@ export class ShoujianOracle extends HTMLElement {
         }
       }
       this.recording = true;
+      if (this.recordingMode === "recorded") {
+        const completion = this.recorder.result;
+        if (completion?.then) {
+          const finish = () => {
+            if (epoch === this.recordingEpoch && this.recording && this.recordingMode === "recorded") void this.stopRecording();
+          };
+          void completion.then(finish, finish);
+        }
+      }
       this.recordingTimer = setTimeout(() => this.stopRecording(), 45_000);
       this.render();
     } catch (error) {

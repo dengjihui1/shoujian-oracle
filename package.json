@@ -1,6 +1,6 @@
 {
   "name": "shoujian-oracle",
-  "version": "0.51.0",
+  "version": "0.52.0",
   "private": true,
   "type": "module",
   "description": "A grounded Zhouyi RAG dialogue system with deterministic hexagram casting and a Gemini virtual diviner.",
@@ -8,6 +8,7 @@
     "start": "node --env-file-if-exists=.env --use-env-proxy server/index.mjs",
     "test": "node --test",
     "test:e2e": "playwright test",
+    "smoke:voice-browser": "node scripts/smoke-browser-voice.mjs",
     "eval:rag": "node scripts/evaluate-rag.mjs",
     "check": "node scripts/check-project.mjs"
   },
