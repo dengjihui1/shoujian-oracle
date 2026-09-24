@@ -93,6 +93,33 @@ test("oversized cloud answers stop streaming and return a bounded error", async 
   assert.equal(aborted, true);
 });
 
+test("upstream concurrency limit sheds excess work and releases capacity", async () => {
+  let entered;
+  let release;
+  const started = new Promise((resolve) => { entered = resolve; });
+  const gate = new Promise((resolve) => { release = resolve; });
+  let calls = 0;
+  const client = {
+    models: { chat: "test", speech: "test" },
+    async chat() { calls += 1; entered(); await gate; return { text: "完成" }; },
+    async speech() { calls += 1; return { data: "AQI=", mimeType: "audio/pcm", sampleRate: 24_000 }; },
+  };
+  await withServer(createApp({ client, maxConcurrentUpstream: 1 }), async (base) => {
+    const headers = { "content-type": "application/json" };
+    const first = fetch(`${base}/api/chat`, { method: "POST", headers, body: JSON.stringify({ message: "你好", purpose: "chat" }) });
+    await started;
+    const excess = await fetch(`${base}/api/speech`, { method: "POST", headers, body: JSON.stringify({ text: "你好" }) });
+    assert.equal(excess.status, 503);
+    assert.equal(excess.headers.get("retry-after"), "2");
+    assert.equal((await excess.json()).error, "server_busy");
+    assert.equal(calls, 1);
+    release();
+    assert.equal((await first).status, 200);
+    assert.equal((await fetch(`${base}/api/speech`, { method: "POST", headers, body: JSON.stringify({ text: "你好" }) })).status, 200);
+    assert.equal(calls, 2);
+  });
+});
+
 test("health check bypasses API limits and exposes no provider credentials", async () => {
   const keys = [];
   const rateLimiter = { allow(key) { keys.push(key); return false; } };

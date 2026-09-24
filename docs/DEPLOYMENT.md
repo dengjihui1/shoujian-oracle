@@ -36,6 +36,7 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
 
 - 保留 `REDIS_URL=redis://redis:6379`。Redis 只在 Compose 私网中开放，不映射宿主机端口；
 - 按需要调整 `RATE_LIMIT_MAX` 和 `RATE_LIMIT_WINDOW_MS`，默认每个来源 60 秒 40 个 API 请求。
+- 按实例容量调整 `MAX_CONCURRENT_UPSTREAM`，默认每个 Node 进程同时处理最多 16 个聊天、转写或朗读请求；超过时返回带 `Retry-After: 2` 的 503。该限制不替代账号级配额与总账单上限。
 
 编辑 `deploy/compose.env`，把 `DOMAIN` 改为正式域名。两个生产配置文件均被 Git 忽略，不要提交或发送给他人。
 

@@ -34,8 +34,11 @@ export function createApp({
   trustProxy = false,
   logger = null,
   logHashSalt = "",
+  maxConcurrentUpstream = 16,
 } = {}) {
   const apiEnabled = Boolean(client);
+  const upstreamLimit = Math.max(1, Math.min(256, Number.parseInt(maxConcurrentUpstream, 10) || 16));
+  let activeUpstream = 0;
   const speechService = typeof client?.speech === "function"
     ? new CachedSpeechService({ synthesize: (payload) => client.speech(payload), now })
     : null;
@@ -91,11 +94,22 @@ export function createApp({
         if (!apiEnabled) return json(response, 503, { error: "cloud_disabled", message: "未配置 Gemini，当前使用本地有限对话。" });
         if (request.method !== "POST") return json(response, 405, { error: "method_not_allowed", message: "请求方法不受支持。" });
         const body = await readJsonBody(request);
-        if (url.pathname === "/api/transcribe") return await handleTranscribe(response, client, body);
-        if (url.pathname === "/api/chat") return await handleChat(response, client, knowledgeBase, body, now);
-        if (url.pathname === "/api/chat/stream") return await handleChatStream(response, client, knowledgeBase, body, now);
-        if (url.pathname === "/api/speech") return await handleSpeech(response, speechService, body);
-        return json(response, 404, { error: "not_found", message: "接口不存在。" });
+        if (!["/api/transcribe", "/api/chat", "/api/chat/stream", "/api/speech"].includes(url.pathname)) {
+          return json(response, 404, { error: "not_found", message: "接口不存在。" });
+        }
+        if (activeUpstream >= upstreamLimit) {
+          response.setHeader("retry-after", "2");
+          return json(response, 503, { error: "server_busy", message: "服务繁忙，请稍后重试。" });
+        }
+        activeUpstream += 1;
+        try {
+          if (url.pathname === "/api/transcribe") return await handleTranscribe(response, client, body);
+          if (url.pathname === "/api/chat") return await handleChat(response, client, knowledgeBase, body, now);
+          if (url.pathname === "/api/chat/stream") return await handleChatStream(response, client, knowledgeBase, body, now);
+          return await handleSpeech(response, speechService, body);
+        } finally {
+          activeUpstream -= 1;
+        }
       }
       return serveStatic(response, url.pathname, rootPath);
     } catch (error) {
@@ -533,6 +547,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     trustProxy: enabledByEnvironment(process.env.TRUST_PROXY),
     logger,
     logHashSalt: process.env.LOG_HASH_SALT ?? "",
+    maxConcurrentUpstream: process.env.MAX_CONCURRENT_UPSTREAM ?? 16,
   })).listen(port, host, () => {
     if (logger) safeLog(logger, "server_started", { host, port, cloud: Boolean(client), rateLimiter: limiter.mode });
     else console.log(`Shoujian Oracle: http://${host}:${port} (${client ? "Gemini cloud enabled" : "local fallback"})`);
