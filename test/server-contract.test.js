@@ -517,14 +517,36 @@ test("streaming grounded chat replaces an uncited draft with a repaired answer",
   };
   await withServer(createApp({ client }), async (base) => {
     const replacements = [];
+    const deltas = [];
     const api = new OracleApiClient({ baseUrl: base });
     const result = await api.chatStream({ message: "潜龙勿用是什么意思？", stage: "question" }, {
+      onDelta: (text) => deltas.push(text),
       onReplace: (text) => replacements.push(text),
     });
     assert.equal(repairCalls, 1);
+    assert.deepEqual(deltas, [], "uncited draft must not reach text or speech callbacks");
     assert.equal(replacements.length, 1);
     assert.match(replacements[0], /【ZY-01-LINE-1】/u);
     assert.equal(result.repaired, true);
+    assert.equal(result.grounded, true);
+  });
+});
+
+test("streaming grounded chat releases a valid answer only after citation validation", async () => {
+  const client = {
+    models: { chat: "test-chat" },
+    async *chatStream() {
+      yield { text: "‘潜龙", model: "draft" };
+      yield { text: "勿用’是乾卦初九爻辞【ZY-01-LINE-1】。", model: "draft" };
+    },
+  };
+  await withServer(createApp({ client }), async (base) => {
+    const deltas = [];
+    const api = new OracleApiClient({ baseUrl: base });
+    const result = await api.chatStream({ message: "潜龙勿用是什么意思？", stage: "question" }, {
+      onDelta: (text) => deltas.push(text),
+    });
+    assert.deepEqual(deltas, ["‘潜龙勿用’是乾卦初九爻辞【ZY-01-LINE-1】。"]);
     assert.equal(result.grounded, true);
   });
 });

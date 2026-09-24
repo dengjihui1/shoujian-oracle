@@ -165,6 +165,7 @@ async function handleChatStream(response, client, knowledgeBase, body, now) {
   }
 
   let fullText = "";
+  const bufferGrounded = prepared.evidence.length > 0;
   let firstTokenMs = null;
   let lastChunk = null;
   const heartbeat = setInterval(() => {
@@ -182,7 +183,7 @@ async function handleChatStream(response, client, knowledgeBase, body, now) {
       if (firstTokenMs === null) firstTokenMs = performance.now() - startedAt;
       lastChunk = chunk;
       fullText += chunk.text;
-      sse(response, "delta", { text: chunk.text });
+      if (!bufferGrounded) sse(response, "delta", { text: chunk.text });
     }
     let answer = groundedAnswer({ ...lastChunk, text: fullText }, prepared);
     if (answer.needsRepair) {
@@ -199,7 +200,7 @@ async function handleChatStream(response, client, knowledgeBase, body, now) {
       });
     } else {
       const finalText = withDivinationDisclaimer(answer.text, prepared.purpose);
-      const suffix = finalText.slice(fullText.length);
+      const suffix = bufferGrounded ? finalText : finalText.slice(fullText.length);
       if (suffix) sse(response, "delta", { text: suffix });
       sse(response, "done", {
         text: finalText,
