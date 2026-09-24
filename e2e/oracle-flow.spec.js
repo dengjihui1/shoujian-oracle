@@ -34,6 +34,35 @@ test.beforeEach(async ({ context, page }) => {
   await page.route("**/api/status", (route) => route.fulfill({ json: STATUS }));
 });
 
+test("重新挂载组件后，旧状态请求不能覆盖新状态", async ({ page }) => {
+  let releaseOld;
+  let firstSeen;
+  let calls = 0;
+  const oldGate = new Promise((resolve) => { releaseOld = resolve; });
+  const firstRequest = new Promise((resolve) => { firstSeen = resolve; });
+  await page.unroute("**/api/status");
+  await page.route("**/api/status", async (route) => {
+    if (++calls === 1) {
+      firstSeen();
+      await oldGate;
+      try { await route.fulfill({ json: { ...STATUS, cloud: false } }); } catch { /* old request may be cancelled */ }
+    } else {
+      await route.fulfill({ json: STATUS });
+    }
+  });
+  await page.goto("/");
+  await firstRequest;
+  await page.evaluate(() => {
+    const oracle = document.querySelector("shoujian-oracle");
+    oracle.remove();
+    document.body.append(oracle);
+  });
+  await expect(page.locator(".system-state .status")).toContainText("已连接");
+  releaseOld();
+  await page.waitForTimeout(200);
+  await expect(page.locator(".system-state .status")).toContainText("已连接");
+});
+
 test("连续三轮文字对话都能用 Enter 发送并恢复输入", async ({ page }) => {
   let turn = 0;
   await mockChatStream(page, () => `第 ${++turn} 轮回答完成。`);

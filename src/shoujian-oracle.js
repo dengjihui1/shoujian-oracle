@@ -42,6 +42,8 @@ export class ShoujianOracle extends HTMLElement {
     this.draft = "";
     this.intakeSummaryDraft = "";
     this.chatController = null;
+    this.statusController = null;
+    this.statusEpoch = 0;
     this.transcriptionController = null;
     this.speechQueue = null;
     this.retryRequest = null;
@@ -80,6 +82,9 @@ export class ShoujianOracle extends HTMLElement {
 
   disconnectedCallback() {
     this.recordingEpoch += 1;
+    this.statusEpoch += 1;
+    this.statusController?.abort();
+    this.statusController = null;
     this.shadowRoot.removeEventListener("click", this.handleClick);
     this.shadowRoot.removeEventListener("submit", this.handleSubmit);
     this.shadowRoot.removeEventListener("input", this.handleInput);
@@ -420,14 +425,22 @@ export class ShoujianOracle extends HTMLElement {
   }
 
   async checkCloud() {
+    this.statusController?.abort();
+    const controller = new AbortController();
+    const epoch = ++this.statusEpoch;
+    this.statusController = controller;
     try {
-      const status = await this.api.status();
+      const status = await this.api.status({ signal: controller.signal });
+      if (controller.signal.aborted || epoch !== this.statusEpoch || !this.isConnected) return;
       this.cloud = Boolean(status.cloud);
       this.knowledge = status.knowledge ?? null;
     } catch (error) {
+      if (controller.signal.aborted || epoch !== this.statusEpoch || !this.isConnected) return;
       this.cloud = false;
       this.knowledge = null;
       console.warn("Cloud capability check failed:", error);
+    } finally {
+      if (this.statusController === controller) this.statusController = null;
     }
     this.render();
   }

@@ -6,7 +6,7 @@ export class OracleApiClient {
     this.fetchFn = fetchFn === globalThis.fetch ? fetchFn.bind(globalThis) : fetchFn;
   }
 
-  status() { return this.#request("/api/status", { method: "GET" }); }
+  status({ signal } = {}) { return this.#request("/api/status", { method: "GET", signal }); }
   transcribe({ data, mimeType }, { signal } = {}) { return this.#request("/api/transcribe", { method: "POST", body: { data, mimeType }, signal }); }
   chat(payload) { return this.#request("/api/chat", { method: "POST", body: payload }); }
   speech(text, { signal } = {}) { return this.#request("/api/speech", { method: "POST", body: { text }, signal }); }
