@@ -469,6 +469,9 @@ test("an interrupted stream is recovered with a complete replacement answer", as
 test("disconnecting a streaming browser aborts the upstream model request", async () => {
   let markAborted;
   const aborted = new Promise((resolve) => { markAborted = resolve; });
+  let markLogged;
+  const logged = new Promise((resolve) => { markLogged = resolve; });
+  const logger = { info(event, details) { markLogged({ event, details }); } };
   const client = {
     models: { chat: "test-chat" },
     async *chatStream({ signal }) {
@@ -479,7 +482,7 @@ test("disconnecting a streaming browser aborts the upstream model request", asyn
       markAborted(signal.aborted);
     },
   };
-  await withServer(createApp({ client }), async (base) => {
+  await withServer(createApp({ client, logger }), async (base) => {
     const controller = new AbortController();
     const response = await fetch(`${base}/api/chat/stream`, {
       method: "POST",
@@ -490,6 +493,11 @@ test("disconnecting a streaming browser aborts the upstream model request", asyn
     assert.equal(response.status, 200);
     controller.abort();
     assert.equal(await aborted, true);
+    const record = await logged;
+    assert.equal(record.event, "http_request_aborted");
+    assert.equal(record.details.status, 499);
+    assert.equal(record.details.path, "/api/chat/stream");
+    assert.equal(record.details.client, null);
   });
 });
 

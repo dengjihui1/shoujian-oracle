@@ -48,14 +48,23 @@ export function createApp({
     const id = requestId();
     const clientAddress = resolveClientAddress(request, { trustProxy });
     response.setHeader("x-request-id", id);
-    response.once("finish", () => safeLog(logger, "http_request", {
-      requestId: id,
-      method: request.method,
-      path: safePathname(request.url),
-      status: response.statusCode,
-      durationMs: Math.max(0, Math.round(performance.now() - startedAt)),
-      client: clientFingerprint(clientAddress, logHashSalt),
-    }));
+    let logged = false;
+    const logRequest = (event, status) => {
+      if (logged) return;
+      logged = true;
+      safeLog(logger, event, {
+        requestId: id,
+        method: request.method,
+        path: safePathname(request.url),
+        status,
+        durationMs: Math.max(0, Math.round(performance.now() - startedAt)),
+        client: clientFingerprint(clientAddress, logHashSalt),
+      });
+    };
+    response.once("finish", () => logRequest("http_request", response.statusCode));
+    response.once("close", () => {
+      if (!response.writableFinished) logRequest("http_request_aborted", 499);
+    });
     setSecurityHeaders(response);
     try {
       const url = new URL(request.url, `http://${request.headers.host ?? "localhost"}`);
