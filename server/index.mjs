@@ -351,7 +351,12 @@ async function readJsonBody(request) {
     if (size > BODY_LIMIT) throw httpError(413, "body_too_large", "请求内容过大。" );
     chunks.push(chunk);
   }
-  try { return JSON.parse(Buffer.concat(chunks).toString("utf8")); } catch { throw httpError(400, "invalid_json", "JSON 格式无效。" ); }
+  let body;
+  try { body = JSON.parse(Buffer.concat(chunks).toString("utf8")); } catch { throw httpError(400, "invalid_json", "JSON 格式无效。" ); }
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw httpError(400, "invalid_json_body", "请求内容必须是 JSON 对象。");
+  }
+  return body;
 }
 
 async function serveStatic(response, pathname, rootPath) {

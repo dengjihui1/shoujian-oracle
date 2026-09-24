@@ -34,6 +34,28 @@ test("status exposes local fallback without leaking credentials", async () => {
   });
 });
 
+test("API rejects primitive JSON bodies before calling cloud providers", async () => {
+  let providerCalls = 0;
+  const client = {
+    models: { chat: "test", transcribe: "test", speech: "test" },
+    chat() { providerCalls += 1; throw new Error("provider should not run"); },
+    transcribe() { providerCalls += 1; throw new Error("provider should not run"); },
+    speech() { providerCalls += 1; throw new Error("provider should not run"); },
+  };
+  await withServer(createApp({ client }), async (base) => {
+    for (const route of ["/api/chat", "/api/transcribe", "/api/speech"]) {
+      for (const body of ["null", "[]", "42"]) {
+        const response = await fetch(`${base}${route}`, {
+          method: "POST", headers: { "content-type": "application/json" }, body,
+        });
+        assert.equal(response.status, 400, `${route} should reject ${body}`);
+        assert.deepEqual(await response.json(), { error: "invalid_json_body", message: "请求内容必须是 JSON 对象。" });
+      }
+    }
+  });
+  assert.equal(providerCalls, 0);
+});
+
 test("health check bypasses API limits and exposes no provider credentials", async () => {
   const keys = [];
   const rateLimiter = { allow(key) { keys.push(key); return false; } };
