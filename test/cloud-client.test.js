@@ -82,3 +82,33 @@ test("circuit breaker skips a repeatedly failing provider during cooldown", asyn
   await client.chat({});
   assert.equal(primaryCalls, 3);
 });
+
+test("all open chat circuits fail fast until cooldown ends", async () => {
+  let time = 1_000;
+  let calls = 0;
+  const primary = {
+    models: {},
+    async chat() { calls += 1; throw transientError(); },
+  };
+  const fallback = { provider: "fallback", async chat() { calls += 1; throw transientError(); } };
+  const client = new OracleCloudClient({ primary, chatFallbacks: [fallback], now: () => time, failureThreshold: 1, cooldownMs: 5_000 });
+  await assert.rejects(() => client.chat({}), (error) => error.code === "upstream_error");
+  assert.equal(calls, 2);
+  await assert.rejects(() => client.chat({}), (error) => error.status === 503 && error.code === "upstream_error");
+  assert.equal(calls, 2);
+  time += 5_001;
+  await assert.rejects(() => client.chat({}), (error) => error.code === "upstream_error");
+  assert.equal(calls, 4);
+});
+
+test("all open streaming circuits also fail fast", async () => {
+  let calls = 0;
+  const primary = { models: {}, async *chatStream() { calls += 1; throw transientError(); } };
+  const fallback = { provider: "fallback", async *chatStream() { calls += 1; throw transientError(); } };
+  const client = new OracleCloudClient({ primary, chatFallbacks: [fallback], failureThreshold: 1 });
+  const consume = async () => { for await (const _chunk of client.chatStream({})) { /* consume */ } };
+  await assert.rejects(consume, (error) => error.code === "upstream_error");
+  assert.equal(calls, 2);
+  await assert.rejects(consume, (error) => error.status === 503 && error.code === "upstream_error");
+  assert.equal(calls, 2);
+});

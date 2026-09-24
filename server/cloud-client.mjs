@@ -65,7 +65,7 @@ export class OracleCloudClient {
   #availableProviders() {
     const timestamp = this.now();
     const available = this.chatProviders.filter((provider) => (this.circuits.get(provider)?.openUntil ?? 0) <= timestamp);
-    return available.length ? available : [this.primary];
+    return available;
   }
 
   #markSuccess(provider) {
