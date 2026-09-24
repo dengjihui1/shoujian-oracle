@@ -14,6 +14,18 @@ test("Gemini SSE rejects a single oversized network chunk", async () => {
   }, (error) => error instanceof GeminiError && error.code === "invalid_response" && /chunk/u.test(error.message));
 });
 
+test("Gemini SSE cancels the provider stream after malformed data", async () => {
+  let cancelled = false;
+  const body = new ReadableStream({
+    pull(controller) { controller.enqueue(new TextEncoder().encode("data: invalid-json\n\n")); },
+    cancel() { cancelled = true; },
+  });
+  await assert.rejects(async () => {
+    for await (const _text of parseGeminiSse(body)) { /* consume */ }
+  }, (error) => error.code === "invalid_response");
+  assert.equal(cancelled, true);
+});
+
 test("extractors understand wrapped Interactions API responses", () => {
   assert.equal(extractText({ interaction: { outputs: [{ type: "text", text: " 墨衡答复 " }] } }), "墨衡答复");
   assert.deepEqual(extractAudio({ interaction: { output_audio: { data: "AQI=", mime_type: "audio/pcm" } } }), { data: "AQI=", mimeType: "audio/pcm" });

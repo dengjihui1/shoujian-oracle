@@ -233,6 +233,7 @@ export async function* parseGeminiSse(body) {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  let finished = false;
   try {
     while (true) {
       const { done, value } = await reader.read();
@@ -253,7 +254,11 @@ export async function* parseGeminiSse(body) {
     }
     const tail = parseStreamEvent(buffer);
     if (tail) yield tail;
+    finished = true;
   } finally {
+    if (!finished) {
+      try { await reader.cancel(); } catch { /* upstream connection may already be closed */ }
+    }
     reader.releaseLock();
   }
 }

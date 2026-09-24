@@ -14,6 +14,18 @@ test("compatible SSE rejects a single oversized network chunk", async () => {
   }, (error) => error instanceof CompatibleApiError && error.code === "invalid_response" && /chunk/u.test(error.message));
 });
 
+test("compatible SSE cancels the provider stream after malformed data", async () => {
+  let cancelled = false;
+  const body = new ReadableStream({
+    pull(controller) { controller.enqueue(new TextEncoder().encode("data: invalid-json\n\n")); },
+    cancel() { cancelled = true; },
+  });
+  await assert.rejects(async () => {
+    for await (const _text of parseCompatibleSse(body, "test")) { /* consume */ }
+  }, (error) => error.code === "invalid_response");
+  assert.equal(cancelled, true);
+});
+
 test("compatible client uses route models and OpenAI chat contracts", async () => {
   const calls = [];
   const client = new OpenAiCompatibleClient({
