@@ -1,5 +1,7 @@
 # Cactus 语音链路模块拆解与守简映射
 
+本文记录早期抽取决策。0.54.0 按用户需求新增了独立实现的 Google Cloud STT v1 流式通道，启用步骤见 [实时转写启用指南](GOOGLE_CLOUD_STT_SETUP.md)；下文“不引入 Cloud STT”仅描述当时的版本。
+
 分析对象：[`BruceZZhao/Cactus`](https://github.com/BruceZZhao/Cactus)，本地可检查上游提交 `30fe21c5393595e5892b6e0db46da8d4572b072c`。分析日期：2026-09-22。
 
 上游仓库当前没有 `LICENSE` 文件，因此本项目只学习其公开架构与运行机制，并使用自身命名、接口、错误处理和测试独立实现；没有复制 Cactus 源码、提示词、人物资料或向量库。

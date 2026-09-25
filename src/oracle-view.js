@@ -100,7 +100,7 @@ function voiceConversationPanel(state, stage, intakeReview) {
   const transcript = String(state.voiceConversationTranscript ?? "").trim();
   const error = String(state.voiceConversationError ?? "").trim();
   return `<section class="voice-conversation" data-conversation-state="${escapeHtml(conversationState)}" aria-label="自动语音对话">
-    <div class="voice-conversation-copy"><strong>自动语音对话</strong><small>${active ? "说完停顿会自动发送；墨衡朗读时暂停收音，避免回声。" : "一次开启，自动收音、停顿发送、朗读后继续听。浏览器支持时显示增量文字，否则停顿后云端转写。"}</small></div>
+    <div class="voice-conversation-copy"><strong>自动语音对话</strong><small>${active ? "说完停顿会自动发送；墨衡朗读时暂停收音，避免回声。" : state.streamingSttAvailable ? "已配置 Google Cloud 实时转写；说话时显示增量文字，停顿后自动发送。" : "一次开启，自动收音、停顿发送、朗读后继续听。浏览器支持时显示增量文字，否则停顿后云端转写。"}</small></div>
     <div class="voice-conversation-actions">
       <button class="${active ? "" : "primary"}" type="button" data-action="voice-conversation" ${disabled ? "disabled" : ""}>${active ? "结束语音对话" : "开始语音对话（自动发送）"}</button>
       ${interruptible ? `<button class="interrupt" type="button" data-action="voice-interrupt">打断并说话</button>` : ""}

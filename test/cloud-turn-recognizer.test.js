@@ -54,6 +54,16 @@ test("browser network failure switches to the automatic cloud turn", async () =>
   assert.equal(fallback, 1);
 });
 
+test("Google stream is preferred and browser takes over a stream outage", async () => {
+  const calls = [];
+  const stream = { supported: true, enabled: true, async start() { calls.push("google"); throw Object.assign(new Error("offline"), { code: "stream_unavailable" }); }, abort() {} };
+  const browser = { supported: true, async start() { calls.push("browser"); return "已听清"; }, abort() {} };
+  const recognizer = new ResilientTurnRecognizer({ stream, browser, cloud: { supported: false }, onFallback: () => calls.push("fallback") });
+  assert.equal(await recognizer.start(), "已听清");
+  assert.deepEqual(calls, ["google", "fallback", "browser"]);
+  assert.equal(stream.enabled, false);
+});
+
 test("automatic turn waits for a real pause after speech", async () => {
   let time = 0;
   let level = 0.1;

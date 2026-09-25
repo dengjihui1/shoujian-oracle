@@ -8,6 +8,7 @@ import { GeminiClient, GeminiError, DEFAULT_MODELS } from "./gemini-client.mjs";
 import { OpenAiCompatibleClient } from "./openai-compatible-client.mjs";
 import { OracleCloudClient } from "./cloud-client.mjs";
 import { googleCloudTtsFromEnv } from "./google-cloud-tts-client.mjs";
+import { googleCloudSttFromEnv, attachStreamingStt } from "./google-cloud-stt.mjs";
 import { CachedSpeechService } from "./speech-cache.mjs";
 import { formatShanghaiDateTime } from "./prompt.mjs";
 import { loadKnowledgeBase } from "./knowledge-retriever.mjs";
@@ -27,6 +28,7 @@ const defaultKnowledgeBase = await loadKnowledgeBase();
 
 export function createApp({
   client = null,
+  sttClient = null,
   knowledgeBase = defaultKnowledgeBase,
   rootPath = projectRoot,
   now = Date.now,
@@ -96,6 +98,7 @@ export function createApp({
             provider: apiEnabled ? client.providerSummary ?? "gemini" : null,
             speechProvider: apiEnabled ? client.speechProviderName ?? "gemini" : null,
             transcribeProvider: apiEnabled ? client.transcribeProviderName ?? "gemini" : null,
+            streamingStt: Boolean(sttClient),
             models: apiEnabled ? client.models : null,
             knowledge: knowledgeBase.summary,
             serverTime: formatShanghaiDateTime(now()),
@@ -135,6 +138,8 @@ export function createApp({
 
 export function createHttpAppServer(options = {}) {
   const server = createHttpServer(createApp(options));
+  attachStreamingStt(server, { client: options.sttClient, rateLimiter: options.rateLimiter ?? new SlidingWindowRateLimiter(),
+    trustProxy: options.trustProxy, resolveClientAddress });
   server.headersTimeout = 10_000;
   server.requestTimeout = 60_000;
   server.keepAliveTimeout = 5_000;
@@ -590,12 +595,14 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const port = Number.parseInt(process.env.PORT ?? "8000", 10);
   const host = process.env.HOST ?? "127.0.0.1";
   const client = clientFromEnv();
+  const sttClient = googleCloudSttFromEnv();
   const logger = enabledByEnvironment(process.env.STRUCTURED_LOGS) ? createJsonLogger() : null;
   const limiter = await rateLimiterFromEnv(process.env, {
     onRedisError: () => safeLog(logger, "rate_limiter_error", { mode: "redis" }),
   });
   createHttpAppServer({
     client,
+    sttClient,
     rateLimiter: limiter.rateLimiter,
     trustProxy: enabledByEnvironment(process.env.TRUST_PROXY),
     logger,

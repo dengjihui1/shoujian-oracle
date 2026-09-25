@@ -92,20 +92,31 @@ export class CloudTurnRecognizer {
 }
 
 export class ResilientTurnRecognizer {
-  constructor({ browser, cloud, onFallback = () => {} }) {
+  constructor({ browser, cloud, stream = null, onFallback = () => {} }) {
     this.browser = browser;
     this.cloud = cloud;
+    this.stream = stream;
     this.onFallback = onFallback;
   }
-  get supported() { return Boolean(this.browser.supported || this.cloud.supported); }
+  get supported() { return Boolean(this.stream?.supported || this.browser.supported || this.cloud.supported); }
   async start(options) {
     this.cancelled = false;
+    if (this.stream?.supported) {
+      this.current = this.stream;
+      try { return await this.stream.start(options); }
+      catch (error) {
+        if (error?.code !== "stream_unavailable" || this.cancelled) throw error;
+        this.stream.enabled = false;
+        this.onFallback("stream");
+      }
+    }
+    if (this.cancelled) throw abortError();
     if (this.browser.supported) {
       this.current = this.browser;
       try { return await this.browser.start(options); }
       catch (error) {
         if (error?.code !== "network_unavailable" || this.cancelled || !this.cloud.supported) throw error;
-        this.onFallback();
+        this.onFallback("browser");
       }
     }
     if (this.cancelled) throw abortError();

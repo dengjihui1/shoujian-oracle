@@ -5,6 +5,7 @@ import { inferConversationPurpose } from "./response-policy.js";
 import { OracleApiClient } from "./api-client.js";
 import { AudioRecorder, BrowserSpeechRecognizer, blobToBase64 } from "./audio-recorder.js";
 import { CloudTurnRecognizer, ResilientTurnRecognizer } from "./cloud-turn-recognizer.js";
+import { GoogleStreamRecognizer } from "./google-stream-recognizer.js";
 import { playPcmBase64, primeAudioPlayback } from "./audio-player.js";
 import { BrowserSpeechPlayer } from "./browser-speech.js";
 import { ConversationMemory, createConversationExport, parseConversationExport, recentConversation } from "./conversation-memory.js";
@@ -27,12 +28,16 @@ export class ShoujianOracle extends HTMLElement {
     this.api = new OracleApiClient();
     this.recorder = new AudioRecorder();
     this.liveTranscriber = new BrowserSpeechRecognizer();
+    this.googleStreamTranscriber = new GoogleStreamRecognizer();
     this.cloudTurnTranscriber = new CloudTurnRecognizer({ transcribe: (...args) => this.api.transcribe(...args) });
     this.turnTranscriber = new ResilientTurnRecognizer({
       browser: this.liveTranscriber,
       cloud: this.cloudTurnTranscriber,
-      onFallback: () => {
-        this.voiceInputNotice = "浏览器增量转写连接失败，已自动切换为停顿识别。说完停顿约一秒会自动发送，无需手动停止。";
+      stream: this.googleStreamTranscriber,
+      onFallback: (source) => {
+        this.voiceInputNotice = source === "browser"
+          ? "浏览器增量转写连接失败，已自动切换为停顿识别。说完停顿约一秒会自动发送，无需手动停止。"
+          : "Google Cloud 实时转写连接失败，已自动尝试浏览器识别。";
         this.render();
       },
     });
@@ -444,10 +449,12 @@ export class ShoujianOracle extends HTMLElement {
       const status = await this.api.status({ signal: controller.signal });
       if (controller.signal.aborted || epoch !== this.statusEpoch || !this.isConnected) return;
       this.cloud = Boolean(status.cloud);
+      this.googleStreamTranscriber.enabled = Boolean(status.streamingStt);
       this.knowledge = status.knowledge ?? null;
     } catch (error) {
       if (controller.signal.aborted || epoch !== this.statusEpoch || !this.isConnected) return;
       this.cloud = false;
+      this.googleStreamTranscriber.enabled = false;
       this.knowledge = null;
       console.warn("Cloud capability check failed:", error);
     } finally {
@@ -882,7 +889,8 @@ export class ShoujianOracle extends HTMLElement {
       recordingMode: this.recordingMode,
       recorderSupported: this.recorder.supported,
       liveTranscriberSupported: this.turnTranscriber.supported,
-      incrementalTranscriberSupported: this.liveTranscriber.supported,
+      incrementalTranscriberSupported: this.googleStreamTranscriber.supported || this.liveTranscriber.supported,
+      streamingSttAvailable: this.googleStreamTranscriber.supported,
       draft: this.draft,
       voiceReplies: this.voiceReplies,
       voiceMode: this.voiceMode,

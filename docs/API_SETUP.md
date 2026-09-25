@@ -1,5 +1,7 @@
 # 云端 API 配置指南
 
+Google Cloud 逐字流式识别已作为独立可选能力接入；从零创建 Cloud 项目与本机认证见 [实时转写启用指南](GOOGLE_CLOUD_STT_SETUP.md)。
+
 本文对应项目 `0.27.0`。模型、音色、免费额度和控制台界面会变化；下面的 Gemini 模型 ID 已在 2026-09-22 通过当前账号的真实状态与请求核验，Google Cloud TTS 适配器已通过自动测试，但仍需用你自己的 Cloud 凭证完成真实调用验收。
 
 ## 1. 准备条件
@@ -176,7 +178,7 @@ npm start
 | 能力 | 默认模型 | 接口 | 本项目职责 |
 | --- | --- | --- | --- |
 | 自由对话 / RAG | `gemini-3.1-flash-lite`；备用 3.5 / 3.6 与可选兼容供应商 | `streamGenerateContent?alt=sse` / OpenAI-compatible chat | SSE 真流式输出；首包前可跨模型、跨供应商回退；已有分片后断流则恢复完整答案 |
-| 语音转文字 | 浏览器语音服务；兜底 `gemini-3.5-transcribe` | 实时识别；Interactions 内联音频；Files API 最终兜底 | 优先返回增量文字；当前不是 Google Cloud STT v2 |
+| 语音转文字 | 可选 Google Cloud STT v1 流式；浏览器语音服务；兜底 `gemini-3.5-transcribe` | 实时识别；Interactions 内联音频；Files API 最终兜底 | Google Cloud 启用后优先返回增量文字，未配置时逐层回退 |
 | 极速文字转语音 | 浏览器优先本地普通话音色 | Web Speech Synthesis | 无项目服务端 TTS 往返；音色和启动速度取决于浏览器 / 操作系统 |
 | 云端文字转语音 | 优先 `cmn-CN-Wavenet-B`；未配置时回退 `gemini-3.1-flash-tts-preview` | Google Cloud `synthesizeSpeech` / Gemini Interactions API | 按完整句预取 2 段 24 kHz PCM；重复合成合并并命中有界缓存；当前是句级流水线，不是句内音频流式 |
 
