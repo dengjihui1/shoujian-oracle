@@ -22,7 +22,7 @@
    GOOGLE_CLOUD_STT_ENABLED=true
    ```
 
-   若已有 `GEMINI_API_KEY`，保留它用于文字对话和 Gemini 整句兜底。`GOOGLE_CLOUD_TTS_ENABLED` 是语音合成的独立开关，无需为实时转写而开启。
+   若已有 `GEMINI_API_KEY`，保留它用于文字对话和 Gemini 整句兜底。`GOOGLE_CLOUD_TTS_ENABLED` 是语音合成的独立开关，无需为实时转写而开启。若本机需要 HTTP 代理，沿用 `.env` 的 `HTTPS_PROXY=http://127.0.0.1:端口`；STT 服务启动时会将其传给 gRPC 客户端。
 
 5. 重启 `npm start`，刷新页面。在 PowerShell 中执行：
 

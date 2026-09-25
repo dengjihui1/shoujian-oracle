@@ -12,6 +12,24 @@ test("Cloud STT requires an explicit switch", () => {
   assert.equal(googleCloudSttFromEnv({ GOOGLE_CLOUD_STT_ENABLED: "true" }, { client }), client);
 });
 
+test("an HTTPS proxy is made available to grpc-js when streaming STT starts", () => {
+  const previous = process.env.grpc_proxy;
+  const httpsProxy = process.env.https_proxy;
+  const httpProxy = process.env.http_proxy;
+  try {
+    delete process.env.grpc_proxy;
+    delete process.env.https_proxy;
+    delete process.env.http_proxy;
+    googleCloudSttFromEnv({ GOOGLE_CLOUD_STT_ENABLED: "true", HTTPS_PROXY: "http://127.0.0.1:1234" }, { client: {} });
+    assert.equal(process.env.grpc_proxy, "http://127.0.0.1:1234");
+  } finally {
+    for (const [name, value] of Object.entries({ grpc_proxy: previous, https_proxy: httpsProxy, http_proxy: httpProxy })) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  }
+});
+
 test("stream accepts PCM, returns interim and final, and closes after stop", async () => {
   let upstream;
   let config;

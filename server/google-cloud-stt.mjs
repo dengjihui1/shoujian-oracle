@@ -6,6 +6,10 @@ const MAX_DURATION_MS = 35_000;
 
 export function googleCloudSttFromEnv(env = process.env, options = {}) {
   if (!/^(?:true|1|yes)$/iu.test(String(env.GOOGLE_CLOUD_STT_ENABLED ?? "").trim())) return null;
+  // grpc-js reads lowercase proxy variables; Node's --use-env-proxy accepts HTTPS_PROXY.
+  if (env.HTTPS_PROXY && !process.env.grpc_proxy && !process.env.https_proxy && !process.env.http_proxy) {
+    process.env.grpc_proxy = env.HTTPS_PROXY;
+  }
   return options.client ?? new speech.SpeechClient({
     ...(env.GOOGLE_APPLICATION_CREDENTIALS ? { keyFilename: env.GOOGLE_APPLICATION_CREDENTIALS } : {}),
     ...(env.GOOGLE_CLOUD_PROJECT ? { projectId: env.GOOGLE_CLOUD_PROJECT } : {}),
