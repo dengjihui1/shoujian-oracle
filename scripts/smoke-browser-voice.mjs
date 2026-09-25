@@ -52,19 +52,17 @@ try {
   await expect(page.locator(".system-state .status")).toContainText("已连接");
   await page.locator('[data-action="voice-conversation"]').click();
   await page.evaluate(() => globalThis.__smokeRecognition.onerror({ error: "network" }));
-  await expect(page.locator('[data-action="record"]')).toContainText("按下说话");
-  await page.locator('[data-action="record"]').click();
-  await expect(page.locator('[data-action="stop-record"]')).toContainText("停止并转文字");
-  await page.waitForTimeout(durationMs + 300);
+  await expect(page.locator(".voice-input-notice")).toContainText("自动切换为停顿识别");
   const transcriptionStarted = performance.now();
-  await page.locator('[data-action="stop-record"]').click();
   try {
-    await expect(page.locator("textarea#say")).not.toHaveValue("", { timeout: 45_000 });
+    await expect(page.locator(".message.user").last()).toContainText(/你好|今天/u, { timeout: 45_000 });
   } catch (error) {
     const messages = await page.locator(".message.master p").allTextContents();
-    throw new Error(`Browser recording or transcription failed: ${messages.at(-1) ?? error.message}`);
+    const state = await page.locator(".voice-conversation-status").allTextContents();
+    const notice = await page.locator(".voice-input-notice").allTextContents();
+    throw new Error(`Automatic recording or transcription failed: ${JSON.stringify({ messages, state, notice, durationMs, detail: error.message }).slice(0, 1200)}`);
   }
-  const transcript = await page.locator("textarea#say").inputValue();
+  const transcript = await page.locator(".message.user").last().textContent();
   const trackStates = await page.evaluate(() => globalThis.__smokeMicrophone.stream.getTracks().map((track) => track.readyState));
   if (trackStates.some((state) => state !== "ended")) throw new Error("Synthetic microphone stream was not released");
   console.log(JSON.stringify({ phrase, transcript, ttsMs, recordedAudioMs: durationMs, transcribeMs: Math.round(performance.now() - transcriptionStarted), trackStates }));

@@ -4,6 +4,7 @@ import { boundaryReply, followUpReply, readingReply, welcomeReply } from "./dial
 import { inferConversationPurpose } from "./response-policy.js";
 import { OracleApiClient } from "./api-client.js";
 import { AudioRecorder, BrowserSpeechRecognizer, blobToBase64 } from "./audio-recorder.js";
+import { CloudTurnRecognizer, ResilientTurnRecognizer } from "./cloud-turn-recognizer.js";
 import { playPcmBase64, primeAudioPlayback } from "./audio-player.js";
 import { BrowserSpeechPlayer } from "./browser-speech.js";
 import { ConversationMemory, createConversationExport, parseConversationExport, recentConversation } from "./conversation-memory.js";
@@ -26,6 +27,15 @@ export class ShoujianOracle extends HTMLElement {
     this.api = new OracleApiClient();
     this.recorder = new AudioRecorder();
     this.liveTranscriber = new BrowserSpeechRecognizer();
+    this.cloudTurnTranscriber = new CloudTurnRecognizer({ transcribe: (...args) => this.api.transcribe(...args) });
+    this.turnTranscriber = new ResilientTurnRecognizer({
+      browser: this.liveTranscriber,
+      cloud: this.cloudTurnTranscriber,
+      onFallback: () => {
+        this.voiceInputNotice = "浏览器增量转写连接失败，已自动切换为停顿识别。说完停顿约一秒会自动发送，无需手动停止。";
+        this.render();
+      },
+    });
     this.browserSpeech = new BrowserSpeechPlayer();
     this.memory = new ConversationMemory();
     this.cloud = false;
@@ -61,7 +71,7 @@ export class ShoujianOracle extends HTMLElement {
     };
     this.voicePerformance = new VoicePerformanceTracker();
     this.voiceConversation = new VoiceConversationController({
-      recognizer: this.liveTranscriber,
+      recognizer: this.turnTranscriber,
       submit: (text) => this.sendVoiceConversationText(text),
       interruptOutput: () => this.cancelResponse(),
       onUpdate: (snapshot) => this.handleVoiceConversationUpdate(snapshot),
@@ -125,7 +135,7 @@ export class ShoujianOracle extends HTMLElement {
     this.draft = "";
     this.intakeSummaryDraft = "";
     this.conversationViewport.reset();
-    this.appendMessage({ role: "master", text: "上一卦收好。前面的聊天我还记得，可以继续聊，也可以重新留一件事起卦。" });
+    this.appendMessage({ role: "master", text: "上一卦收好，聊天记录仍保留。请另留一件具体的事。若想彻底重新开始，点“清空记录并重新开始”。" });
     this.persistMemory();
     this.render();
   }
@@ -422,7 +432,7 @@ export class ShoujianOracle extends HTMLElement {
     this.persistMemory();
     this.render();
     this.focusLatest();
-    if (this.cloud) await this.askCloud("请只依据程序给出的本卦、动爻和之卦，解释它怎样帮助我重新看原问，并给一个可撤回的小行动。", this.messages.slice(0, -1), "divination");
+    if (this.cloud) await this.askCloud("请先直接回答我原问该如何判断：用一句大白话给有条件的行动倾向（例如先准备、先试探、可推进但需核对什么），不要只介绍卦名，也不要保证结果。再用本卦、动爻、之卦及本轮检索到的经传证据解释为什么，最后给一项具体可核对的现实条件。", this.messages.slice(0, -1), "divination");
   }
 
   async checkCloud() {
@@ -673,7 +683,7 @@ export class ShoujianOracle extends HTMLElement {
 
   recordingFallbackNotice() {
     return this.recorder.supported
-      ? "浏览器实时转写网络不可用，本次页面已切换为录音转文字。请点击“按下说话”，说完后点击“停止并转文字”；刷新页面可重试实时模式。"
+      ? "浏览器增量转写网络不可用。可开启语音对话：自动收音，停顿后转写并发送；也可手动录音。"
       : "浏览器实时转写网络不可用，当前浏览器也不支持录音转文字；请使用文字输入。";
   }
 
@@ -762,7 +772,7 @@ export class ShoujianOracle extends HTMLElement {
   }
 
   startVoiceConversation() {
-    if (!this.cloud || !this.liveTranscriber.supported || this.busy || this.recording || this.recordingStarting || this.transcribing || this.stage === "ready" || this.intake?.status === "review") return;
+    if (!this.cloud || !this.turnTranscriber.supported || this.busy || this.recording || this.recordingStarting || this.transcribing || this.stage === "ready" || this.intake?.status === "review") return;
     this.voiceReplies = true;
     this.voiceError = "";
     primeAudioPlayback();
@@ -791,7 +801,7 @@ export class ShoujianOracle extends HTMLElement {
   handleVoiceConversationUpdate(snapshot) {
     const previous = this.voiceConversationSnapshot;
     this.voiceConversationSnapshot = snapshot;
-    if (snapshot.state === "error" && this.liveTranscriber.networkUnavailable) {
+    if (snapshot.state === "error" && this.liveTranscriber.networkUnavailable && !this.turnTranscriber.cloud.supported) {
       this.voiceInputNotice = this.recordingFallbackNotice();
       this.stopVoiceConversation();
       return;
@@ -871,7 +881,8 @@ export class ShoujianOracle extends HTMLElement {
       transcribing: this.transcribing,
       recordingMode: this.recordingMode,
       recorderSupported: this.recorder.supported,
-      liveTranscriberSupported: this.liveTranscriber.supported,
+      liveTranscriberSupported: this.turnTranscriber.supported,
+      incrementalTranscriberSupported: this.liveTranscriber.supported,
       draft: this.draft,
       voiceReplies: this.voiceReplies,
       voiceMode: this.voiceMode,

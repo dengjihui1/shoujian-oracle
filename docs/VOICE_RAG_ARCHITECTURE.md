@@ -6,10 +6,11 @@
 
 ### 语音转文字（STT）
 
-当前有两层：
+当前有三层：
 
 1. 浏览器提供 `SpeechRecognition / webkitSpeechRecognition` 时，`src/audio-recorder.js` 使用它做增量转写，用户说话时输入框持续出现 interim / final 文字。这个浏览器接口由浏览器厂商实现，本项目无法承诺它一定使用 Google Cloud Speech-to-Text，也拿不到服务端 SLA、词表适配或计费控制。
-2. 浏览器不支持实时识别，或接口存在但在线识别返回 `network` 错误时，页面改用手动录音。用户点击“按下说话”与“停止并转文字”后，录音经 `src/api-client.js` 发到 `/api/transcribe`；`server/index.mjs` 校验格式和大小后，由 `server/gemini-client.mjs` 调用 Gemini Interactions API 的 `gemini-3.5-transcribe`。短录音以内联 Base64 发送，只有模型拒绝该格式时才走 Files API。转写有整轮期限，浏览器断开会取消上游；取得文件名后，即使识别被取消也会尽力删除临时文件。上传尚未返回文件名时无法保证删除，实际清理与留存仍须核对供应商条款和真实调用。录音兜底不提供自动连续对话。
+2. 在自动语音对话中，浏览器不支持增量识别，或在线识别返回 `network` 时，`src/cloud-turn-recognizer.js` 用 Web Audio 监听音量，听到说话后等待约 850 ms 安静，再自动结束 `MediaRecorder`、提交 `/api/transcribe`，得到整句后自动发问；无语音时不上传录音。墨衡朗读时暂停收音。该模式是自动轮流对话，但无逐字增量转写，延迟取决于 Gemini 单请求，不能当作 Cloud STT 流式识别。
+3. 用户也可手动点击“按下说话”与“停止并转文字”。两种录音都由 `server/index.mjs` 校验格式和大小，再由 `server/gemini-client.mjs` 调用 Gemini Interactions API 的 `gemini-3.5-transcribe`。短录音以内联 Base64 发送，只有模型拒绝该格式时才走 Files API。转写有整轮期限，浏览器断开会取消上游；取得文件名后，即使识别被取消也会尽力删除临时文件。上传尚未返回文件名时无法保证删除，实际清理与留存仍须核对供应商条款和真实调用。
 
 所以准确说法是：**已经真实调用 Google 的 Gemini 转写 API，但尚未接入 Google Cloud Speech-to-Text v2 StreamingRecognize。**
 
@@ -18,6 +19,8 @@
 2026-09-25 再次通过本机服务 `/api/speech` → WAV → `/api/transcribe` 做真实回环：TTS 约 5.8 秒，转写约 4.7 秒；“守简语音回环测试”识别成“手写语音回环测试”。这些是两次单样本接口检查，不能作为准确率或延迟承诺；真实麦克风、权限、噪声和回声仍须在用户设备验收。
 
 0.52.0 又运行了完整浏览器录音回环：云端 TTS 生成“你好，今天我们聊聊周易。”，独立 Chromium 的合成麦克风把音频送入真实 `MediaRecorder`，录音上传至真实 `/api/transcribe` 后返回同一句，媒体轨已结束。本次 TTS 约 4.1 秒、录音 3.4 秒、转写约 4.5 秒。这是一条链路健康检查，不是识别准确率、低延迟或真人设备体验的统计结论。仓库提供可重跑的 `npm run smoke:voice-browser`，它会调用真实语音 API 并消耗额度。
+
+0.53.0 的同一脚本改为验证浏览器 `network` 错误后自动停顿、自动转写和自动发送。真实 Gemini 回环已完成，录音音轨正常释放；本次“周易”被误识别为“中医”，TTS 约 4.3 秒、录音约 4.1 秒、停顿至自动发问约 8.3 秒。它证明链路连通，也显示准确率和交互延迟仍需改进，不能宣称达到低延迟实时 STT。
 
 ### 文字转语音（TTS）
 

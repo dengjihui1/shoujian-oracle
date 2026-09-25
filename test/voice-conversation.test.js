@@ -6,9 +6,10 @@ import { BrowserSpeechRecognizer } from "../src/audio-recorder.js";
 class FakeRecognizer {
   supported = true;
   starts = 0;
-  start({ onText }) {
+  start({ onText, onSpeechEnd }) {
     this.starts += 1;
     this.onText = onText;
+    this.onSpeechEnd = onSpeechEnd;
     this.promise = new Promise((resolve, reject) => {
       this.resolve = resolve;
       this.reject = reject;
@@ -250,6 +251,20 @@ test("session records ASR final, first token and first audio latency", async () 
   session.markSpeechState("idle");
   finishTurn();
   await tick();
+  session.stop();
+});
+
+test("cloud turn measures transcription from the detected end of speech", async () => {
+  const recognizer = new FakeRecognizer();
+  let clock = 100;
+  const session = new VoiceConversationController({ recognizer, submit: () => new Promise(() => {}), now: () => clock });
+  session.start({ autoSubmit: true });
+  clock = 600;
+  recognizer.onSpeechEnd();
+  clock = 1_900;
+  recognizer.resolve("完整转写");
+  await tick();
+  assert.equal(session.snapshot.metrics.asrFinalMs, 1_300);
   session.stop();
 });
 

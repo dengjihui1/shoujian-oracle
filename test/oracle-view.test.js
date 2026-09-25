@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { renderOracleView } from "../src/oracle-view.js";
+import { plainReading, renderOracleView } from "../src/oracle-view.js";
+import { castHexagram } from "../src/oracle-engine.js";
 
 function render(overrides = {}) {
   return renderOracleView({
@@ -138,6 +139,15 @@ test("visible footer stays concise while the reading card carries the reference 
   assert.doesNotMatch(html, /发送给 Google Gemini/u);
 });
 
+test("a moving question gets a conditional plain-language decision check", () => {
+  const reading = castHexagram([7, 7, 7, 8, 9, 8]);
+  const reply = plainReading(reading, "给我起卦，搬家合不合适？");
+  assert.match(reply, /新住处交付、搬运安排和费用/u);
+  assert.match(reply, /先列出最重要的事项和顺序，再检查风险和缺口/u);
+  assert.match(reply, /地天泰/u);
+  assert.doesNotMatch(reply, /会顺利|一定合适/u);
+});
+
 test("cloud UI uses Moheng branding and presents divination as broadly available", () => {
   const html = render();
   assert.match(html, /墨衡云端 · 周易 RAG 已连接/u);
@@ -200,9 +210,9 @@ test("intake review is editable and must be confirmed before casting", () => {
 
 test("supported browsers expose explicit automatic voice conversation", () => {
   const html = render();
-  assert.match(html, /实时语音对话/u);
+  assert.match(html, /自动语音对话/u);
   assert.match(html, /开始语音对话（自动发送）/u);
-  assert.match(html, /不是后台偷录，也不宣称全双工/u);
+  assert.match(html, /浏览器支持时显示增量文字，否则停顿后云端转写/u);
 });
 
 test("active voice conversation reports transcript, latency and interruption", () => {

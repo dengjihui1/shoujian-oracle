@@ -120,6 +120,7 @@ test("起卦必须经过访谈、摘要确认，再由程序排卦", async ({ pa
   await page.locator('[data-action="cast"]').click();
   await expect(page.locator(".reading")).toBeVisible();
   await expect(page.locator(".reading .question")).toContainText("稳定回款");
+  await expect(page.locator(".reading-explanation")).toContainText("关键条件已核实");
   await expect(page.locator(".message.master p", { hasText: "卦象不替你决定" })).toBeVisible();
   await expect(composer(page)).toBeEnabled();
 });
@@ -160,6 +161,8 @@ test("本机会话可导出、清除并从文件恢复", async ({ page }) => {
   expect(exported.session.messages.some(({ text }) => text === "请保存这一轮")).toBe(true);
 
   await page.locator('[data-action="clear-memory"]').click();
+  await expect(page.locator(".message.user")).toHaveCount(0);
+  await page.reload();
   await expect(page.locator(".message.user")).toHaveCount(0);
   await page.locator("[data-session-import]").setInputFiles(path);
   await expect(page.locator(".message.user p", { hasText: "请保存这一轮" })).toBeVisible();
@@ -258,7 +261,7 @@ test("连续语音重报累计识别结果时只送问一次且不重复文字",
   await expect(page.locator(".message.master p", { hasText: "听到了。" })).toBeVisible();
 });
 
-test("浏览器实时识别网络失败后切到录音转文字", async ({ page }) => {
+test("浏览器实时识别网络失败后自动语音对话继续，仍可手动录音", async ({ page }) => {
   await page.route("**/api/transcribe", (route) => route.fulfill({ json: { text: "录音转写成功" } }));
   await page.goto("/");
   await page.locator("shoujian-oracle").evaluate((host) => {
@@ -269,12 +272,13 @@ test("浏览器实时识别网络失败后切到录音转文字", async ({ page 
       async stop() { return new Blob(["test-audio"], { type: "audio/webm" }); },
       async cancel() {},
     };
+    host.turnTranscriber.cloud = { supported: true, start: () => new Promise(() => {}), abort() {}, stop() {} };
   });
   await page.locator('[data-action="voice-conversation"]').click();
   await page.evaluate(() => globalThis.__shoujianRecognition.onerror({ error: "network" }));
-  await expect(page.locator('[data-action="voice-conversation"]')).toHaveCount(0);
-  await expect(page.locator('[data-action="voice"]')).toHaveAttribute("aria-pressed", "false");
-  await expect(page.getByText("已切换为录音转文字", { exact: false })).toBeVisible();
+  await expect(page.locator('[data-action="voice-conversation"]')).toContainText("结束语音对话");
+  await expect(page.getByText("已自动切换为停顿识别", { exact: false })).toBeVisible();
+  await page.locator('[data-action="voice-conversation"]').click();
   await page.locator('[data-action="record"]').click();
   await expect(page.locator('[data-action="stop-record"]')).toContainText("停止并转文字");
   await page.locator('[data-action="stop-record"]').click();
@@ -295,7 +299,7 @@ test("单次语音输入网络失败后也能改用录音", async ({ page }) => 
   });
   await page.locator('[data-action="record"]').click();
   await page.evaluate(() => globalThis.__shoujianRecognition.onerror({ error: "network" }));
-  await expect(page.getByText("已切换为录音转文字", { exact: false })).toBeVisible();
+  await expect(page.getByText("浏览器增量转写网络不可用", { exact: false })).toBeVisible();
   await expect(page.locator('[data-action="record"]')).toContainText("按下说话");
   await page.locator('[data-action="record"]').click();
   await page.locator('[data-action="stop-record"]').click();
@@ -306,6 +310,7 @@ test("浏览器识别和录音都不可用时保留文字入口", async ({ page 
   await page.goto("/");
   await page.locator("shoujian-oracle").evaluate((host) => {
     host.recorder = { supported: false, cancel() {} };
+    host.turnTranscriber.cloud = { supported: false, abort() {}, stop() {} };
   });
   await page.locator('[data-action="voice-conversation"]').click();
   await page.evaluate(() => globalThis.__shoujianRecognition.onerror({ error: "network" }));

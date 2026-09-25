@@ -131,6 +131,12 @@ export class VoiceConversationController {
     try {
       result = await this.recognizer.start({
         onText: (text, detail = {}) => this.#heard(text, detail, epoch),
+        onSpeechEnd: () => {
+          if (this.active && epoch === this.epoch && this.metrics.speechEndedAt === null) {
+            this.metrics.speechEndedAt = this.now();
+            this.#emit();
+          }
+        },
       });
     } catch (error) {
       if (!this.active || epoch !== this.epoch || error?.name === "AbortError") return;

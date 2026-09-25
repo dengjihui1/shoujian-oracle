@@ -67,15 +67,15 @@ export function renderOracleView(state) {
                 ? `<button type="button" data-action="cancel-transcription">取消转写</button>`
                 : state.recordingStarting
                   ? `<button type="button" data-action="cancel-record">等待麦克风授权 · 取消</button>`
-                  : `<button type="button" data-action="${state.recording ? "stop-record" : "record"}" ${((stage === "ready" || intakeReview || state.busy || state.recorderPermissionPending) && !state.recording) ? "disabled" : ""}>${state.recording ? state.recordingMode === "live" ? "停止并采用文字" : "停止并转文字" : state.recorderPermissionPending ? "正在关闭麦克风授权" : liveSupported ? "实时语音输入" : "按下说话"}</button>` : ""}
+                  : `<button type="button" data-action="${state.recording ? "stop-record" : "record"}" ${((stage === "ready" || intakeReview || state.busy || state.recorderPermissionPending) && !state.recording) ? "disabled" : ""}>${state.recording ? state.recordingMode === "live" ? "停止并采用文字" : "停止并转文字" : state.recorderPermissionPending ? "正在关闭麦克风授权" : state.incrementalTranscriberSupported ? "实时语音输入" : "按下说话"}</button>` : ""}
               ${state.busy && !state.transcribing ? `<button type="button" data-action="cancel-response">停止回答</button>` : ""}
               ${state.cloud && !state.voiceConversationActive ? `<button type="button" data-action="voice" aria-pressed="${Boolean(state.voiceReplies)}">${escapeHtml(state.voiceButtonLabel)}</button>` : ""}
               ${state.cloud && state.voiceReplies && state.fastVoiceSupported && !state.voiceConversationActive ? `<button type="button" data-action="voice-mode" aria-label="切换语音模式">${escapeHtml(state.voiceModeButtonLabel)}</button>` : ""}
             </div>
             ${state.cloud && state.voiceInputNotice ? `<p class="voice-input-notice" role="status">${escapeHtml(state.voiceInputNotice)}</p>` : ""}
             ${state.cloud ? `<p class="voice-notice" data-voice-notice role="status" ${state.voiceError ? "" : "hidden"}>${state.voiceError ? `语音暂不可用：${escapeHtml(state.voiceError)}。文字回答仍可继续。` : ""}</p>` : ""}
-            ${state.cloud ? `<div class="memory-tools"><small>本机保存最近 ${PERSISTED_MEMORY_MESSAGES} 条已完成对话与当前卦象；导入导出不会上传服务器。</small><div><button type="button" data-action="export-memory" ${interactionLocked ? "disabled" : ""}>导出本机会话</button><button type="button" data-action="import-memory" ${interactionLocked ? "disabled" : ""}>导入本机会话</button><button type="button" data-action="clear-memory" ${interactionLocked ? "disabled" : ""}>清除本机记忆</button></div><input type="file" accept="application/json,.json" data-session-import hidden></div>` : ""}
-            ${stage !== "question" ? `<button class="text-button" type="button" data-action="reset" ${interactionLocked ? "disabled" : ""}>另起一问</button>` : !state.cloud ? `<div class="quick"><button type="button" data-quick="我不会问，请给一个例子">我不会问</button><button type="button" data-quick="边界是什么">哪些不能问</button></div>` : ""}
+            <div class="memory-tools"><small>最近 ${PERSISTED_MEMORY_MESSAGES} 条已完成对话与当前卦象保存在此浏览器；刷新或重启服务不会清除。</small><div>${state.cloud ? `<button type="button" data-action="export-memory" ${interactionLocked ? "disabled" : ""}>导出本机会话</button><button type="button" data-action="import-memory" ${interactionLocked ? "disabled" : ""}>导入本机会话</button>` : ""}<button type="button" data-action="clear-memory" ${interactionLocked ? "disabled" : ""}>清空记录并重新开始</button></div>${state.cloud ? `<input type="file" accept="application/json,.json" data-session-import hidden>` : ""}</div>
+            ${stage !== "question" ? `<button class="text-button" type="button" data-action="reset" ${interactionLocked ? "disabled" : ""}>另起一问（保留记录）</button>` : !state.cloud ? `<div class="quick"><button type="button" data-quick="我不会问，请给一个例子">我不会问</button><button type="button" data-quick="边界是什么">哪些不能问</button></div>` : ""}
           </section>
         </div>
       </div>
@@ -99,8 +99,8 @@ function voiceConversationPanel(state, stage, intakeReview) {
   const interruptible = active && ["thinking", "speaking"].includes(conversationState);
   const transcript = String(state.voiceConversationTranscript ?? "").trim();
   const error = String(state.voiceConversationError ?? "").trim();
-  return `<section class="voice-conversation" data-conversation-state="${escapeHtml(conversationState)}" aria-label="实时语音对话">
-    <div class="voice-conversation-copy"><strong>实时语音对话</strong><small>${active ? "已开启停顿自动发送；墨衡朗读时暂停收音，避免把扬声器声音再次送问。" : "可靠轮流对话：开启后，停顿会自动发送；不是后台偷录，也不宣称全双工。"}</small></div>
+  return `<section class="voice-conversation" data-conversation-state="${escapeHtml(conversationState)}" aria-label="自动语音对话">
+    <div class="voice-conversation-copy"><strong>自动语音对话</strong><small>${active ? "说完停顿会自动发送；墨衡朗读时暂停收音，避免回声。" : "一次开启，自动收音、停顿发送、朗读后继续听。浏览器支持时显示增量文字，否则停顿后云端转写。"}</small></div>
     <div class="voice-conversation-actions">
       <button class="${active ? "" : "primary"}" type="button" data-action="voice-conversation" ${disabled ? "disabled" : ""}>${active ? "结束语音对话" : "开始语音对话（自动发送）"}</button>
       ${interruptible ? `<button class="interrupt" type="button" data-action="voice-interrupt">打断并说话</button>` : ""}
@@ -212,10 +212,30 @@ function readingCard(reading, question) {
   return `<section class="reading" aria-label="本次卦象">
     <p class="question">原问：“${escapeHtml(question)}”</p>
     <div class="reading-title"><span>${escapeHtml(reading.primary?.symbol)}</span><div><small>第 ${Number(reading.primary?.number) || 0} 卦</small><h2>${escapeHtml(reading.primary?.fullName)}</h2></div></div>
+    <div class="reading-explanation"><strong>这卦对原问的白话提醒</strong><p>${escapeHtml(plainReading(reading, question))}</p></div>
     <ol aria-label="六爻，自上而下显示">${lines}</ol>
     <dl><div><dt>下卦</dt><dd>${escapeHtml(reading.primary?.lower?.symbol)}${escapeHtml(reading.primary?.lower?.name)} · ${escapeHtml(reading.primary?.lower?.image)}</dd></div><div><dt>上卦</dt><dd>${escapeHtml(reading.primary?.upper?.symbol)}${escapeHtml(reading.primary?.upper?.name)} · ${escapeHtml(reading.primary?.upper?.image)}</dd></div><div><dt>之卦</dt><dd>${escapeHtml(reading.changed?.fullName ?? "无")}</dd></div></dl>
     <p class="reading-disclaimer">卦象仅供传统文化体验与自我反思参考，不作为现实决定的唯一依据。</p>
   </section>`;
+}
+
+export function plainReading(reading, question) {
+  const ask = String(question ?? "").trim().slice(0, 80);
+  const reality = /搬家|迁居|搬迁/u.test(ask)
+    ? "就搬家而言：如果新住处交付、搬运安排和费用都落实了，可以按现实计划推进；若有关键缺口，先补齐再决定。"
+    : "就你问的这件事而言：关键条件已核实，可以按现实计划推进；还有重要缺口，就先补齐再决定。";
+  const actions = {
+    乾: "列出最重要的事项和顺序", 兑: "把没说清的条件问明白", 离: "核对事实与期待是否一致",
+    震: "先试一个能撤回的小步骤", 巽: "逐步试探并看反馈", 坎: "检查风险和缺口",
+    艮: "先停下来划清边界", 坤: "从眼前能做的事开始",
+  };
+  const lower = actions[reading.primary?.lower?.name] ?? "确认自己的准备";
+  const upper = actions[reading.primary?.upper?.name] ?? "核对外部条件";
+  const movingLines = Array.isArray(reading.movingLines) ? reading.movingLines : [];
+  const change = movingLines.length
+    ? `第${movingLines.join("、")}爻有变化；“${reading.changed?.fullName ?? "变卦"}”只提醒换个角度看后续，不预示结果。`
+    : "没有动爻，先看眼前的条件。";
+  return `${reality}这卦提醒你：先${lower}，再${upper}。${change}卦象仅供参考。`;
 }
 
 export function escapeHtml(value) {
@@ -285,7 +305,7 @@ const styles = `<style>
   .message.user { justify-self: end; background: #6d2d2729; border-color: #8e4a40; } .message b { color: #c9a46e; font-size: 13px; } .message p { margin: 5px 0 0; line-height: 1.7; white-space: pre-line; overflow-wrap: anywhere; }
   .message.error { border-color: #a85248; background: #7a2c2422; } .message.streaming p::after { content: "▍"; margin-left: 2px; color: #d2a15b; animation: cursor-blink .8s steps(1) infinite; }
   .rag-evidence { margin-top: 10px; border-top: 1px solid #66513b; padding-top: 8px; font: 12px/1.55 system-ui,sans-serif; } .rag-evidence summary { color: #d0ac76; cursor: pointer; } .rag-evidence ol { display: grid; gap: 10px; margin: 10px 0 0; padding-left: 20px; } .rag-evidence a { color: #e0be86; } .rag-evidence small { display: block; color: #918574; } .rag-evidence blockquote { margin: 5px 0 0; padding-left: 9px; color: #c8beae; border-left: 2px solid #71573a; white-space: pre-line; }
-  .reading { padding: 16px; background: #09080772; border: 1px solid #604932; border-radius: 16px; } .question { margin: 0 0 12px; color: #bca889; } .reading-title { display: flex; gap: 14px; align-items: center; } .reading-title > span { font-size: 44px; color: #d2b782; } h2 { margin: 2px 0 0; font-size: 24px; }
+  .reading { padding: 16px; background: #09080772; border: 1px solid #604932; border-radius: 16px; } .question { margin: 0 0 12px; color: #bca889; } .reading-title { display: flex; gap: 14px; align-items: center; } .reading-title > span { font-size: 44px; color: #d2b782; } h2 { margin: 2px 0 0; font-size: 24px; } .reading-explanation{margin:14px 0;padding:12px 14px;color:#eadcc2;background:#64462535;border:1px solid #977447;border-radius:12px;line-height:1.7}.reading-explanation strong{color:#e1b873}.reading-explanation p{margin:6px 0 0}
   .reading ol { display: grid; gap: 5px; padding: 13px; list-style: none; background: #05050566; border-radius: 12px; } .line { display: grid; grid-template-columns: 1fr auto; gap: 12px; } .line span { color: #d2b782; font: 800 21px/1 monospace; } .line small { color: #918574; font: 12px/1.4 system-ui,sans-serif; } .line.moving span,.line.moving small { color: #e5705e; } .reading-disclaimer { margin: 12px 0 0; color: #a99b87; font: 11px/1.6 system-ui,sans-serif; }
   .intake-card { display:grid; gap:9px; padding:14px; color:#d9c6a6; background:#76582e18; border:1px solid #76603f; border-radius:14px; } .intake-card small{color:#d3aa6e;letter-spacing:.08em}.intake-card p{margin:0;white-space:pre-line;line-height:1.65}.intake-card label{margin:0}.intake-card textarea{min-height:150px}.intake-actions{display:flex;flex-wrap:wrap;gap:8px}.intake-card.confirmed{background:#35634514;border-color:#567455}
   dl { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin: 0; } dl div { padding: 9px; text-align: center; background: #ffffff08; border-radius: 9px; } dt { color: #9d8f7b; font: 12px system-ui,sans-serif; } dd { margin: 4px 0 0; }
