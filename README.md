@@ -4,7 +4,7 @@
 
 独立的轻量虚拟卦师与经传 RAG 组件。它保留虚拟人主持、问题边界、三钱六爻和 64 卦确定性映射，并加入可追溯的《周易》《彖》《象》《说卦》冻结知识检索；明确不包含住宅分析、纳甲时证、档案、支付与追验等主项目核心。
 
-![版本](https://img.shields.io/badge/version-0.54.0-8e332a)
+![版本](https://img.shields.io/badge/version-0.55.0-8e332a)
 ![许可](https://img.shields.io/badge/license-MIT-d3b27f)
 
 ## 现在能完成什么
@@ -33,6 +33,7 @@
 22. 本机会话可导出为可审阅 JSON，并在清除或更换浏览器后重新导入；文件只含最近已完成对话和可恢复问卦状态，导入导出不经过项目服务器。
 23. 提供非 root Docker、Caddy 自动 HTTPS、`/healthz`、显式代理信任、Redis 原子共享限流和不记录对话正文的结构化日志；本地仍可零配置使用内存限流。
 24. 区分进程存活 `/healthz` 与依赖就绪 `/readyz`；生产容器用后者探活，Redis 失联时停止接收新流量而不泄露连接详情。
+25. 首次进入有可点击跳过、随后自动打开的中式门扉；减少动态效果时直接进入。新页面以墨衡对话和问卦为主，记录管理收在“记录与隐私”中，不清除已有本机会话。
 
 问题文字不会改变卦象。项目没有账号、遥测或支付；本地模式不上传内容，云端模式会把用户主动提交的文字、录音、最近上下文和必要卦象证据发送给已配置的供应商。对话记忆只存当前浏览器的 `localStorage`，服务端不建立用户档案。
 
@@ -45,7 +46,7 @@
 | `oracleQuestionBoundary` | 7 类公开字规 | 问契签名、验期、准绳与追验 |
 | `iching` | 6/7/8/9、八卦、文王序 64 卦映射 | 古籍全文、爻辞、纳甲、六亲、旬空、六神 |
 
-经传数据另从中文维基文库公开来源建立独立知识包，不复制主项目住宅知识。语音 API 的真实边界、Google Cloud 配置和 RAG 构建全过程见 [语音 API 与 RAG 架构说明](docs/VOICE_RAG_ARCHITECTURE.md)；从上游 Cactus 提取了什么、拒绝照搬什么见 [Cactus 模块拆解](docs/CACTUS_MODULE_EXTRACTION.md)；完整映射见 [组件抽取与流程图](docs/COMPONENT_MAP.md)，逐模块说明见 [守简模块池](docs/MODULE_POOL.md)及[逐模块工程选择复核](docs/ENGINEERING_REVIEW_2026-09-24.md)，最新迭代见 [0.54.0 实时转写记录](docs/RELEASE_0.54.0.md)，生产审计与待验收项见 [生产审计台账](docs/PRODUCTION_AUDIT_2026-09-24.md)。
+经传数据另从中文维基文库公开来源建立独立知识包，不复制主项目住宅知识。语音 API 的真实边界、Google Cloud 配置和 RAG 构建全过程见 [语音 API 与 RAG 架构说明](docs/VOICE_RAG_ARCHITECTURE.md)；从上游 Cactus 提取了什么、拒绝照搬什么见 [Cactus 模块拆解](docs/CACTUS_MODULE_EXTRACTION.md)；完整映射见 [组件抽取与流程图](docs/COMPONENT_MAP.md)，逐模块说明见 [守简模块池](docs/MODULE_POOL.md)及[逐模块工程选择复核](docs/ENGINEERING_REVIEW_2026-09-24.md)，最新迭代见 [0.55.0 页面重设计](docs/RELEASE_0.55.0.md)，生产审计与待验收项见 [生产审计台账](docs/PRODUCTION_AUDIT_2026-09-24.md)。
 
 用户实测确认的交互、RAG 降级、问卦访谈和直接语音对话改进，统一记录在 [下一阶段任务池](docs/USER_FEEDBACK_BACKLOG.md)；任务状态以该文件和实际测试为准。
 

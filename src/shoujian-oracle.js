@@ -870,6 +870,7 @@ export class ShoujianOracle extends HTMLElement {
   render() {
     if (!this.shadowRoot) return;
     const previousDialogue = this.shadowRoot.querySelector(".dialogue");
+    const memoryDrawerOpen = Boolean(this.shadowRoot.querySelector('[data-drawer="memory"]')?.open);
     const viewportSnapshot = this.conversationViewport.capture(previousDialogue);
     const contentChanged = this.conversationRevision !== this.renderedConversationRevision;
     this.shadowRoot.innerHTML = renderOracleView({
@@ -909,6 +910,7 @@ export class ShoujianOracle extends HTMLElement {
       voiceConversationMetrics: this.voiceConversationSnapshot.metrics,
       voicePerformanceSummary: this.voicePerformance.summary,
     });
+    if (memoryDrawerOpen) this.shadowRoot.querySelector('[data-drawer="memory"]')?.setAttribute("open", "");
     this.renderedConversationRevision = this.conversationRevision;
     this.conversationViewport.restore(this.shadowRoot.querySelector(".dialogue"), viewportSnapshot, { contentChanged });
     this.syncJumpToLatestButton();

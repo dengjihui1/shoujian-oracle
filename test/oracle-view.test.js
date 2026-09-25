@@ -151,7 +151,7 @@ test("a moving question gets a conditional plain-language decision check", () =>
 test("cloud UI uses Moheng branding and presents divination as broadly available", () => {
   const html = render();
   assert.match(html, /墨衡云端 · 周易 RAG 已连接/u);
-  assert.match(html, /任何主题都可问卦/u);
+  assert.match(html, /借一卦，/u);
   assert.match(html, /生意、感情、健康、学业或任何困惑/u);
   assert.match(html, /以此问起卦 · 仅供参考/u);
 });

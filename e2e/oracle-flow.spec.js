@@ -13,6 +13,7 @@ test.beforeEach(async ({ context, page }) => {
       localStorage.clear();
       sessionStorage.setItem("shoujian-e2e-initialized", "1");
     }
+    sessionStorage.setItem("shoujian:entry-gate:v1", "seen");
     class FakeUtterance {
       constructor(text) { this.text = text; }
     }
@@ -152,6 +153,7 @@ test("本机会话可导出、清除并从文件恢复", async ({ page }) => {
   await sendWithEnter(page, "请保存这一轮");
 
   const downloadPromise = page.waitForEvent("download");
+  await page.locator('[data-drawer="memory"] summary').click();
   await page.locator('[data-action="export-memory"]').click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/^shoujian-session-\d{4}-\d{2}-\d{2}\.json$/u);

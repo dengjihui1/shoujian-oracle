@@ -25,13 +25,14 @@ export function renderOracleView(state) {
   return `${styles}
     <main class="shell">
       <header class="master-card stage-${stage}">
-        <div><p class="eyebrow">守简 · 墨衡虚拟卦师</p><h1>面对面问墨衡</h1><p>什么都能聊，任何主题都可问卦；卦象只作参考，不替你决定。</p></div>
+        <div><p class="eyebrow">守简 <span>·</span> 墨衡在此</p><h1>借一卦，<em>照眼前的路。</em></h1><p>把心里的事说出来。先聊明白，再决定要不要起卦。</p></div>
         <div class="system-state"><span class="status ${state.cloud ? "online" : ""}">${cloudLabel}</span><small class="knowledge-status">${knowledgeLabel}</small></div>
       </header>
 
       <div class="experience">
         ${avatarStage(avatar, phase, avatarMotion)}
         <div class="conversation-column">
+          <div class="conversation-head"><span>墨衡 · 对话间</span><small>一事一问，慢慢说</small></div>
           <section class="dialogue" aria-label="与墨衡的当前对话" aria-live="polite">
             ${messages.map((message, index) => messageHtml(message, index, messages.length)).join("")}
           </section>
@@ -74,7 +75,7 @@ export function renderOracleView(state) {
             </div>
             ${state.cloud && state.voiceInputNotice ? `<p class="voice-input-notice" role="status">${escapeHtml(state.voiceInputNotice)}</p>` : ""}
             ${state.cloud ? `<p class="voice-notice" data-voice-notice role="status" ${state.voiceError ? "" : "hidden"}>${state.voiceError ? `语音暂不可用：${escapeHtml(state.voiceError)}。文字回答仍可继续。` : ""}</p>` : ""}
-            <div class="memory-tools"><small>最近 ${PERSISTED_MEMORY_MESSAGES} 条已完成对话与当前卦象保存在此浏览器；刷新或重启服务不会清除。</small><div>${state.cloud ? `<button type="button" data-action="export-memory" ${interactionLocked ? "disabled" : ""}>导出本机会话</button><button type="button" data-action="import-memory" ${interactionLocked ? "disabled" : ""}>导入本机会话</button>` : ""}<button type="button" data-action="clear-memory" ${interactionLocked ? "disabled" : ""}>清空记录并重新开始</button></div>${state.cloud ? `<input type="file" accept="application/json,.json" data-session-import hidden>` : ""}</div>
+            <details class="memory-drawer" data-drawer="memory"><summary>记录与隐私 <span>仅存本机</span></summary><div class="memory-tools"><small>最近 ${PERSISTED_MEMORY_MESSAGES} 条已完成对话与当前卦象保存在此浏览器；刷新或重启服务不会清除。</small><div>${state.cloud ? `<button type="button" data-action="export-memory" ${interactionLocked ? "disabled" : ""}>导出本机会话</button><button type="button" data-action="import-memory" ${interactionLocked ? "disabled" : ""}>导入本机会话</button>` : ""}<button type="button" data-action="clear-memory" ${interactionLocked ? "disabled" : ""}>清空记录并重新开始</button></div></div></details>${state.cloud ? `<input type="file" accept="application/json,.json" data-session-import hidden>` : ""}
             ${stage !== "question" ? `<button class="text-button" type="button" data-action="reset" ${interactionLocked ? "disabled" : ""}>另起一问（保留记录）</button>` : !state.cloud ? `<div class="quick"><button type="button" data-quick="我不会问，请给一个例子">我不会问</button><button type="button" data-quick="边界是什么">哪些不能问</button></div>` : ""}
           </section>
         </div>
@@ -323,4 +324,76 @@ const styles = `<style>
   @media(max-width:860px){ .master-card{align-items:start}.experience{grid-template-columns:1fr}.avatar-stage{position:relative;top:auto;min-height:470px}.portrait-stack{inset:-20px 0 54px}.oracle-halo{width:340px}.oracle-halo span{transform:rotate(calc(var(--i)*45deg)) translateY(-132px) rotate(calc(var(--i)*-45deg))}.dialogue{max-height:400px} }
   @media(max-width:560px){ .shell{padding:15px;border-radius:17px}.master-card{display:grid}.system-state{text-align:left}.avatar-stage{min-height:390px}.portrait-stack{inset:-5px -25px 54px}.avatar-panel{margin:0 9px 9px}.oracle-halo{top:4%;width:270px}.oracle-halo span{width:28px;height:28px;margin:-14px;transform:rotate(calc(var(--i)*45deg)) translateY(-105px) rotate(calc(var(--i)*-45deg))}.input-row{grid-template-columns:1fr}.line{grid-template-columns:1fr;gap:2px}dl:not(.voice-latency){grid-template-columns:1fr}.message{max-width:96%}.memory-tools{align-items:flex-start}.voice-conversation-actions button{flex:1}.voice-latency{grid-template-columns:repeat(3,minmax(0,1fr))} }
   @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important;animation:none!important}[data-mouth-state="audio"] .avatar-speaking{opacity:var(--voice-level)}[data-avatar-motion="present-reading"] .avatar-reading-token{opacity:1;transform:none}}
+  /* Courtyard visual system: the conversation and its two choices lead the page. */
+  :host { --ink:#0a1110; --paper:#15201d; --paper-deep:#101815; --gold:#d5b889; --soft:#baae97; --red:#ab4a38; color:#eee5d2; }
+  .shell { width:min(1390px,100%); padding:16px 32px 30px; background:transparent; border:0; border-radius:0; box-shadow:none; }
+  .master-card { align-items:center; padding:24px 4px 28px; border-bottom:1px solid #b99d694a; }
+  .master-card > div:first-child { max-width:820px; }
+  .eyebrow { margin-bottom:15px; color:var(--gold); font:600 12px/1.4 system-ui,sans-serif; letter-spacing:.34em; }
+  .eyebrow span { color:#7b6751; margin:0 7px; }
+  h1 { margin:0 0 13px; color:#f5eddc; font-size:clamp(34px,4.15vw,62px); font-weight:500; line-height:1.18; letter-spacing:.035em; text-shadow:0 6px 30px #0007; }
+  h1 em { color:#dbbc83; font-style:normal; }
+  .master-card p:not(.eyebrow) { color:#c6bba5; font:14px/1.7 system-ui,sans-serif; letter-spacing:.025em; }
+  .system-state { align-self:end; padding-bottom:5px; }
+  .status { padding:8px 13px; border-radius:4px; border-color:#72654a; color:#c3b8a1; background:#1d292479; font-size:11px; }
+  .status.online { border-color:#6b8b74; color:#cbe0c8; background:#21372b9e; }
+  .knowledge-status { color:#7e8579; }
+  .experience { grid-template-columns:minmax(330px,.86fr) minmax(0,1.25fr); gap:30px; padding-top:30px; }
+  .avatar-stage { top:26px; min-height:655px; border:1px solid #9d7d5080; border-radius:4px; background:radial-gradient(ellipse at 50% 33%,#6b704159,transparent 47%), radial-gradient(ellipse at 50% 100%,#60361e70,transparent 58%), linear-gradient(145deg,#1c2a25,#0b1413 70%); box-shadow:0 30px 65px #0008,inset 0 0 80px #0106059c; }
+  .avatar-stage::before { z-index:0; inset:18px; border:1px solid #ae95614f; background:linear-gradient(90deg,#d4b37421 1px,transparent 1px) 0 0/25% 100%, linear-gradient(#d4b37416 1px,transparent 1px) 0 0/100% 25%; mask-image:linear-gradient(#0007,transparent 74%); }
+  .avatar-stage::after { content:"觀"; position:absolute; z-index:0; top:10%; left:50%; translate:-50% 0; color:#d9c38b; opacity:.08; font-size:clamp(170px,22vw,290px); line-height:1; pointer-events:none; }
+  .oracle-halo { z-index:0; top:4%; width:76%; border-color:#c5a36352; animation-duration:70s; }
+  .oracle-halo span { color:#e0c694; border-color:#9979497d; background:#0e1815df; }
+  .portrait-stack { z-index:1; inset:20px -3% 52px; }
+  .avatar-panel { margin:0 16px 16px; padding:13px 15px; border:1px solid #a58b5c88; border-radius:3px; background:#101815e8; box-shadow:0 12px 32px #0008; }
+  .avatar-state-line { color:#e8d8b8; font-size:12px; }
+  .avatar-panel p { color:#b9ac94; }
+  .conversation-column { gap:0; }
+  .conversation-head { display:flex; align-items:baseline; justify-content:space-between; gap:12px; padding:1px 3px 12px; border-bottom:1px solid #806a4b7d; }
+  .conversation-head span { color:#e7d5b4; font-size:18px; letter-spacing:.12em; }
+  .conversation-head small { color:#9e9e8e; font:11px/1.3 system-ui,sans-serif; letter-spacing:.07em; }
+  .dialogue { gap:12px; min-height:220px; max-height:330px; padding:20px 16px 16px; border:1px solid #4d5a4e; border-top:0; background:linear-gradient(145deg,#18221eeb,#101715e8); scrollbar-color:#7c7256 #111916; }
+  .message { max-width:87%; padding:8px 13px 10px; border:0; border-left:2px solid #ad8c60; border-radius:0 7px 7px 0; background:#e3d3aa0b; }
+  .message.user { border:1px solid #677f71; border-radius:7px 0 7px 7px; background:#31504455; }
+  .message b { color:#e1bd84; font:600 12px/1.4 system-ui,sans-serif; letter-spacing:.07em; }
+  .message p { margin-top:6px; color:#f0e8d7; font-size:15px; line-height:1.76; }
+  .message.error { border-left-color:#d16d5d; }
+  .controls { gap:15px; margin-top:16px; padding:20px; border:1px solid #756449; border-radius:4px; background:linear-gradient(135deg,#19221c,#121a17 66%); box-shadow:0 18px 38px #0003; }
+  .controls form { margin:0; }
+  .controls label { margin-bottom:12px; color:#e8d5b5; font-size:20px; font-weight:500; }
+  .input-row { grid-template-columns:minmax(0,1fr) 148px; gap:10px; }
+  textarea { min-height:105px; padding:14px 15px; color:#f6ecd9; border:1px solid #6e725e; border-radius:3px; background:#0b1412; font:15px/1.7 system-ui,sans-serif; }
+  textarea::placeholder { color:#868b7f; }
+  button { min-height:42px; padding:9px 15px; border:1px solid #8d7956; border-radius:3px; color:#efe1c4; background:#243029; font:500 13px/1.4 system-ui,sans-serif; transition:background .2s,border-color .2s,transform .2s; }
+  button:hover:not(:disabled) { border-color:#e3c088; background:#36463a; }
+  .submit-actions { gap:9px; }
+  .submit-actions button { min-height:48px; }
+  .primary,.voice-conversation-actions .primary { background:#9a4132; border-color:#c2694c; color:#fff0d3; font-weight:600; }
+  .primary:hover:not(:disabled),.voice-conversation-actions .primary:hover:not(:disabled) { background:#b4513b; border-color:#e38b65; }
+  .composer-hint { margin-top:8px; color:#8f9688; }
+  .voice-conversation { grid-template-columns:1fr auto; align-items:center; gap:8px 16px; padding:12px 14px; border:1px solid #587666; border-radius:3px; background:#20372a73; }
+  .voice-conversation-copy strong { color:#ddedda; font:600 14px/1.3 system-ui,sans-serif; }
+  .voice-conversation-copy small { max-width:430px; color:#adbdad; font-size:11px; }
+  .voice-conversation-actions { justify-content:flex-end; }
+  .voice-conversation-actions button { min-height:38px; }
+  .voice-conversation-status,.voice-performance { grid-column:1/-1; }
+  .voice-tools { gap:7px; }
+  .voice-tools button { min-height:36px; border-color:#5b6758; color:#c8d1bf; background:#16231f; font-size:12px; }
+  .memory-tools { gap:12px; padding-top:14px; border-top:1px solid #5360526b; color:#919b8b; }
+  .memory-tools button { border-color:#5360527a; color:#b8b99f; }
+  .memory-drawer { border-top:1px solid #5360526b; padding-top:12px; }
+  .memory-drawer summary { display:flex; align-items:center; gap:9px; width:max-content; color:#b7aa8d; font:12px/1.4 system-ui,sans-serif; cursor:pointer; list-style:none; }
+  .memory-drawer summary::-webkit-details-marker { display:none; }
+  .memory-drawer summary::before { content:"＋"; color:#cbad7e; font-size:16px; }
+  .memory-drawer[open] summary::before { content:"－"; }
+  .memory-drawer summary span { color:#818e81; font-size:11px; }
+  .memory-drawer .memory-tools { margin-top:12px; border-top:0; padding-top:0; }
+  .text-button { justify-self:start; min-height:30px; padding-left:0; text-decoration:none; color:#bead89; }
+  .reading { margin-top:16px; border-color:#a587587a; border-radius:3px; background:#1b2119; }
+  .reading-explanation { border-radius:3px; }
+  .intake-card { border-radius:3px; }
+  footer { padding:22px 4px 0; border-top:1px solid #74684b52; color:#858e7f; letter-spacing:.08em; }
+  @media(max-width:980px) { .shell{padding:14px 18px 25px}.experience{grid-template-columns:minmax(250px,.7fr) minmax(0,1fr);gap:18px}.avatar-stage{min-height:580px}.input-row{grid-template-columns:1fr}.submit-actions{grid-template-columns:1fr 1fr}.system-state{max-width:190px} }
+  @media(max-width:700px) { .master-card{display:grid;gap:16px;padding-top:18px}h1{font-size:clamp(32px,8vw,47px)}.system-state{text-align:left;max-width:none}.knowledge-status{display:inline;margin-left:7px}.experience{grid-template-columns:1fr;gap:19px;padding-top:20px}.avatar-stage{position:relative;top:auto;min-height:320px;max-height:370px}.portrait-stack{inset:-70px 8% 40px}.oracle-halo{width:280px;top:-40px}.avatar-panel{margin:0 10px 10px}.conversation-head{padding-top:0}.dialogue{min-height:170px;max-height:300px}.voice-conversation{grid-template-columns:1fr}.voice-conversation-actions{justify-content:flex-start} }
+  @media(max-width:500px) { .shell{padding:10px 2px 22px}.master-card{padding:13px 4px 17px}.eyebrow{font-size:10px;margin-bottom:9px}h1{font-size:clamp(30px,7.6vw,38px);margin-bottom:8px}.master-card p:not(.eyebrow){font-size:12px}.system-state{padding:0}.status{padding:5px 8px;font-size:10px}.knowledge-status{display:none}.avatar-stage{min-height:218px;max-height:218px}.portrait-stack{inset:-5px 15% 25px}.oracle-halo{width:190px;top:-20px}.oracle-halo span{width:25px;height:25px;margin:-12px;transform:rotate(calc(var(--i)*45deg)) translateY(-76px) rotate(calc(var(--i)*-45deg))}.avatar-panel{padding:6px 9px;margin:0 8px 8px}.avatar-state-line{font-size:10px}.avatar-panel p,.voice-meter{display:none}.conversation-head span{font-size:16px}.conversation-head small{font-size:10px}.dialogue{padding:14px 11px;min-height:145px;max-height:240px}.message{max-width:96%}.message p{font-size:14px}.controls{padding:15px 12px}.controls label{font-size:17px}.submit-actions{grid-template-columns:1fr 1fr}.submit-actions button{padding:8px;font-size:12px}.memory-tools{display:grid}.memory-tools>div{justify-content:flex-start}.voice-conversation-copy small{font-size:10px} }
 </style>`;
