@@ -1,6 +1,6 @@
 {
   "name": "shoujian-oracle",
-  "version": "0.57.0",
+  "version": "0.57.1",
   "private": true,
   "type": "module",
   "description": "A grounded Zhouyi RAG dialogue system with deterministic hexagram casting and a Gemini virtual diviner.",
@@ -22,6 +22,7 @@
     "@google-cloud/speech": "^8.1.0",
     "@google-cloud/text-to-speech": "^7.1.0",
     "lunar-javascript": "1.7.7",
+    "opencc-js": "1.4.2",
     "redis": "6.2.1",
     "ws": "^8.21.3"
   },

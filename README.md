@@ -4,10 +4,12 @@
 
 独立的轻量虚拟卦师与经传 RAG 组件。它保留虚拟人主持、问题边界、三钱六爻和 64 卦确定性映射，并加入可追溯的《周易》《彖》《象》《说卦》冻结知识检索；明确不包含住宅分析、纳甲时证、档案、支付与追验等主项目核心。
 
-![版本](https://img.shields.io/badge/version-0.57.0-8e332a)
+![版本](https://img.shields.io/badge/version-0.57.1-8e332a)
 ![许可](https://img.shields.io/badge/license-MIT-d3b27f)
 
 ## 现在能完成什么
+
+最新修复：[0.57.1 繁简经传检索](docs/RELEASE_0.57.1.md)，修复真实页面发现的“自强不息”漏检；未改变古籍原文和引用出处。
 
 本轮交付：[0.57.0 生辰与受控试用](docs/RELEASE_0.57.0.md) · [人工上线清单](docs/LAUNCH_CHECKLIST.md) · [预算与性能方案](docs/COST_PERFORMANCE_PLAN.md) · [受邀部署](docs/INVITE_DEPLOYMENT.md)。新增可选公历/农历本机四柱排盘，单独同意后只将干支符号用于 AI 解说；人物改为拱形半身构图。300 元试用配置加入月度 Redis 额度并默认关闭付费音频。额度是请求量保护，不是人民币账本。
 

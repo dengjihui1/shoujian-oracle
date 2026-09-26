@@ -9,6 +9,8 @@
     "p95": 60
   },
   "cases": [
+    { "id": "qian-self-strength", "query": "请用一句大白话解释《周易》的自强不息，并给出本轮查到的出处。", "expectedAny": ["ZY-01-OVERVIEW"], "maxRank": 1 },
+    { "id": "kun-carry-things", "query": "厚德载物是什么意思？", "expectedAny": ["ZY-02-OVERVIEW"], "maxRank": 1 },
     { "id": "qian-line-1", "query": "潜龙勿用是什么意思？", "expectedAny": ["ZY-01-LINE-1"], "maxRank": 1 },
     { "id": "qian-line-5", "query": "乾卦九五飞龙在天怎么理解？", "expectedAny": ["ZY-01-LINE-5"], "maxRank": 1 },
     { "id": "kun-line-1", "query": "坤卦履霜坚冰至说的是什么？", "expectedAny": ["ZY-02-LINE-1"], "maxRank": 1 },

@@ -46,6 +46,21 @@ test("unknown questions do not fabricate a decorative source", () => {
   assert.match(formatEvidenceForPrompt(evidence), /资料不足/u);
 });
 
+test("simplified and traditional quotations retrieve the same verbatim sources", () => {
+  const cases = [
+    ["自强不息", "自強不息", "ZY-01-OVERVIEW"],
+    ["厚德载物", "厚德載物", "ZY-02-OVERVIEW"],
+    ["亢龙有悔", "亢龍有悔", "ZY-01-LINE-6"],
+  ];
+  for (const [simplified, traditional, id] of cases) {
+    for (const quote of [simplified, traditional]) {
+      const evidence = knowledge.retrieve({ query: `请用一句大白话解释《周易》的“${quote}”，并给出本轮查到的出处。` });
+      assert.equal(evidence[0]?.id, id);
+      assert.ok(evidence[0].excerpt.includes(traditional));
+    }
+  }
+});
+
 test("ordinary numbers do not accidentally match a numbered hexagram", () => {
   const evidence = knowledge.retrieve({ query: "请用大约300字介绍你自己，以及你能做什么。" });
   assert.deepEqual(evidence, []);

@@ -1,14 +1,12 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { Converter } from "opencc-js/t2cn";
 
 const projectRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const defaultKnowledgePath = resolve(projectRoot, "knowledge/shoujian-rag.v1.json");
-const traditionalToSimplified = new Map([..."貞訟師比畜謙隨蠱臨觀噬賁剝復無妄頤過離咸恆遯壯晉夷睽蹇損益夬姤萃升困井革鼎漸歸妹豐旅巽兌渙節孚濟傳為馬首圜君父玉金寒冰赤良老瘠駁果風澤雷山水火天地潛龍見飛終乾惕厲无咎"].map((character) => [character, character]));
-for (const [traditional, simplified] of Object.entries({
-  貞: "贞", 訟: "讼", 謙: "谦", 隨: "随", 蠱: "蛊", 臨: "临", 觀: "观", 賁: "贲", 剝: "剥", 復: "复", 無: "无", 頤: "颐", 離: "离", 恆: "恒", 遯: "遁", 壯: "壮", 晉: "晋", 夷: "夷", 睽: "睽", 蹇: "蹇", 損: "损", 益: "益", 夬: "夬", 姤: "姤", 萃: "萃", 升: "升", 困: "困", 井: "井", 革: "革", 鼎: "鼎", 漸: "渐", 歸: "归", 妹: "妹", 豐: "丰", 旅: "旅", 巽: "巽", 兌: "兑", 渙: "涣", 節: "节", 孚: "孚", 濟: "济", 傳: "传", 為: "为", 馬: "马", 首: "首", 圜: "圆", 風: "风", 澤: "泽", 雷: "雷", 山: "山", 水: "水", 火: "火", 天: "天", 地: "地", 潛: "潜", 龍: "龙", 見: "见", 飛: "飞", 終: "终", 乾: "乾", 惕: "惕", 厲: "厉", 无: "无", 咎: "咎",
-})) traditionalToSimplified.set(traditional, simplified);
-
+// Normalize only the search index and query; preserve verbatim source excerpts.
+const simplifyChinese = Converter({ from: "t", to: "cn" });
 export async function loadKnowledgeBase(path = defaultKnowledgePath) {
   const data = JSON.parse(await readFile(path, "utf8"));
   validatePackage(data);
@@ -233,10 +231,8 @@ function explicitLineNumber(query) {
 }
 
 function normalize(value) {
-  return [...String(value ?? "").toLowerCase().normalize("NFKC")]
-    .map((character) => traditionalToSimplified.get(character) ?? character)
-    .join("")
-    .replace(/\s+/gu, "");
+  return simplifyChinese(String(value ?? "").toLowerCase().normalize("NFKC"))
+    .replace(/遯/gu, "遁").replace(/\s+/gu, "");
 }
 
 function boundedText(value, maxLength = 800) {
