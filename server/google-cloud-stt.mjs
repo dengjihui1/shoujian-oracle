@@ -1,5 +1,6 @@
 import speech from "@google-cloud/speech";
 import { WebSocketServer } from "ws";
+import { MonthlyUsageBudget, BUDGET_MESSAGE, BUDGET_UNAVAILABLE_MESSAGE } from "./usage-budget.mjs";
 
 const MAX_AUDIO_BYTES = 4 * 1024 * 1024;
 const MAX_DURATION_MS = 35_000;
@@ -17,19 +18,21 @@ export function googleCloudSttFromEnv(env = process.env, options = {}) {
 }
 
 export function attachStreamingStt(server, { client, rateLimiter, now = Date.now, trustProxy = false,
-  resolveClientAddress, maxConcurrent = 4 } = {}) {
+  resolveClientAddress, maxConcurrent = 4, usageBudget = new MonthlyUsageBudget(), paidAudioEnabled = true } = {}) {
   if (!client) return;
   const wss = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024, perMessageDeflate: false });
   const sessions = new Set();
   let pending = 0;
   server.on("upgrade", async (request, socket, head) => {
-    const reject = (status) => {
-      if (!socket.destroyed) socket.end(`HTTP/1.1 ${status}\r\nConnection: close\r\n\r\n`);
+    const reject = (status, message = "语音服务暂时不可用。") => {
+      const body = JSON.stringify({ message });
+      if (!socket.destroyed) socket.end(`HTTP/1.1 ${status}\r\nConnection: close\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: ${Buffer.byteLength(body)}\r\n\r\n${body}`);
     };
     let url;
     try { url = new URL(request.url, `http://${request.headers.host}`); }
     catch { return reject("400 Bad Request"); }
     if (url.pathname !== "/api/stt/stream") return reject("404 Not Found");
+    if (!paidAudioEnabled) return reject("403 Forbidden", "当前体验暂未开启云端语音，请使用文字交流。");
     const origin = request.headers.origin;
     let sameOrigin = false;
     const forwardedScheme = trustProxy ? String(request.headers["x-forwarded-proto"] ?? "").split(",", 1)[0].trim() : "";
@@ -44,6 +47,9 @@ export function attachStreamingStt(server, { client, rateLimiter, now = Date.now
     try {
       const address = resolveClientAddress(request, { trustProxy });
       if (!await rateLimiter.allow(address, now())) return reject("429 Too Many Requests");
+      const budget = await usageBudget.reserve("audio");
+      if (!budget.allowed) return reject(budget.unavailable ? "503 Service Unavailable" : "429 Too Many Requests",
+        budget.unavailable ? BUDGET_UNAVAILABLE_MESSAGE : BUDGET_MESSAGE);
     } catch { return reject("503 Service Unavailable"); }
     finally { pending -= 1; }
     if (socket.destroyed) return;

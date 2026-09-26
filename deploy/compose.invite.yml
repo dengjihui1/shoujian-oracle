@@ -1,0 +1,8 @@
+# Add after compose.yml. Missing/empty credentials are rejected before startup.
+services:
+  caddy:
+    environment:
+      INVITE_USER: ${INVITE_USER:?Set INVITE_USER for invite access}
+      INVITE_PASSWORD_HASH: ${INVITE_PASSWORD_HASH:?Generate a Caddy password hash first}
+    volumes:
+      - ./Caddyfile.invite:/etc/caddy/Caddyfile:ro

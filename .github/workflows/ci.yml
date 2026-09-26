@@ -31,19 +31,44 @@ jobs:
         run: docker compose --env-file deploy/compose.env.example -f deploy/compose.yml config --quiet
       - name: Validate Caddy production configuration
         run: docker run --rm --env DOMAIN=oracle.example.com --volume "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile
-      - name: Smoke-test Redis shared limiter
+      - name: Validate invite-only deployment and reject empty credentials
+        shell: bash
+        env:
+          APP_ENV_FILE: ../.env.production.example
+        run: |
+          export INVITE_USER=ci-invite
+          export INVITE_PASSWORD_HASH="$(docker run --rm caddy:2-alpine caddy hash-password --plaintext ci-validation-only)"
+          docker compose --env-file deploy/compose.env.example -f deploy/compose.yml -f deploy/compose.invite.yml config --quiet
+          docker run --rm --env DOMAIN=oracle.example.com --env INVITE_USER --env INVITE_PASSWORD_HASH --volume "$PWD/deploy/Caddyfile.invite:/etc/caddy/Caddyfile:ro" caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile
+          unset INVITE_USER INVITE_PASSWORD_HASH
+          if docker compose --env-file deploy/compose.env.example -f deploy/compose.yml -f deploy/compose.invite.yml config --quiet 2>/dev/null; then
+            echo 'Invite deployment incorrectly accepted empty credentials.'
+            exit 1
+          fi
+      - name: Smoke-test Redis shared limiter and persistent monthly budget
         shell: bash
         run: |
-          redis_id=$(docker run --detach --publish 127.0.0.1:16379:6379 redis:7-alpine redis-server --save "" --appendonly no)
+          redis_id=$(docker run --detach --publish 127.0.0.1:16379:6379 redis:7-alpine redis-server --save "" --appendonly yes --appendfsync always --maxmemory-policy noeviction)
           trap 'docker rm --force "$redis_id" >/dev/null 2>&1 || true' EXIT
+          export REDIS_URL=redis://127.0.0.1:16379
+          export BUDGET_SMOKE_RUN_ID="$(node -p 'require("node:crypto").randomUUID()')"
           for attempt in {1..20}; do
             if docker exec "$redis_id" redis-cli ping | grep --quiet PONG; then
-              REDIS_URL=redis://127.0.0.1:16379 RATE_LIMIT_HASH_SALT=ci-only-hash-salt RATE_LIMIT_PREFIX=shoujian:ci RATE_LIMIT_MAX=2 node scripts/smoke-redis-rate-limiter.mjs
+              break
+            fi
+            sleep 1
+          done
+          RATE_LIMIT_HASH_SALT=ci-only-hash-salt RATE_LIMIT_PREFIX=shoujian:ci RATE_LIMIT_MAX=2 node scripts/smoke-redis-rate-limiter.mjs
+          node scripts/smoke-redis-budget.mjs
+          docker restart "$redis_id" >/dev/null
+          for attempt in {1..20}; do
+            if docker exec "$redis_id" redis-cli ping | grep --quiet PONG; then
+              node scripts/smoke-redis-budget.mjs --verify-restart
               exit 0
             fi
             sleep 1
           done
-          docker logs "$redis_id"
+          echo 'Redis did not become ready after restart.'
           exit 1
       - name: Build and smoke-test production container
         shell: bash

@@ -3,6 +3,9 @@ import { PERSISTED_MEMORY_MESSAGES } from "./conversation-memory.js";
 import { deriveAvatarPresentation } from "./avatar-state.js";
 import { deriveAvatarMotion } from "./avatar-motion.js";
 import { courtyardStyles } from "./courtyard-styles.js";
+import { birthPanel } from "./birth-view.js";
+import { escapeHtml } from "./html.js";
+export { escapeHtml } from "./html.js";
 
 const AVATAR_NEUTRAL = new URL("../assets/avatar/moheng-neutral.webp", import.meta.url).href;
 const AVATAR_SPEAKING = new URL("../assets/avatar/moheng-speaking.webp", import.meta.url).href;
@@ -30,7 +33,7 @@ export function renderOracleView(state) {
       </section>
       <div class="experience">
         <div class="conversation-column">
-          <div class="conversation-head">${avatarStage(avatar, phase, avatarMotion)}<div class="host-copy"><span>墨衡 <small>你的问卦引路人</small></span><p>${welcoming ? "我在。想聊一聊，还是问上一卦？" : escapeHtml(avatar.detail)}</p></div><span class="room-seal" aria-hidden="true">问心</span></div>
+          <div class="conversation-head">${avatarStage(avatar, phase, avatarMotion)}<div class="host-copy"><span>墨衡 <small>AI 虚拟讲解人 · 陪你观心</small></span><p data-host-detail>${welcoming ? "我在。想聊一聊，还是问上一卦？" : escapeHtml(avatar.detail)}</p><small class="host-presence">一盏灯，一席话。</small></div><span class="room-seal" aria-hidden="true">问心</span></div>
           ${stage !== "question" ? `<ol class="journey" aria-label="问卦进度">${["理清问题", "确认起卦", "观卦解意"].map((label, index) => `<li ${index === ["intake", "ready", "reading"].indexOf(stage) ? 'aria-current="step"' : ""}><span>0${index + 1}</span>${label}</li>`).join("")}</ol>` : ""}
           ${state.reading ? readingCard(state.reading, state.question) : ""}
           <section class="dialogue" aria-label="与墨衡的当前对话" aria-live="polite">
@@ -39,6 +42,7 @@ export function renderOracleView(state) {
           <button class="jump-latest" type="button" data-action="jump-latest" ${state.showJumpToLatest ? "" : "hidden"}>回到最新消息 ↓</button>
 
           <section class="controls">
+            ${birthPanel(state, interactionLocked || state.voiceConversationActive)}
             ${welcoming ? `<div class="question-seeds" aria-label="问题灵感"><span>从一件事开始</span><button type="button" data-seed="最近在工作上遇到一个选择，想聊聊该怎样理清思路。" ${interactionLocked ? "disabled" : ""}>事业进退 ↗</button><button type="button" data-seed="有一段关系让我困惑，想梳理自己的想法。" ${interactionLocked ? "disabled" : ""}>相处之道 ↗</button><button type="button" data-seed="最近心里有些迷茫，想找一个能开始的小方向。" ${interactionLocked ? "disabled" : ""}>心中未决 ↗</button></div>` : ""}
             ${stage === "intake" ? intakePanel(state.intake, state.intakeSummaryDraft, interactionLocked) : ""}
             ${stage === "ready" && state.intake?.summary ? confirmedIntakeCard(state.intake.summary) : ""}
@@ -70,20 +74,21 @@ export function renderOracleView(state) {
                 : state.recordingStarting
                   ? `<button type="button" data-action="cancel-record">等待麦克风授权 · 取消</button>`
                   : `<button type="button" data-action="${state.recording ? "stop-record" : "record"}" ${((stage === "ready" || intakeReview || state.busy || state.recorderPermissionPending) && !state.recording) ? "disabled" : ""}>${state.recording ? state.recordingMode === "live" ? "停止并采用文字" : "停止并转文字" : state.recorderPermissionPending ? "正在关闭麦克风授权" : state.incrementalTranscriberSupported ? "实时语音输入" : "按下说话"}</button>` : ""}
-              ${state.cloud && !state.voiceConversationActive ? `<button type="button" data-action="voice" aria-pressed="${Boolean(state.voiceReplies)}">${escapeHtml(state.voiceButtonLabel)}</button>` : ""}
-              ${state.cloud && state.voiceReplies && state.fastVoiceSupported && !state.voiceConversationActive ? `<button type="button" data-action="voice-mode" aria-label="切换语音模式">${escapeHtml(state.voiceModeButtonLabel)}</button>` : ""}
+              ${state.cloud && (state.paidAudioEnabled !== false || state.fastVoiceSupported) && !state.voiceConversationActive ? `<button type="button" data-action="voice" aria-pressed="${Boolean(state.voiceReplies)}">${escapeHtml(state.voiceButtonLabel)}</button>` : ""}
+              ${state.cloud && state.paidAudioEnabled !== false && state.voiceReplies && state.fastVoiceSupported && !state.voiceConversationActive ? `<button type="button" data-action="voice-mode" aria-label="切换语音模式">${escapeHtml(state.voiceModeButtonLabel)}</button>` : ""}
             </div>
             ${voicePerformanceHtml(state.voicePerformanceSummary)}
+            ${state.cloud && state.paidAudioEnabled === false ? `<p class="birth-note">当前为节省预算的浏览器语音模式。若浏览器识别服务不可用，可继续打字；本站未开启付费录音转写和云端朗读。</p>` : ""}
             ${state.cloud ? "</details>" : ""}
             ${state.cloud && state.voiceInputNotice ? `<p class="voice-input-notice" role="status">${escapeHtml(state.voiceInputNotice)}</p>` : ""}
             ${state.cloud ? `<p class="voice-notice" data-voice-notice role="status" ${state.voiceError ? "" : "hidden"}>${state.voiceError ? `语音暂不可用：${escapeHtml(state.voiceError)}。文字回答仍可继续。` : ""}</p>` : ""}
-            <details class="memory-drawer" data-drawer="memory"><summary>记录与隐私 <span>仅存本机</span></summary><div class="memory-tools"><small>最近 ${PERSISTED_MEMORY_MESSAGES} 条已完成对话与当前卦象保存在此浏览器；刷新或重启服务不会清除。</small><div>${state.cloud ? `<button type="button" data-action="export-memory" ${interactionLocked ? "disabled" : ""}>导出本机会话</button><button type="button" data-action="import-memory" ${interactionLocked ? "disabled" : ""}>导入本机会话</button>` : ""}<button type="button" data-action="clear-memory" ${interactionLocked ? "disabled" : ""}>清空记录并重新开始</button></div></div></details>${state.cloud ? `<input type="file" accept="application/json,.json" data-session-import hidden>` : ""}
+            <details class="memory-drawer" data-drawer="memory"><summary>记录与隐私 <span>查看数据去向</span></summary><div class="memory-tools"><small>最近 ${PERSISTED_MEMORY_MESSAGES} 条已完成对话与当前卦象保存在此浏览器；刷新或重启服务不会清除。原始生辰只在本页内存，刷新即清除。</small><p>云端回答会处理你主动提交的文字、最近对话、卦象及你另行同意共享的四柱。${state.cloud ? `当前文字服务：${escapeHtml(state.cloudProvider || "已配置的 AI 服务")}。` : "本地体验不发送给 AI。"}浏览器语音可能使用浏览器厂商的在线服务；开启付费录音转写时，录音会送往配置的语音服务。</p><p>本站不建个人档案。服务端合成语音可能在内存缓存至多 30 分钟，第三方留存以其服务条款为准。本机清除不会删除第三方已处理的数据；导出的会话可能包含你发送的个人信息。</p><div>${state.cloud ? `<button type="button" data-action="export-memory" ${interactionLocked ? "disabled" : ""}>导出本机会话</button><button type="button" data-action="import-memory" ${interactionLocked ? "disabled" : ""}>导入本机会话</button>` : ""}<button type="button" data-action="clear-memory" ${interactionLocked ? "disabled" : ""}>清空记录并重新开始</button></div></div></details>${state.cloud ? `<input type="file" accept="application/json,.json" data-session-import hidden>` : ""}
             ${stage !== "question" ? `<button class="text-button" type="button" data-action="reset" ${interactionLocked ? "disabled" : ""}>另起一问（保留记录）</button>` : !state.cloud ? `<div class="quick"><button type="button" data-quick="我不会问，请给一个例子">我不会问</button><button type="button" data-quick="边界是什么">哪些不能问</button></div>` : ""}
           </section>
         </div>
       </div>
 
-      <footer><span>一问一念，一念一明。</span><small>传统文化体验 · 卦象仅供参考</small></footer>
+      <footer><span>一问一念，一念一明。</span><small>传统文化体验 · 卦象仅供参考${state.publicContact ? `<br>联系：${escapeHtml(state.publicContact)}` : ""}</small></footer>
     </main>`;
 }
 
@@ -228,8 +233,8 @@ export function plainReading(reading, question) {
     : "就你问的这件事而言：如果关键条件已核实，可以按现实计划推进；还有重要缺口，就先补齐再决定。";
   const actions = {
     乾: "列出最重要的事项和顺序", 兑: "把没说清的条件问明白", 离: "核对事实与期待是否一致",
-    震: "先试一个能撤回的小步骤", 巽: "逐步试探并看反馈", 坎: "检查风险和缺口",
-    艮: "先停下来划清边界", 坤: "从眼前能做的事开始",
+    震: "试一个能撤回的小步骤", 巽: "逐步试探并看反馈", 坎: "检查风险和缺口",
+    艮: "停下来划清边界", 坤: "从眼前能做的事开始",
   };
   const lower = actions[reading.primary?.lower?.name] ?? "确认自己的准备";
   const upper = actions[reading.primary?.upper?.name] ?? "核对外部条件";
@@ -239,10 +244,6 @@ export function plainReading(reading, question) {
     : "没有动爻，先看眼前的条件。";
   const reflection = lower === upper ? `这卦提醒你：${lower}，选一件能落实的小事先做。` : `这卦提醒你：先${lower}，再${upper}。`;
   return `${reality}\n\n${reflection}\n\n${change}`;
-}
-
-export function escapeHtml(value) {
-  return String(value ?? "").replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character]);
 }
 
 function evidenceDetails(evidence) {

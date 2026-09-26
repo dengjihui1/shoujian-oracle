@@ -1,5 +1,11 @@
 # 代码学习指南
 
+## 0.57.0 的阅读入口
+
+先运行 `node --test test/birth-chart.test.js test/usage-budget.test.js test/preflight.test.js`，再看对应的 `src/birth-chart.js`、`server/birth-context.mjs`、`server/usage-budget.mjs`。重点理解历法与随机起卦独立、未知时刻不补造、原始生日不出站、授权可撤回、月度原子预占和 Redis 故障关闭。
+
+`npm run vendor:calendar` 从锁定 npm 依赖重新生成浏览器历法模块与 MIT 许可；`npm run preflight` 只检查生产配置、不产生费用。真实 Redis 和受邀网关按 [部署验收](INVITE_DEPLOYMENT.md) 执行，不能以单测替代真实持久性检查。
+
 ## 推荐阅读顺序
 
 ### 1. 先看确定性计算

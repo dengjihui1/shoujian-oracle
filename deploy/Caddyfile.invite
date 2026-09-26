@@ -1,0 +1,30 @@
+{$DOMAIN} {
+  encode zstd gzip
+
+  request_body {
+    max_size 10MB
+  }
+
+  header {
+    Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    X-Frame-Options "DENY"
+  }
+
+  # No matcher: authentication covers HTML, assets, HTTP APIs, SSE and WS upgrades.
+  # Explicit route order prevents the proxy from running before authentication.
+  route {
+    basic_auth {
+      {$INVITE_USER} {$INVITE_PASSWORD_HASH}
+    }
+    reverse_proxy app:8000 {
+      # The invite password authenticates only at Caddy; do not forward it to Node.
+      header_up -Authorization
+      health_uri /readyz
+      health_interval 10s
+      health_timeout 3s
+      fail_duration 30s
+      max_fails 3
+      flush_interval -1
+    }
+  }
+}

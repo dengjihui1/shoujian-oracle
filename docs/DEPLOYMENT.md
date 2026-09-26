@@ -1,5 +1,7 @@
 # 生产部署指南
 
+300 元以内的首次发布先按 [上线清单](LAUNCH_CHECKLIST.md) 与 [预算方案](COST_PERFORMANCE_PLAN.md) 执行。填写生产配置后运行 `npm run preflight`；它只检查配置，不会显示秘密或调用付费 API，也不替代域名、真机和账单验收。
+
 这份指南把守简放在 Node 容器与私网 Redis 共享限流之后，由 Caddy 自动申请和续期 HTTPS 证书。仓库提供的是可复现配置，不代表你的域名、云主机、Gemini 或 Google Cloud 已经审核或上线。
 
 ## 一、准备条件
@@ -24,6 +26,8 @@ cp deploy/compose.env.example deploy/compose.env
 编辑 `.env.production`：
 
 - 填写 `GEMINI_API_KEY`；
+- 填写 `PUBLIC_CONTACT`，会在页面底部公开显示，不能填密钥；
+- 保留 `MONTHLY_BUDGET_UNITS=1000` 和 `PAID_AUDIO_ENABLED=false` 作为受邀试用起点；0 代表关闭用量保护，不是停费。只有完成语音账号、费用和真机验收后才开启付费音频；
 - 保留 `HOST=0.0.0.0`，只让容器网络访问 8000 端口；
 - 保留 `TRUST_PROXY=true`，因为公开流量只经过同一 Compose 内的 Caddy；
 - 保留 `STRUCTURED_LOGS=true`；
@@ -36,7 +40,7 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
 
 - 保留 `REDIS_URL=redis://redis:6379`。Redis 只在 Compose 私网中开放，不映射宿主机端口；
 - 按需要调整 `RATE_LIMIT_MAX` 和 `RATE_LIMIT_WINDOW_MS`，默认每个来源 60 秒 40 个 API 请求。
-- 按实例容量调整 `MAX_CONCURRENT_UPSTREAM`，默认每个 Node 进程同时处理最多 16 个聊天、转写或朗读请求；超过时返回带 `Retry-After: 2` 的 503。该限制不替代账号级配额与总账单上限。
+- 300 元受邀试用的生产示例使用 `MAX_CONCURRENT_UPSTREAM=4`；超过时返回带 `Retry-After: 2` 的 503。该限制不替代账号级配额与总账单上限。
 - `UPSTREAM_DEADLINE_MS` 默认 90 秒，限制一次聊天跨模型切换及引用修复、或一次录音转写的总时间；超时取消上游并释放并发名额。生产启动值限制在 10–120 秒，需结合真实 P95 和供应商超时设置。
 
 编辑 `deploy/compose.env`，把 `DOMAIN` 改为正式域名。两个生产配置文件均被 Git 忽略，不要提交或发送给他人。

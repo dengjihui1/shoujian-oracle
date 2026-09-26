@@ -16,6 +16,7 @@ import { citationRepairInstruction, groundedUnavailableReply } from "./knowledge
 import { withDivinationDisclaimer } from "../src/response-policy.js";
 import { SlidingWindowRateLimiter } from "./rate-limiter.mjs";
 import { rateLimiterFromEnv } from "./redis-rate-limiter.mjs";
+import { MonthlyUsageBudget, usageBudgetFromEnv, BUDGET_MESSAGE, BUDGET_UNAVAILABLE_MESSAGE } from "./usage-budget.mjs";
 import { prepareChat } from "./chat-preparation.mjs";
 import { MAX_CHAT_REPLY_CHARS } from "./stream-limits.mjs";
 import { enabledByEnvironment, resolveClientAddress } from "./request-context.mjs";
@@ -33,6 +34,9 @@ export function createApp({
   rootPath = projectRoot,
   now = Date.now,
   rateLimiter = new SlidingWindowRateLimiter(),
+  usageBudget = new MonthlyUsageBudget(),
+  paidAudioEnabled = true,
+  publicContact = "",
   trustProxy = false,
   logger = null,
   logHashSalt = "",
@@ -96,9 +100,11 @@ export function createApp({
           return json(response, 200, {
             cloud: apiEnabled,
             provider: apiEnabled ? client.providerSummary ?? "gemini" : null,
-            speechProvider: apiEnabled ? client.speechProviderName ?? "gemini" : null,
-            transcribeProvider: apiEnabled ? client.transcribeProviderName ?? "gemini" : null,
-            streamingStt: Boolean(sttClient),
+            speechProvider: apiEnabled && paidAudioEnabled ? client.speechProviderName ?? "gemini" : null,
+            transcribeProvider: apiEnabled && paidAudioEnabled ? client.transcribeProviderName ?? "gemini" : null,
+            paidAudioEnabled,
+            publicContact: String(publicContact).slice(0, 160),
+            streamingStt: Boolean(sttClient) && paidAudioEnabled,
             models: apiEnabled ? client.models : null,
             knowledge: knowledgeBase.summary,
             serverTime: formatShanghaiDateTime(now()),
@@ -106,6 +112,9 @@ export function createApp({
         }
         if (!apiEnabled) return json(response, 503, { error: "cloud_disabled", message: "未配置 Gemini，当前使用本地有限对话。" });
         if (request.method !== "POST") return json(response, 405, { error: "method_not_allowed", message: "请求方法不受支持。" });
+        if (!paidAudioEnabled && ["/api/transcribe", "/api/speech"].includes(url.pathname)) {
+          return json(response, 403, { error: "paid_audio_disabled", message: "当前体验暂未开启云端语音，请使用文字交流。" });
+        }
         const body = await readJsonBody(request);
         if (!["/api/transcribe", "/api/chat", "/api/chat/stream", "/api/speech"].includes(url.pathname)) {
           return json(response, 404, { error: "not_found", message: "接口不存在。" });
@@ -116,6 +125,11 @@ export function createApp({
         }
         activeUpstream += 1;
         try {
+          const budget = await usageBudget.reserve(["/api/speech", "/api/transcribe"].includes(url.pathname) ? "audio" : "text");
+          if (!budget.allowed) return json(response, budget.unavailable ? 503 : 429, {
+            error: budget.unavailable ? "usage_budget_unavailable" : "monthly_budget_exhausted",
+            message: budget.unavailable ? BUDGET_UNAVAILABLE_MESSAGE : BUDGET_MESSAGE,
+          });
           if (url.pathname === "/api/transcribe") return await handleTranscribe(response, client, body, upstreamDeadlineMs);
           if (url.pathname === "/api/chat") return await handleChat(response, client, knowledgeBase, body, now, upstreamDeadlineMs);
           if (url.pathname === "/api/chat/stream") return await handleChatStream(response, client, knowledgeBase, body, now, upstreamDeadlineMs);
@@ -138,7 +152,8 @@ export function createApp({
 
 export function createHttpAppServer(options = {}) {
   const server = createHttpServer(createApp(options));
-  attachStreamingStt(server, { client: options.sttClient, rateLimiter: options.rateLimiter ?? new SlidingWindowRateLimiter(),
+  attachStreamingStt(server, { client: options.sttClient, paidAudioEnabled: options.paidAudioEnabled,
+    usageBudget: options.usageBudget, now: options.now, rateLimiter: options.rateLimiter ?? new SlidingWindowRateLimiter(),
     trustProxy: options.trustProxy, resolveClientAddress });
   server.headersTimeout = 10_000;
   server.requestTimeout = 60_000;
@@ -595,14 +610,19 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const port = Number.parseInt(process.env.PORT ?? "8000", 10);
   const host = process.env.HOST ?? "127.0.0.1";
   const client = clientFromEnv();
-  const sttClient = googleCloudSttFromEnv();
+  const paidAudioEnabled = process.env.PAID_AUDIO_ENABLED === undefined || enabledByEnvironment(process.env.PAID_AUDIO_ENABLED);
+  const sttClient = paidAudioEnabled ? googleCloudSttFromEnv() : null;
   const logger = enabledByEnvironment(process.env.STRUCTURED_LOGS) ? createJsonLogger() : null;
   const limiter = await rateLimiterFromEnv(process.env, {
     onRedisError: () => safeLog(logger, "rate_limiter_error", { mode: "redis" }),
   });
+  const usageBudget = usageBudgetFromEnv(process.env, { client: limiter.rateLimiter.client });
   createHttpAppServer({
     client,
     sttClient,
+    paidAudioEnabled,
+    publicContact: process.env.PUBLIC_CONTACT ?? "",
+    usageBudget,
     rateLimiter: limiter.rateLimiter,
     trustProxy: enabledByEnvironment(process.env.TRUST_PROXY),
     logger,

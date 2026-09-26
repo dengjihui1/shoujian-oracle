@@ -20,16 +20,20 @@ services:
 
   redis:
     image: redis:7-alpine
-    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "32mb", "--maxmemory-policy", "allkeys-lru"]
+    # Preserve monthly admission counters across restart; never evict them under memory pressure.
+    command: ["redis-server", "--save", "", "--appendonly", "yes", "--appendfsync", "always", "--maxmemory", "32mb", "--maxmemory-policy", "noeviction"]
     expose:
       - "6379"
     restart: unless-stopped
     read_only: true
-    tmpfs:
-      - /data
-    user: redis
+    volumes:
+      - redis_data:/data
     cap_drop:
       - ALL
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
     security_opt:
       - no-new-privileges:true
     healthcheck:
@@ -62,5 +66,6 @@ services:
       - no-new-privileges:true
 
 volumes:
+  redis_data:
   caddy_data:
   caddy_config:

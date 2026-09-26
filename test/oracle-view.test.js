@@ -154,6 +154,14 @@ test("matching trigrams produce one clear action without pretending facts are ve
   assert.equal(reply.match(/列出最重要的事项和顺序/gu)?.length, 1);
 });
 
+test("plain reading avoids duplicated sequencing words for thunder and mountain", () => {
+  for (const lines of [[7, 8, 8, 8, 7, 8], [8, 8, 7, 8, 7, 8]]) {
+    const reply = plainReading(castHexagram(lines), "这件事如何准备？");
+    assert.doesNotMatch(reply, /先先|再先/u);
+    assert.match(reply, /这卦提醒你/u);
+  }
+});
+
 test("replaying the entrance cannot hide active microphone or cancellation controls", () => {
   for (const state of [{ recording: true }, { recordingStarting: true }, { voiceConversationActive: true }, { busy: true }, { transcribing: true }]) {
     assert.match(render(state), /data-action="replay-entry" disabled/u);

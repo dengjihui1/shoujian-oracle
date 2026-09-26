@@ -1,5 +1,11 @@
 # 组件抽取与流程图
 
+## 0.57.0 新增路径
+
+- 生辰：`birth-view.js` 收集可选输入 → 点击时懒加载 `birth-chart.js` / `lunar-vendor.js` → 本机四柱与白话说明；用户单独同意后，`birth-context.mjs` 仅接受干支符号，加入后续请求。原始日期时刻不落盘、不上传，不参与三钱随机数。
+- 额度：匿名来源限流 → `usage-budget.mjs` 共享 Redis 月度预占 → 上游并发/期限 → 模型；生产付费音频默认关闭，关闭时不走录音云兜底。
+- 发布：`preflight.mjs` 检查配置 → 受邀 Caddy 网关 → Node 与持久 Redis 私网；实际验收见 [上线清单](LAUNCH_CHECKLIST.md)。
+
 ## 一、产品流程
 
 ```text

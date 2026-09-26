@@ -1,5 +1,17 @@
 # 守简模块池
 
+## 0.57.0 增量模块与取舍
+
+| 文件 | 职责 | 工程选择 |
+| --- | --- | --- |
+| `src/birth-chart.js` / `birth-view.js` | 可选历法排盘、解释和同意 | 使用固定版本 `lunar-javascript`；按需本机加载，无 CDN；不手写节气算法 |
+| `server/birth-context.mjs` | 校验同意和四柱格式 | 白名单重建字段，不信任客户端生日、不接收任意提示词 |
+| `server/usage-budget.mjs` | 全站月度请求额度 | Redis Lua 原子预占、失败关闭、计数持久化；不冒充人民币计费账本 |
+| `deploy/Caddyfile.invite` | 小规模共享口令入口 | 复用网关；不引入账号数据库，公开前仍需实际验收 |
+| `scripts/preflight.mjs` / `smoke-redis-budget.mjs` | 配置和真实 Redis 检查 | 不显示凭证、不调用模型；Redis smoke 隔离测试键并验证重启保持 |
+
+完整八字知识库、真太阳时和视频数字人服务不在当前交付范围；本月 300 元方案见 [预算与性能](COST_PERFORMANCE_PLAN.md)。
+
 这份文档把项目拆成可独立理解、测试和替换的模块。它既是架构索引，也是后续学习与迭代池。编号保持稳定；新增能力优先增加模块或扩展既有模块，不把所有逻辑继续堆进 Web Component。逐项工程取舍和未验收证据见 [逐模块工程选择复核](ENGINEERING_REVIEW_2026-09-24.md)。
 
 ## 一、全局依赖图

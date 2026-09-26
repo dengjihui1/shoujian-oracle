@@ -15,9 +15,10 @@ export class CloudTurnRecognizer {
     this.silenceMs = silenceMs;
     this.noSpeechMs = noSpeechMs;
     this.maxSpeechMs = maxSpeechMs;
+    this.enabled = true;
   }
 
-  get supported() { return Boolean(this.recorder.supported && this.AudioContextClass && this.transcribe); }
+  get supported() { return Boolean(this.enabled && this.recorder.supported && this.AudioContextClass && this.transcribe); }
 
   async start({ onSpeechEnd } = {}) {
     if (!this.supported) throw new Error("当前浏览器不支持自动收音");

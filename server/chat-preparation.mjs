@@ -3,6 +3,7 @@ import { decideKnowledgeRoute, groundedUnavailableReply, isExplicitZhouyiQuery }
 import { assessQuestion } from "../src/question-boundary.js";
 import { inferConversationPurpose, resolveResponsePolicy } from "../src/response-policy.js";
 import { castHexagram } from "../src/oracle-engine.js";
+import { sanitizeBirthContext, birthContextInstruction } from "./birth-context.mjs";
 
 const CHAT_STAGES = new Set(["question", "ready", "reading"]);
 const CHAT_PURPOSES = new Set(["chat", "divination"]);
@@ -29,6 +30,7 @@ export function prepareChat(body, knowledgeBase, now = Date.now) {
   }
 
   const question = typeof body?.question === "string" ? body.question.slice(0, 500) : "";
+  const birthContext = sanitizeBirthContext(body);
   const reading = sanitizeReading(body?.reading);
   const history = sanitizeHistory(body?.history);
   const useReadingEvidence = policy.purpose === "divination";
@@ -66,7 +68,7 @@ export function prepareChat(body, knowledgeBase, now = Date.now) {
       reading: useReadingEvidence ? reading : null,
       evidence,
       currentDateTime: serverTime,
-    }),
+    }) + (birthContext ? `\n\n${birthContextInstruction(birthContext)}` : ""),
   });
 }
 

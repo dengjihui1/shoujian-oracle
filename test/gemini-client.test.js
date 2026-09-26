@@ -2,6 +2,21 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { GeminiClient, GeminiError, extractAudio, extractText, parseGeminiSse } from "../server/gemini-client.mjs";
 
+test("chat and stream requests bound provider output and reasoning", async () => {
+  const bodies = [];
+  const client = new GeminiClient({ apiKey: "test-only", fetchFn: async (url, options) => {
+    bodies.push(JSON.parse(options.body));
+    return url.includes("streamGenerateContent")
+      ? new Response('data: {"candidates":[{"content":{"parts":[{"text":"好"}]}}]}\n\n', { headers: { "content-type": "text/event-stream" } })
+      : Response.json({ interaction: { output_text: "好" } });
+  } });
+  await client.chat({ input: "你好", systemInstruction: "短答" });
+  for await (const _chunk of client.chatStream({ input: "你好", systemInstruction: "短答" })) { /* consume */ }
+  assert.equal(bodies[0].generation_config.max_output_tokens, 2048);
+  assert.equal(bodies[1].generationConfig.maxOutputTokens, 2048);
+  assert.equal(bodies[1].generationConfig.thinkingConfig.thinkingLevel, "LOW");
+});
+
 test("Gemini SSE rejects an oversized unterminated event", async () => {
   await assert.rejects(async () => {
     for await (const _text of parseGeminiSse(new Response(`data: ${"x".repeat(65_537)}`).body)) { /* consume */ }

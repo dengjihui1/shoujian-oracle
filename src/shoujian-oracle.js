@@ -51,6 +51,9 @@ export class ShoujianOracle extends HTMLElement {
     this.transcribing = false;
     this.busy = false;
     this.voiceReplies = false;
+    this.paidAudioEnabled = true;
+    this.publicContact = "";
+    this.cloudProvider = "";
     this.voiceMode = this.browserSpeech.supported ? "fast" : "cloud";
     this.voiceState = "idle";
     this.voiceError = "";
@@ -119,6 +122,7 @@ export class ShoujianOracle extends HTMLElement {
   }
 
   initializeSession() {
+    this.clearBirthState();
     this.stage = "question";
     this.question = "";
     this.reading = null;
@@ -223,6 +227,10 @@ export class ShoujianOracle extends HTMLElement {
 
   handleSubmit = async (event) => {
     event.preventDefault();
+    if (event.target.matches?.("[data-birth-form]")) {
+      await this.calculateBirth();
+      return;
+    }
     const field = this.shadowRoot.querySelector("textarea");
     const text = String(field?.value ?? this.draft).trim();
     const mode = event.submitter?.dataset.submitMode ?? "chat";
@@ -234,11 +242,33 @@ export class ShoujianOracle extends HTMLElement {
   };
 
   handleInput = (event) => {
+    const birthField = event.target.dataset?.birthField;
+    if (birthField) {
+      this.birthDraft[birthField] = birthField === "leapMonth" ? event.target.checked : event.target.value;
+      this.birthEpoch += 1;
+      this.birthCalculating = false;
+      this.birthChart = null;
+      this.birthContext = null;
+      this.birthShare = false;
+      this.birthError = "";
+      this.shadowRoot.querySelector(".birth-result")?.remove();
+      this.shadowRoot.querySelector(".birth-error")?.remove();
+      return;
+    }
     if (event.target.matches?.("textarea:not([data-intake-summary])")) this.draft = event.target.value;
     if (event.target.matches?.("[data-intake-summary]")) this.intakeSummaryDraft = event.target.value;
   };
 
   handleChange = async (event) => {
+    if (event.target.matches?.("[data-birth-consent]")) {
+      this.birthShare = Boolean(event.target.checked && this.birthChart);
+      return;
+    }
+    if (event.target.dataset?.birthField) {
+      this.handleInput(event);
+      if (event.target.dataset.birthField === "calendar") this.render();
+      return;
+    }
     if (!event.target.matches?.("[data-session-import]")) return;
     const [file] = event.target.files ?? [];
     event.target.value = "";
@@ -276,6 +306,10 @@ export class ShoujianOracle extends HTMLElement {
 
   handleClick = async (event) => {
     const action = event.target.closest("[data-action]")?.dataset.action;
+    if (action === "clear-birth" && !this.busy && !this.voiceConversationSnapshot.active) {
+      this.clearBirthState();
+      this.render();
+    }
     if (action === "replay-entry" && !this.busy && !this.recording && !this.recordingStarting && !this.transcribing && !this.voiceConversationSnapshot.active) {
       document.dispatchEvent(new CustomEvent("shoujian:replay-entry"));
     }
@@ -328,7 +362,7 @@ export class ShoujianOracle extends HTMLElement {
       if (!this.voiceReplies) this.cancelSpeech();
       this.render();
     }
-    if (action === "voice-mode" && this.voiceReplies && this.browserSpeech.supported) {
+    if (action === "voice-mode" && this.paidAudioEnabled && this.voiceReplies && this.browserSpeech.supported) {
       this.cancelSpeech();
       this.voiceMode = this.voiceMode === "fast" ? "cloud" : "fast";
       if (this.voiceMode === "cloud") primeAudioPlayback();
@@ -462,6 +496,11 @@ export class ShoujianOracle extends HTMLElement {
       const status = await this.api.status({ signal: controller.signal });
       if (controller.signal.aborted || epoch !== this.statusEpoch || !this.isConnected) return;
       this.cloud = Boolean(status.cloud);
+      this.paidAudioEnabled = status.paidAudioEnabled !== false;
+      this.publicContact = typeof status.publicContact === "string" ? status.publicContact.slice(0, 160) : "";
+      this.cloudProvider = typeof status.provider === "string" ? status.provider.slice(0, 100) : "已配置的 AI 服务";
+      this.cloudTurnTranscriber.enabled = this.paidAudioEnabled;
+      if (!this.paidAudioEnabled) this.voiceMode = "fast";
       this.googleStreamTranscriber.enabled = Boolean(status.streamingStt);
       this.knowledge = status.knowledge ?? null;
     } catch (error) {
@@ -504,6 +543,7 @@ export class ShoujianOracle extends HTMLElement {
         question: this.question,
         reading: this.reading,
         history: recentConversation(history),
+        ...(this.birthShare && this.birthContext ? { birthConsent: true, birthContext: this.birthContext } : {}),
       }, {
         signal: controller.signal,
         onMeta: (meta) => {
@@ -580,6 +620,7 @@ export class ShoujianOracle extends HTMLElement {
 
   async startRecording() {
     if (!this.cloud || this.stage === "ready" || this.recording || this.recordingStarting || this.busy || this.transcribing) return;
+    if (!this.paidAudioEnabled && !this.liveTranscriber.supported) return;
     this.recordingStarting = true;
     if (this.liveTranscriber.supported) this.voiceInputNotice = "";
     const epoch = ++this.recordingEpoch;
@@ -702,6 +743,7 @@ export class ShoujianOracle extends HTMLElement {
   }
 
   recordingFallbackNotice() {
+    if (!this.paidAudioEnabled) return "浏览器实时转写网络不可用，本站未开启付费录音转写；请继续使用文字输入。";
     return this.recorder.supported
       ? "浏览器增量转写网络不可用。可开启语音对话：自动收音，停顿后转写并发送；也可手动录音。"
       : "浏览器实时转写网络不可用，当前浏览器也不支持录音转文字；请使用文字输入。";
@@ -721,7 +763,10 @@ export class ShoujianOracle extends HTMLElement {
     queue = new StreamingSpeechQueue({
       synthesize: useFastBrowserSpeech
         ? async (text) => this.browserSpeech.prepare(text)
-        : (text, { signal }) => this.api.speech(text, { signal }),
+        : (text, { signal }) => {
+          if (!this.paidAudioEnabled) throw new Error("本站未开启付费语音，当前浏览器也没有可用朗读能力。");
+          return this.api.speech(text, { signal });
+        },
       play: useFastBrowserSpeech
         ? (payload, { onLevel, onStart }) => this.browserSpeech.play(payload, { onLevel, onStart })
         : (audio, { onLevel, onStart }) => playPcmBase64(audio.data, { sampleRate: audio.sampleRate, onLevel, onStart }),
@@ -784,6 +829,8 @@ export class ShoujianOracle extends HTMLElement {
     const detail = stage.querySelector("[data-avatar-detail]");
     if (label) label.textContent = avatar.label;
     if (detail) detail.textContent = avatar.detail;
+    const hostDetail = this.shadowRoot.querySelector("[data-host-detail]");
+    if (hostDetail) hostDetail.textContent = avatar.detail;
     const notice = this.shadowRoot.querySelector("[data-voice-notice]");
     if (notice) {
       notice.hidden = !this.voiceError;
@@ -880,6 +927,40 @@ export class ShoujianOracle extends HTMLElement {
     if (button) button.hidden = !this.conversationViewport.unread;
   }
 
+  clearBirthState() {
+    this.birthEpoch = (this.birthEpoch ?? 0) + 1;
+    this.birthDraft = { calendar: "solar", date: "", time: "", leapMonth: false };
+    this.birthChart = null;
+    this.birthContext = null;
+    this.birthShare = false;
+    this.birthCalculating = false;
+    this.birthError = "";
+  }
+
+  async calculateBirth() {
+    if (this.busy || this.recording || this.recordingStarting || this.transcribing || this.voiceConversationSnapshot.active) return;
+    const epoch = ++this.birthEpoch;
+    this.birthCalculating = true;
+    this.birthError = "";
+    this.birthShare = false;
+    this.birthChart = null;
+    this.birthContext = null;
+    this.render();
+    try {
+      const { calculateBirthChart, shareableBirthContext } = await import("./birth-chart.js");
+      if (epoch !== this.birthEpoch) return;
+      this.birthChart = calculateBirthChart(this.birthDraft);
+      this.birthContext = shareableBirthContext(this.birthChart);
+    } catch (error) {
+      if (epoch === this.birthEpoch) this.birthError = String(error.message ?? "排盘未完成，请核对日期后重试。");
+    } finally {
+      if (epoch === this.birthEpoch) {
+        this.birthCalculating = false;
+        this.render();
+      }
+    }
+  }
+
   render() {
     if (!this.shadowRoot) return;
     const previousDialogue = this.shadowRoot.querySelector(".dialogue");
@@ -891,6 +972,14 @@ export class ShoujianOracle extends HTMLElement {
     const contentChanged = this.conversationRevision !== this.renderedConversationRevision;
     this.shadowRoot.innerHTML = renderOracleView({
       stage: this.stage,
+      birthDraft: this.birthDraft,
+      birthChart: this.birthChart,
+      birthShare: this.birthShare,
+      birthCalculating: this.birthCalculating,
+      birthError: this.birthError,
+      paidAudioEnabled: this.paidAudioEnabled,
+      publicContact: this.publicContact,
+      cloudProvider: this.cloudProvider,
       cloud: this.cloud,
       knowledge: this.knowledge,
       messages: this.messages,
@@ -904,7 +993,7 @@ export class ShoujianOracle extends HTMLElement {
       recorderPermissionPending: this.recorder.starting,
       transcribing: this.transcribing,
       recordingMode: this.recordingMode,
-      recorderSupported: this.recorder.supported,
+      recorderSupported: this.recorder.supported && this.paidAudioEnabled,
       liveTranscriberSupported: this.turnTranscriber.supported,
       incrementalTranscriberSupported: this.googleStreamTranscriber.supported || this.liveTranscriber.supported,
       streamingSttAvailable: this.googleStreamTranscriber.supported,

@@ -50,7 +50,7 @@ export class GeminiClient {
           model,
           input,
           system_instruction: systemInstruction,
-          generation_config: { thinking_level: "low" }
+          generation_config: { thinking_level: "low", max_output_tokens: 2048 }
         }, signal);
         const text = extractText(data);
         if (!text) throw new GeminiError("Gemini returned no text", { code: "empty_text" });
@@ -74,6 +74,7 @@ export class GeminiClient {
           body: JSON.stringify({
             system_instruction: { parts: [{ text: systemInstruction }] },
             contents: [{ role: "user", parts: [{ text: input }] }],
+            generationConfig: { maxOutputTokens: 2048, thinkingConfig: { thinkingLevel: "LOW" } },
           }),
           signal,
         });
