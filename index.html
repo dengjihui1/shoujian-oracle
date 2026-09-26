@@ -8,7 +8,7 @@
     <title>墨衡小卦 · 守简版</title>
     <style>
       * { box-sizing: border-box; }
-      body { min-height: 100vh; margin: 0; padding: 0 24px 36px; background: #080c0c; background-image: radial-gradient(ellipse at 50% -22%, #34454180, transparent 60%), radial-gradient(circle at 94% 78%, #49302040, transparent 36%); }
+      body { min-height: 100vh; margin: 0; background: #0b1414; background-image: radial-gradient(ellipse at 50% -22%, #34454180, transparent 60%), radial-gradient(circle at 94% 78%, #49302025, transparent 36%); }
       body::before { content: ""; position: fixed; inset: 0; pointer-events: none; opacity: .16; background: repeating-linear-gradient(90deg, transparent 0 3px, #f1d4a008 4px 5px); }
       .entry-gate { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; overflow: hidden; isolation: isolate; color: #f0dec0; background: radial-gradient(circle at 50% 50%, #53645d 0, #142120 24%, #050a0a 65%); font-family: "Noto Serif SC", "Songti SC", serif; }
       .entry-gate[hidden] { display: none; }
@@ -27,12 +27,14 @@
       .gate-words p { margin: 0 0 16px; color: #d7c7ac; font-size: 15px; letter-spacing: .08em; }
       .gate-words button { min-width: 172px; min-height: 48px; border: 1px solid #c8a476; border-radius: 3px; background: #b79565; color: #131918; font: 600 16px "Noto Serif SC","Songti SC",serif; cursor: pointer; }
       .gate-words button:hover { background: #e0c08c; }
+      .gate-words .gate-skip { min-height:40px; background:transparent; color:#c8bba3; border-color:transparent; font-size:12px; }
+      .gate-words button:focus-visible { outline:2px solid #f1d5a0; outline-offset:5px; }
       .entry-gate.opening .left { transform: perspective(1100px) rotateY(-105deg); filter: brightness(.45); }
       .entry-gate.opening .right { transform: perspective(1100px) rotateY(105deg); filter: brightness(.45); }
       .entry-gate.opening .gate-words { opacity: 0; transform: translateY(22px); pointer-events: none; }
       .entry-gate.opening { animation: gate-away 1.3s ease-in forwards; }
       @keyframes gate-away { 0%,18% { opacity: 1; } 100% { opacity: 0; visibility: hidden; } }
-      @media(max-width:600px) { body { padding: 0 10px 24px; } .gate-wing::before { inset: 6% 5%; } .gate-words { width: 82vw; padding: 22px 12px; } }
+      @media(max-width:600px) { .gate-wing::before { inset: 6% 5%; } .gate-words { width: 82vw; padding: 22px 12px; } }
       @media(prefers-reduced-motion:reduce) { .entry-gate { display: none; } }
     </style>
     <script type="module" src="./src/shoujian-oracle.js"></script>

@@ -225,7 +225,7 @@ export class ShoujianOracle extends HTMLElement {
     event.preventDefault();
     const field = this.shadowRoot.querySelector("textarea");
     const text = String(field?.value ?? this.draft).trim();
-    const mode = event.submitter?.dataset.submitMode ?? "divination";
+    const mode = event.submitter?.dataset.submitMode ?? "chat";
     if (text) {
       if (this.voiceConversationSnapshot.active) this.stopVoiceConversation();
       this.draft = "";
@@ -276,6 +276,16 @@ export class ShoujianOracle extends HTMLElement {
 
   handleClick = async (event) => {
     const action = event.target.closest("[data-action]")?.dataset.action;
+    if (action === "replay-entry" && !this.busy && !this.recording && !this.recordingStarting && !this.transcribing && !this.voiceConversationSnapshot.active) {
+      document.dispatchEvent(new CustomEvent("shoujian:replay-entry"));
+    }
+    const seed = event.target.closest("[data-seed]")?.dataset.seed;
+    if (seed && !this.busy && !this.recording && !this.recordingStarting && !this.transcribing) {
+      this.draft = seed;
+      this.render();
+      this.focusComposer();
+      return;
+    }
     if (action === "cast") await this.cast();
     if (action === "intake-skip") this.skipCurrentIntakeQuestion();
     if (action === "intake-review") this.reviewCurrentIntake();
@@ -328,7 +338,7 @@ export class ShoujianOracle extends HTMLElement {
     if (quick) await this.sendText(quick);
   };
 
-  async sendText(text, mode = "divination") {
+  async sendText(text, mode = "chat") {
     if (this.busy || this.recording || this.recordingStarting || this.transcribing) return;
     this.cancelSpeech();
     this.retryRequest = null;
@@ -336,10 +346,13 @@ export class ShoujianOracle extends HTMLElement {
     this.persistMemory();
     const history = this.messages.slice(0, -1);
     if (this.stage === "question") {
-      if (mode === "chat" && this.cloud) {
+      if (mode === "divination") {
+        this.beginDivinationIntake(text);
+      } else if (this.cloud) {
         await this.askCloud(text, history);
       } else {
-        this.beginDivinationIntake(text);
+        const assessment = assessQuestion(text);
+        this.appendMessage({ role: "master", text: assessment.level === "blocked" ? boundaryReply(assessment) : "现在是本地体验，暂时不能自由聊天。你仍可以输入一件具体的事，点击“以此问起卦”；我会为你排卦，并给出白话提醒。" });
       }
     } else if (this.stage === "intake") {
       this.answerCurrentIntakeQuestion(text);
@@ -870,7 +883,10 @@ export class ShoujianOracle extends HTMLElement {
   render() {
     if (!this.shadowRoot) return;
     const previousDialogue = this.shadowRoot.querySelector(".dialogue");
-    const memoryDrawerOpen = Boolean(this.shadowRoot.querySelector('[data-drawer="memory"]')?.open);
+    const openDrawers = [...this.shadowRoot.querySelectorAll('details[open][data-drawer]')].map((drawer) => drawer.dataset.drawer);
+    const focused = this.shadowRoot.activeElement;
+    const focusKey = focused?.id ? { id: focused.id } : focused?.dataset.action ? { action: focused.dataset.action } : focused?.tagName === "SUMMARY" && focused.parentElement.dataset.drawer ? { drawer: focused.parentElement.dataset.drawer } : null;
+    const selection = focused?.tagName === "TEXTAREA" ? [focused.selectionStart, focused.selectionEnd, focused.selectionDirection] : null;
     const viewportSnapshot = this.conversationViewport.capture(previousDialogue);
     const contentChanged = this.conversationRevision !== this.renderedConversationRevision;
     this.shadowRoot.innerHTML = renderOracleView({
@@ -910,7 +926,18 @@ export class ShoujianOracle extends HTMLElement {
       voiceConversationMetrics: this.voiceConversationSnapshot.metrics,
       voicePerformanceSummary: this.voicePerformance.summary,
     });
-    if (memoryDrawerOpen) this.shadowRoot.querySelector('[data-drawer="memory"]')?.setAttribute("open", "");
+    for (const drawer of this.shadowRoot.querySelectorAll('details[data-drawer]')) {
+      if (openDrawers.includes(drawer.dataset.drawer)) drawer.open = true;
+    }
+    if (focusKey) {
+      const next = focusKey.id ? this.shadowRoot.getElementById(focusKey.id) : focusKey.action
+        ? [...this.shadowRoot.querySelectorAll('[data-action]')].find((element) => element.dataset.action === focusKey.action)
+        : [...this.shadowRoot.querySelectorAll('details[data-drawer]')].find((element) => element.dataset.drawer === focusKey.drawer)?.querySelector('summary');
+      if (next && !next.disabled) {
+        next.focus({ preventScroll: true });
+        if (selection) next.setSelectionRange(...selection);
+      }
+    }
     this.renderedConversationRevision = this.conversationRevision;
     this.conversationViewport.restore(this.shadowRoot.querySelector(".dialogue"), viewportSnapshot, { contentChanged });
     this.syncJumpToLatestButton();

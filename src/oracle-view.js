@@ -2,6 +2,7 @@ import { LINE_DEFINITIONS } from "./oracle-engine.js";
 import { PERSISTED_MEMORY_MESSAGES } from "./conversation-memory.js";
 import { deriveAvatarPresentation } from "./avatar-state.js";
 import { deriveAvatarMotion } from "./avatar-motion.js";
+import { courtyardStyles } from "./courtyard-styles.js";
 
 const AVATAR_NEUTRAL = new URL("../assets/avatar/moheng-neutral.webp", import.meta.url).href;
 const AVATAR_SPEAKING = new URL("../assets/avatar/moheng-speaking.webp", import.meta.url).href;
@@ -9,10 +10,7 @@ const AVATAR_SPEAKING = new URL("../assets/avatar/moheng-speaking.webp", import.
 export function renderOracleView(state) {
   const stage = ["question", "intake", "ready", "reading"].includes(state.stage) ? state.stage : "question";
   const phase = stage === "question" ? "候问" : stage === "intake" ? "理问" : stage === "ready" ? "问已收" : "照卦答";
-  const cloudLabel = state.cloud ? "墨衡云端 · 周易 RAG 已连接" : "本地有限对话";
-  const knowledgeLabel = state.knowledge
-    ? `${Number(state.knowledge.hexagrams) || 0} 卦 · ${Number(state.knowledge.trigrams) || 0} 八卦 · ${Number(state.knowledge.fragments) || 0} 条冻结片段`
-    : "知识库状态未知";
+  const cloudLabel = state.cloud ? "墨衡已连接" : "本地体验 · 可起卦";
   const messages = Array.isArray(state.messages) ? state.messages : [];
   const liveSupported = Boolean(state.liveTranscriberSupported);
   const recorderSupported = Boolean(state.recorderSupported);
@@ -22,28 +20,29 @@ export function renderOracleView(state) {
   const avatar = deriveAvatarPresentation({ ...state, stage });
   const avatarMotion = deriveAvatarMotion(avatar.key);
 
-  return `${styles}
-    <main class="shell">
-      <header class="master-card stage-${stage}">
-        <div><p class="eyebrow">守简 <span>·</span> 墨衡在此</p><h1>借一卦，<em>照眼前的路。</em></h1><p>把心里的事说出来。先聊明白，再决定要不要起卦。</p></div>
-        <div class="system-state"><span class="status ${state.cloud ? "online" : ""}">${cloudLabel}</span><small class="knowledge-status">${knowledgeLabel}</small></div>
-      </header>
-
+  const welcoming = stage === "question" && messages.length <= 1 && !messages.some((message) => message.role === "user" || message.error);
+  return `${courtyardStyles}
+    <main class="shell stage-${stage} ${welcoming ? "is-welcome" : "is-conversation"}">
+      <header class="masthead"><a class="wordmark" href="#" aria-label="守简问卦首页"><span class="seal">守</span><span>守简<small>一室观心 · SHOUJIAN</small></span></a><div class="system-state"><span class="status ${state.cloud ? "online" : ""}">${cloudLabel}</span><button class="quiet-button" type="button" data-action="replay-entry" ${interactionLocked || state.voiceConversationActive ? "disabled" : ""}>重游山门 ↗</button></div></header>
+      <section class="master-card stage-${stage}">
+        <div class="landscape" aria-hidden="true"><div class="moon"></div><div class="mountain mountain-back"></div><div class="mountain mountain-front"></div><div class="water"></div><span class="landscape-caption">山静 · 心明</span></div>
+        <div class="hero-copy"><p class="eyebrow">此间一叙，万事慢慢说</p><h1>借一卦，<em>照眼前的路。</em></h1><p>${welcoming ? "不必急着找答案。先把心里的事，放在这里。" : "一事一问。从你的处境出发，把眼前的路看清。"}</p></div>
+      </section>
       <div class="experience">
-        ${avatarStage(avatar, phase, avatarMotion)}
         <div class="conversation-column">
-          <div class="conversation-head"><span>墨衡 · 对话间</span><small>一事一问，慢慢说</small></div>
+          <div class="conversation-head">${avatarStage(avatar, phase, avatarMotion)}<div class="host-copy"><span>墨衡 <small>你的问卦引路人</small></span><p>${welcoming ? "我在。想聊一聊，还是问上一卦？" : escapeHtml(avatar.detail)}</p></div><span class="room-seal" aria-hidden="true">问心</span></div>
+          ${stage !== "question" ? `<ol class="journey" aria-label="问卦进度">${["理清问题", "确认起卦", "观卦解意"].map((label, index) => `<li ${index === ["intake", "ready", "reading"].indexOf(stage) ? 'aria-current="step"' : ""}><span>0${index + 1}</span>${label}</li>`).join("")}</ol>` : ""}
+          ${state.reading ? readingCard(state.reading, state.question) : ""}
           <section class="dialogue" aria-label="与墨衡的当前对话" aria-live="polite">
             ${messages.map((message, index) => messageHtml(message, index, messages.length)).join("")}
           </section>
           <button class="jump-latest" type="button" data-action="jump-latest" ${state.showJumpToLatest ? "" : "hidden"}>回到最新消息 ↓</button>
 
-          ${state.reading ? readingCard(state.reading, state.question) : ""}
-
           <section class="controls">
+            ${welcoming ? `<div class="question-seeds" aria-label="问题灵感"><span>从一件事开始</span><button type="button" data-seed="最近在工作上遇到一个选择，想聊聊该怎样理清思路。" ${interactionLocked ? "disabled" : ""}>事业进退 ↗</button><button type="button" data-seed="有一段关系让我困惑，想梳理自己的想法。" ${interactionLocked ? "disabled" : ""}>相处之道 ↗</button><button type="button" data-seed="最近心里有些迷茫，想找一个能开始的小方向。" ${interactionLocked ? "disabled" : ""}>心中未决 ↗</button></div>` : ""}
             ${stage === "intake" ? intakePanel(state.intake, state.intakeSummaryDraft, interactionLocked) : ""}
             ${stage === "ready" && state.intake?.summary ? confirmedIntakeCard(state.intake.summary) : ""}
-            ${stage === "ready" ? `<button class="primary" type="button" data-action="cast">掷三钱六次，依数排卦</button>` : ""}
+            ${stage === "ready" ? `<div class="casting-invitation"><div class="coins" aria-hidden="true"><i>乾</i><i>元</i><i>通</i></div><h2>此问已定，静候一卦。</h2><p>三枚铜钱，六次掷取。让卦象带来一个新的观察角度。</p><button class="primary" type="button" data-action="cast" ${interactionLocked ? "disabled" : ""}>掷三钱六次，依数排卦</button></div>` : ""}
             ${stage === "reading" && !state.cloud ? `<div class="quick" aria-label="本地可追问内容">
               <button type="button" data-quick="这个卦是什么意思">什么意思</button>
               <button type="button" data-quick="动爻怎么看">动爻怎么看</button>
@@ -51,28 +50,31 @@ export function renderOracleView(state) {
               <button type="button" data-quick="边界是什么">边界是什么</button>
             </div>` : ""}
             ${stage === "reading" && state.cloud ? `<p class="rag-invitation">现在可自由追问原文、动爻、上下卦关系、不同理解，或它如何映照你的原问。</p>` : ""}
-            ${intakeReview ? "" : `<form>
+            ${intakeReview || stage === "ready" ? "" : `<form>
               <label for="say">${escapeHtml(composerLabel(stage, state))}</label>
               <div class="input-row">
                 <textarea id="say" maxlength="500" ${composerLocked ? "disabled" : ""} placeholder="${escapeHtml(composerPlaceholder(stage, state))}">${escapeHtml(state.draft)}</textarea>
                 <div class="submit-actions">
-                  ${stage === "question" && state.cloud ? `<button type="submit" data-submit-mode="chat" ${interactionLocked ? "disabled" : ""}>直接问墨衡</button><button class="primary" type="submit" data-submit-mode="divination" ${interactionLocked ? "disabled" : ""}>以此问起卦 · 仅供参考</button>` : stage === "intake" ? `<button class="primary" type="submit" data-submit-mode="intake" ${composerLocked ? "disabled" : ""}>记下这一项</button>` : `<button type="submit" ${composerLocked ? "disabled" : ""}>${interactionLocked ? "请稍候" : "送问"}</button>`}
+                  ${stage === "question" ? `<button class="primary" type="submit" data-submit-mode="chat" ${interactionLocked ? "disabled" : ""}>与墨衡聊聊 ↗</button><button type="submit" data-submit-mode="divination" ${interactionLocked ? "disabled" : ""}>以此问起卦</button>` : stage === "intake" ? `<button class="primary" type="submit" data-submit-mode="intake" ${composerLocked ? "disabled" : ""}>记下这一项</button>` : `<button class="primary" type="submit" ${composerLocked ? "disabled" : ""}>${interactionLocked ? "请稍候" : "送问"}</button>`}
                 </div>
               </div>
               <small class="composer-hint">Enter 发送 · Shift+Enter 换行</small>
             </form>`}
             ${state.cloud && liveSupported ? voiceConversationPanel(state, stage, intakeReview) : ""}
+            ${state.busy && !state.transcribing ? `<button class="stop-response" type="button" data-action="cancel-response">停止回答</button>` : ""}
+            ${state.canRetryResponse && !interactionLocked ? `<button type="button" data-action="retry-response">重试本次回答</button>` : ""}
+            ${state.cloud ? `<details class="utility-drawer" data-drawer="voice" ${state.recording || state.recordingStarting || state.transcribing ? "open" : ""}><summary>语音设置与单次录音</summary>` : ""}
             <div class="voice-tools" aria-label="语音工具">
-              ${state.canRetryResponse && !interactionLocked ? `<button type="button" data-action="retry-response">重试本次回答</button>` : ""}
               ${state.cloud && !state.voiceConversationActive && (liveSupported || recorderSupported) ? state.transcribing
                 ? `<button type="button" data-action="cancel-transcription">取消转写</button>`
                 : state.recordingStarting
                   ? `<button type="button" data-action="cancel-record">等待麦克风授权 · 取消</button>`
                   : `<button type="button" data-action="${state.recording ? "stop-record" : "record"}" ${((stage === "ready" || intakeReview || state.busy || state.recorderPermissionPending) && !state.recording) ? "disabled" : ""}>${state.recording ? state.recordingMode === "live" ? "停止并采用文字" : "停止并转文字" : state.recorderPermissionPending ? "正在关闭麦克风授权" : state.incrementalTranscriberSupported ? "实时语音输入" : "按下说话"}</button>` : ""}
-              ${state.busy && !state.transcribing ? `<button type="button" data-action="cancel-response">停止回答</button>` : ""}
               ${state.cloud && !state.voiceConversationActive ? `<button type="button" data-action="voice" aria-pressed="${Boolean(state.voiceReplies)}">${escapeHtml(state.voiceButtonLabel)}</button>` : ""}
               ${state.cloud && state.voiceReplies && state.fastVoiceSupported && !state.voiceConversationActive ? `<button type="button" data-action="voice-mode" aria-label="切换语音模式">${escapeHtml(state.voiceModeButtonLabel)}</button>` : ""}
             </div>
+            ${voicePerformanceHtml(state.voicePerformanceSummary)}
+            ${state.cloud ? "</details>" : ""}
             ${state.cloud && state.voiceInputNotice ? `<p class="voice-input-notice" role="status">${escapeHtml(state.voiceInputNotice)}</p>` : ""}
             ${state.cloud ? `<p class="voice-notice" data-voice-notice role="status" ${state.voiceError ? "" : "hidden"}>${state.voiceError ? `语音暂不可用：${escapeHtml(state.voiceError)}。文字回答仍可继续。` : ""}</p>` : ""}
             <details class="memory-drawer" data-drawer="memory"><summary>记录与隐私 <span>仅存本机</span></summary><div class="memory-tools"><small>最近 ${PERSISTED_MEMORY_MESSAGES} 条已完成对话与当前卦象保存在此浏览器；刷新或重启服务不会清除。</small><div>${state.cloud ? `<button type="button" data-action="export-memory" ${interactionLocked ? "disabled" : ""}>导出本机会话</button><button type="button" data-action="import-memory" ${interactionLocked ? "disabled" : ""}>导入本机会话</button>` : ""}<button type="button" data-action="clear-memory" ${interactionLocked ? "disabled" : ""}>清空记录并重新开始</button></div></div></details>${state.cloud ? `<input type="file" accept="application/json,.json" data-session-import hidden>` : ""}
@@ -81,7 +83,7 @@ export function renderOracleView(state) {
         </div>
       </div>
 
-      <footer>守简问卦 · 传统文化体验 · 卦象仅供参考</footer>
+      <footer><span>一问一念，一念一明。</span><small>传统文化体验 · 卦象仅供参考</small></footer>
     </main>`;
 }
 
@@ -101,14 +103,13 @@ function voiceConversationPanel(state, stage, intakeReview) {
   const transcript = String(state.voiceConversationTranscript ?? "").trim();
   const error = String(state.voiceConversationError ?? "").trim();
   return `<section class="voice-conversation" data-conversation-state="${escapeHtml(conversationState)}" aria-label="自动语音对话">
-    <div class="voice-conversation-copy"><strong>自动语音对话</strong><small>${active ? "说完停顿会自动发送；墨衡朗读时暂停收音，避免回声。" : state.streamingSttAvailable ? "已配置 Google Cloud 实时转写；说话时显示增量文字，停顿后自动发送。" : "一次开启，自动收音、停顿发送、朗读后继续听。浏览器支持时显示增量文字，否则停顿后云端转写。"}</small></div>
+    <div class="voice-conversation-copy"><strong>${active ? "此刻，听你说" : "也可以，直接说给我听"}</strong><small>${active ? "说完停顿自动发送，朗读结束后继续听。" : state.streamingSttAvailable ? "实时显示文字 · 停顿自动发送" : "停顿后自动发送 · 实时转写取决于浏览器支持"}</small></div>
     <div class="voice-conversation-actions">
       <button class="${active ? "" : "primary"}" type="button" data-action="voice-conversation" ${disabled ? "disabled" : ""}>${active ? "结束语音对话" : "开始语音对话（自动发送）"}</button>
       ${interruptible ? `<button class="interrupt" type="button" data-action="voice-interrupt">打断并说话</button>` : ""}
       ${active && conversationState === "error" ? `<button type="button" data-action="voice-conversation-retry">重新听</button>` : ""}
     </div>
     ${active ? `<p class="voice-conversation-status" role="status"><b>${escapeHtml(labels[conversationState] ?? "语音对话已开启")}</b><span data-voice-transcript ${transcript ? "" : "hidden"}>${transcript ? `“${escapeHtml(transcript)}”` : ""}</span>${error ? `<span>${escapeHtml(error)}</span>` : ""}</p>${latencyHtml(state.voiceConversationMetrics)}` : ""}
-    ${voicePerformanceHtml(state.voicePerformanceSummary)}
   </section>`;
 }
 
@@ -143,7 +144,7 @@ function intakePanel(intake, summaryDraft, locked) {
   if (!intake || !Array.isArray(intake.questions)) return `<p class="intake-card">访谈状态不可用，请点“另起一问”重新开始。</p>`;
   if (intake.status === "review") {
     return `<section class="intake-card" aria-label="确认问卦摘要">
-      <small>问卦摘要 · 确认后冻结</small>
+      <small>确认这次所问</small>
       <label for="intake-summary">请检查并按真实情况修改</label>
       <textarea id="intake-summary" data-intake-summary maxlength="500" ${locked ? "disabled" : ""}>${escapeHtml(summaryDraft || intake.summary)}</textarea>
       <p>摘要只用于后续解释，不参与随机排卦；不需要填写生辰八字。</p>
@@ -160,7 +161,7 @@ function intakePanel(intake, summaryDraft, locked) {
 }
 
 function confirmedIntakeCard(summary) {
-  return `<section class="intake-card confirmed" aria-label="已确认问卦摘要"><small>问卦摘要已冻结</small><p>${escapeHtml(summary)}</p><p>文字只用于解释上下文，不会改变六爻结果。</p></section>`;
+  return `<section class="intake-card confirmed" aria-label="已确认问卦摘要"><small>这次所问 · 已确认</small><p>${escapeHtml(summary)}</p><p>文字只用于解释上下文，不会改变六爻结果。</p></section>`;
 }
 
 function composerLabel(stage, state) {
@@ -214,9 +215,9 @@ function readingCard(reading, question) {
     <p class="question">原问：“${escapeHtml(question)}”</p>
     <div class="reading-title"><span>${escapeHtml(reading.primary?.symbol)}</span><div><small>第 ${Number(reading.primary?.number) || 0} 卦</small><h2>${escapeHtml(reading.primary?.fullName)}</h2></div></div>
     <div class="reading-explanation"><strong>这卦对原问的白话提醒</strong><p>${escapeHtml(plainReading(reading, question))}</p></div>
-    <ol aria-label="六爻，自上而下显示">${lines}</ol>
+    <details class="hexagram-detail" data-drawer="hexagram"><summary>展开六爻与卦象结构</summary><ol aria-label="六爻，自上而下显示">${lines}</ol>
     <dl><div><dt>下卦</dt><dd>${escapeHtml(reading.primary?.lower?.symbol)}${escapeHtml(reading.primary?.lower?.name)} · ${escapeHtml(reading.primary?.lower?.image)}</dd></div><div><dt>上卦</dt><dd>${escapeHtml(reading.primary?.upper?.symbol)}${escapeHtml(reading.primary?.upper?.name)} · ${escapeHtml(reading.primary?.upper?.image)}</dd></div><div><dt>之卦</dt><dd>${escapeHtml(reading.changed?.fullName ?? "无")}</dd></div></dl>
-    <p class="reading-disclaimer">卦象仅供传统文化体验与自我反思参考，不作为现实决定的唯一依据。</p>
+    </details><p class="reading-disclaimer">卦象仅供传统文化体验与自我反思参考，不作为现实决定的唯一依据。</p>
   </section>`;
 }
 
@@ -224,7 +225,7 @@ export function plainReading(reading, question) {
   const ask = String(question ?? "").trim().slice(0, 80);
   const reality = /搬家|迁居|搬迁/u.test(ask)
     ? "就搬家而言：如果新住处交付、搬运安排和费用都落实了，可以按现实计划推进；若有关键缺口，先补齐再决定。"
-    : "就你问的这件事而言：关键条件已核实，可以按现实计划推进；还有重要缺口，就先补齐再决定。";
+    : "就你问的这件事而言：如果关键条件已核实，可以按现实计划推进；还有重要缺口，就先补齐再决定。";
   const actions = {
     乾: "列出最重要的事项和顺序", 兑: "把没说清的条件问明白", 离: "核对事实与期待是否一致",
     震: "先试一个能撤回的小步骤", 巽: "逐步试探并看反馈", 坎: "检查风险和缺口",
@@ -236,7 +237,8 @@ export function plainReading(reading, question) {
   const change = movingLines.length
     ? `第${movingLines.join("、")}爻有变化；“${reading.changed?.fullName ?? "变卦"}”只提醒换个角度看后续，不预示结果。`
     : "没有动爻，先看眼前的条件。";
-  return `${reality}这卦提醒你：先${lower}，再${upper}。${change}卦象仅供参考。`;
+  const reflection = lower === upper ? `这卦提醒你：${lower}，选一件能落实的小事先做。` : `这卦提醒你：先${lower}，再${upper}。`;
+  return `${reality}\n\n${reflection}\n\n${change}`;
 }
 
 export function escapeHtml(value) {
@@ -252,148 +254,3 @@ function safeUrl(value) {
   const url = String(value ?? "");
   return /^https:\/\//u.test(url) ? escapeHtml(url) : "#";
 }
-
-const styles = `<style>
-  :host { color-scheme: dark; display: block; width: 100%; font-family: "Noto Serif SC", "Songti SC", serif; }
-  * { box-sizing: border-box; } button, textarea { font: inherit; }
-  .shell { width: min(1180px, 100%); margin: auto; padding: 24px; color: #efe5cd; background: radial-gradient(circle at 10% 10%, #3e251c 0, transparent 30%), radial-gradient(circle at 92% 4%, #392d20 0, transparent 28%), #11100f; border: 1px solid #72583c; border-radius: 28px; box-shadow: 0 28px 90px #000b; }
-  .master-card { display: flex; justify-content: space-between; gap: 24px; align-items: end; padding: 0 4px 19px; border-bottom: 1px solid #71573a80; }
-  .master-card > div:first-child { max-width: 690px; } .eyebrow { margin: 0 0 5px; color: #c09561; font: 700 12px/1.4 system-ui,sans-serif; letter-spacing: .18em; }
-  h1 { margin: 0 0 7px; font-size: clamp(26px, 4vw, 42px); } .master-card p { margin: 0; color: #bdb09c; line-height: 1.65; }
-  .system-state { flex: 0 0 auto; text-align: right; } .status { display: inline-block; padding: 5px 10px; color: #aaa092; background: #ffffff0b; border: 1px solid #5f5548; border-radius: 999px; font: 11px/1.4 system-ui,sans-serif; } .status.online { color: #e3d5a6; border-color: #84784e; background: #77702b22; }
-  .knowledge-status { display: block; margin-top: 7px; color: #938674; font: 11px/1.5 system-ui,sans-serif; }
-  .experience { display: grid; grid-template-columns: minmax(300px, .84fr) minmax(0, 1.28fr); gap: 22px; padding-top: 22px; }
-  .avatar-stage { --voice-level: 0; --voice-level-px: 3px; position: sticky; top: 18px; align-self: start; min-height: 640px; overflow: hidden; isolation: isolate; display: grid; align-items: end; border: 1px solid #6f5739; border-radius: 22px; background: radial-gradient(circle at 50% 28%, #81552e55 0 12%, transparent 40%), linear-gradient(160deg,#251b16,#090909 68%); box-shadow: inset 0 0 70px #0008; }
-  .avatar-stage::before { content: ""; position: absolute; inset: 0; z-index: -1; background: repeating-linear-gradient(90deg,transparent 0 41px,#c99c4b09 42px), repeating-linear-gradient(0deg,transparent 0 41px,#c99c4b08 42px); mask-image: linear-gradient(to bottom,#0008,transparent 70%); }
-  .oracle-halo { position: absolute; z-index: -1; top: 7%; left: 50%; width: 78%; aspect-ratio: 1; translate: -50% 0; border: 1px solid #b58b4d66; border-radius: 50%; animation: halo-turn 42s linear infinite; }
-  .oracle-halo::before,.oracle-halo::after { content: ""; position: absolute; inset: 10%; border: 1px solid #b58b4d30; border-radius: 50%; } .oracle-halo::after { inset: 31%; background: radial-gradient(circle,#d7a5542c,transparent 68%); }
-  .oracle-halo span { position: absolute; left: 50%; top: 50%; width: 34px; height: 34px; margin: -17px; display: grid; place-items: center; color: #c9a162; background: #17120fdd; border: 1px solid #80623e; border-radius: 50%; font-size: 13px; transform: rotate(calc(var(--i,0) * 45deg)) translateY(-152px) rotate(calc(var(--i,0) * -45deg)); }
-  .oracle-halo span:nth-child(1){--i:0}.oracle-halo span:nth-child(2){--i:1}.oracle-halo span:nth-child(3){--i:2}.oracle-halo span:nth-child(4){--i:3}.oracle-halo span:nth-child(5){--i:4}.oracle-halo span:nth-child(6){--i:5}.oracle-halo span:nth-child(7){--i:6}.oracle-halo span:nth-child(8){--i:7}
-  .portrait-stack { position: absolute; inset: 18px 0 58px; transform-origin: 50% 100%; }
-  .portrait-stack img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; object-position: center bottom; user-select: none; filter: drop-shadow(0 20px 28px #000c); }
-  .avatar-speaking { opacity: 0; clip-path: ellipse(11% 5.4% at 50% 28.7%); }
-  [data-mouth-state="audio"] .avatar-speaking { opacity: var(--voice-level); transition: opacity 55ms linear; }
-  .avatar-eyelids { position:absolute; inset:0; z-index:3; pointer-events:none; } .avatar-eyelids i{position:absolute;top:19.1%;width:5.2%;height:1.7%;border-radius:50%;background:linear-gradient(#4e3024,#9b654c 56%,#382218);box-shadow:0 1px 1px #160c08;opacity:0;transform:scaleY(.08);transform-origin:center}.avatar-eyelids i:first-child{left:42.8%;rotate:2deg}.avatar-eyelids i:last-child{left:51.9%;rotate:-2deg}
-  [data-avatar-motion="idle-breath"] .portrait-stack,[data-avatar-motion="invite-detail"] .portrait-stack,[data-avatar-motion="await-cast"] .portrait-stack{animation:breathe 5.2s ease-in-out infinite}
-  [data-avatar-motion="idle-breath"] .avatar-eyelids i,[data-avatar-motion="invite-detail"] .avatar-eyelids i{animation:blink 7.2s ease-in-out infinite}
-  [data-avatar-motion="listen-lean"] .portrait-stack{animation:listen-lean 1.55s ease-in-out infinite alternate}
-  [data-avatar-motion="listen-lean"] .avatar-eyelids i{animation:soft-blink 5.5s ease-in-out infinite}
-  [data-avatar-motion="acknowledge"] .portrait-stack{animation:acknowledge .62s cubic-bezier(.25,.85,.35,1) both}
-  [data-avatar-motion="ponder"] .portrait-stack{animation:ponder 3.4s ease-in-out infinite alternate}
-  [data-avatar-motion="prepare-speech"] .portrait-stack{animation:inhale .8s ease-out both}
-  [data-avatar-motion="speak"] .portrait-stack{animation:speaking-body 1.1s ease-in-out infinite alternate}
-  [data-avatar-motion="interrupt-recover"] .portrait-stack{animation:interrupt-recover .58s cubic-bezier(.22,.9,.3,1) both}
-  [data-avatar-motion="present-reading"] .portrait-stack{animation:present-reading .85s ease-out both}
-  .avatar-breath { position: absolute; left: 50%; bottom: 12%; width: 54%; height: 12%; translate: -50%; border-radius: 50%; background: #b44b3038; filter: blur(24px); opacity: 0; }
-  [data-avatar-state="thinking"] .oracle-halo,[data-avatar-state="preparing"] .oracle-halo { animation-duration: 9s; filter: drop-shadow(0 0 12px #c68a48); }
-  [data-avatar-state="listening"] .avatar-breath,[data-avatar-state="speaking"] .avatar-breath { opacity: calc(.22 + var(--voice-level)); }
-  .avatar-panel { position: relative; z-index: 3; margin: auto 14px 14px; padding: 12px 14px; color: #eee2cc; background: #0c0b0aeb; border: 1px solid #795f40; border-radius: 14px; backdrop-filter: blur(12px); }
-  .avatar-state-line { display: flex; gap: 7px; align-items: center; font: 12px/1.4 system-ui,sans-serif; letter-spacing: .08em; } .state-dot { width: 8px; height: 8px; border-radius: 50%; background: #96816a; box-shadow: 0 0 0 4px #96816a18; }
-  [data-avatar-state="listening"] .state-dot { background:#78b7a2; animation:pulse 1s infinite; } [data-avatar-state="intake"] .state-dot,[data-avatar-state="thinking"] .state-dot,[data-avatar-state="preparing"] .state-dot { background:#d29a53; animation:pulse .8s infinite; } [data-avatar-state="speaking"] .state-dot { background:#dc6d59; animation:pulse .45s infinite; }
-  [data-avatar-state="error"] .state-dot { background:#c26559; box-shadow:0 0 0 4px #c2655928; }
-  [data-avatar-state="heard"] .state-dot{background:#d8ae68;animation:pulse .32s 2}[data-avatar-state="interrupted"] .state-dot{background:#df765f;animation:pulse .28s 2}
-  .attention-rings{position:absolute;z-index:1;inset:12% 9% auto;height:38%;opacity:0;pointer-events:none}.attention-rings i{position:absolute;inset:18%;border:1px solid #78b7a255;border-radius:50%;animation:attention 1.8s ease-out infinite}.attention-rings i:last-child{animation-delay:.6s}[data-avatar-motion="listen-lean"] .attention-rings{opacity:1}
-  .avatar-reading-token{position:absolute;z-index:2;right:7%;top:42%;display:grid;justify-items:center;gap:5px;opacity:0;transform:translateY(18px) rotate(4deg);padding:10px 8px;color:#e0bc74;background:#211711e8;border:1px solid #a67c44;border-radius:50% 50% 46% 46%;box-shadow:0 8px 28px #0009,0 0 20px #d79e4440}.avatar-reading-token span{font-size:28px}.avatar-reading-token i{font:10px/1.2 system-ui,sans-serif;letter-spacing:.15em;font-style:normal}[data-avatar-motion="present-reading"] .avatar-reading-token{animation:token-reveal .9s .18s ease-out both}
-  .avatar-panel p { margin: 5px 0 0; color: #a99b87; font: 12px/1.5 system-ui,sans-serif; }
-  .voice-meter { height: 22px; display: flex; gap: 3px; align-items: end; margin-top: 8px; } .voice-meter i { flex: 1; height: 3px; max-height: 20px; transform-origin: bottom; background: linear-gradient(#dcb26f,#7d3429); border-radius: 4px; opacity: .25; }
-  [data-avatar-state="listening"] .voice-meter i { opacity: .8; animation: meter .7s calc(var(--bar) * -70ms) ease-in-out infinite alternate; }
-  [data-avatar-state="speaking"] .voice-meter i { height: var(--voice-level-px); opacity: calc(.3 + var(--voice-level)); transition: height 55ms linear,opacity 55ms linear; } [data-avatar-state="speaking"] .voice-meter i:nth-child(3n+1){transform:scaleY(.62)} [data-avatar-state="speaking"] .voice-meter i:nth-child(3n+2){transform:scaleY(.82)}
-  .conversation-column { min-width: 0; display: grid; gap: 14px; align-content: start; }
-  .dialogue { display: grid; gap: 10px; min-height: 240px; max-height: 430px; overflow: auto; padding: 4px 6px 4px 2px; scroll-behavior: smooth; }
-  .jump-latest { position: sticky; z-index: 4; bottom: 8px; justify-self: center; min-height: 34px; margin-top: -54px; padding: 6px 13px; color: #f3dfb8; background: #4d3024ee; box-shadow: 0 8px 24px #0009; }
-  .jump-latest[hidden] { display: none; }
-  .message { max-width: 88%; padding: 11px 14px; border-radius: 14px; background: #ffffff09; border: 1px solid #68533c; }
-  .message.user { justify-self: end; background: #6d2d2729; border-color: #8e4a40; } .message b { color: #c9a46e; font-size: 13px; } .message p { margin: 5px 0 0; line-height: 1.7; white-space: pre-line; overflow-wrap: anywhere; }
-  .message.error { border-color: #a85248; background: #7a2c2422; } .message.streaming p::after { content: "▍"; margin-left: 2px; color: #d2a15b; animation: cursor-blink .8s steps(1) infinite; }
-  .rag-evidence { margin-top: 10px; border-top: 1px solid #66513b; padding-top: 8px; font: 12px/1.55 system-ui,sans-serif; } .rag-evidence summary { color: #d0ac76; cursor: pointer; } .rag-evidence ol { display: grid; gap: 10px; margin: 10px 0 0; padding-left: 20px; } .rag-evidence a { color: #e0be86; } .rag-evidence small { display: block; color: #918574; } .rag-evidence blockquote { margin: 5px 0 0; padding-left: 9px; color: #c8beae; border-left: 2px solid #71573a; white-space: pre-line; }
-  .reading { padding: 16px; background: #09080772; border: 1px solid #604932; border-radius: 16px; } .question { margin: 0 0 12px; color: #bca889; } .reading-title { display: flex; gap: 14px; align-items: center; } .reading-title > span { font-size: 44px; color: #d2b782; } h2 { margin: 2px 0 0; font-size: 24px; } .reading-explanation{margin:14px 0;padding:12px 14px;color:#eadcc2;background:#64462535;border:1px solid #977447;border-radius:12px;line-height:1.7}.reading-explanation strong{color:#e1b873}.reading-explanation p{margin:6px 0 0}
-  .reading ol { display: grid; gap: 5px; padding: 13px; list-style: none; background: #05050566; border-radius: 12px; } .line { display: grid; grid-template-columns: 1fr auto; gap: 12px; } .line span { color: #d2b782; font: 800 21px/1 monospace; } .line small { color: #918574; font: 12px/1.4 system-ui,sans-serif; } .line.moving span,.line.moving small { color: #e5705e; } .reading-disclaimer { margin: 12px 0 0; color: #a99b87; font: 11px/1.6 system-ui,sans-serif; }
-  .intake-card { display:grid; gap:9px; padding:14px; color:#d9c6a6; background:#76582e18; border:1px solid #76603f; border-radius:14px; } .intake-card small{color:#d3aa6e;letter-spacing:.08em}.intake-card p{margin:0;white-space:pre-line;line-height:1.65}.intake-card label{margin:0}.intake-card textarea{min-height:150px}.intake-actions{display:flex;flex-wrap:wrap;gap:8px}.intake-card.confirmed{background:#35634514;border-color:#567455}
-  dl { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin: 0; } dl div { padding: 9px; text-align: center; background: #ffffff08; border-radius: 9px; } dt { color: #9d8f7b; font: 12px system-ui,sans-serif; } dd { margin: 4px 0 0; }
-  .controls { display: grid; gap: 12px; padding: 16px; background: #0a0908a8; border: 1px solid #4d4031; border-radius: 18px; } label { display: block; margin-bottom: 7px; color: #d9bd91; font-weight: 700; } .input-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
-  textarea { min-height: 78px; resize: vertical; padding: 11px 13px; color: #f3ead8; background: #050505c9; border: 1px solid #6c5942; border-radius: 12px; } button { min-height: 44px; padding: 9px 16px; color: #f8ead0; background: #593a29; border: 1px solid #826244; border-radius: 999px; cursor: pointer; } button:hover:not(:disabled) { border-color:#c0925e; } button:disabled { opacity: .48; cursor: not-allowed; } .primary { width: 100%; background: #8e332a; border-color: #bb6b5d; font-weight: 700; } .text-button { justify-self: center; background: transparent; border: 0; color: #c5aa7e; text-decoration: underline; }
-  .composer-hint { display:block; margin-top:7px; color:#877b6c; font:11px/1.4 system-ui,sans-serif; }
-  .submit-actions { display: grid; gap: 8px; align-content: start; } .submit-actions .primary { width: auto; } .quick { display: flex; flex-wrap: wrap; gap: 7px; } .quick button { min-height: 38px; padding: 7px 12px; font-size: 13px; } .rag-invitation { margin: 0; padding: 10px 12px; color: #d5c2a2; background: #88713b18; border: 1px solid #74623e; border-radius: 12px; font: 13px/1.65 system-ui,sans-serif; }
-  .voice-tools { display: flex; flex-wrap: wrap; gap: 8px; } .voice-tools button { background: #25201b; } .memory-tools { display: flex; gap: 10px; align-items: center; justify-content: space-between; color: #938674; font: 11px/1.5 system-ui,sans-serif; } .memory-tools>div{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px}.memory-tools button { min-height: 32px; padding: 5px 10px; background: transparent; color: #bda987; font-size: 11px; }
-  .voice-conversation { display:grid; gap:10px; padding:13px; background:linear-gradient(135deg,#17322966,#241b16); border:1px solid #527565; border-radius:14px; } .voice-conversation-copy{display:grid;gap:3px}.voice-conversation-copy strong{color:#d7eadf}.voice-conversation-copy small{color:#aebfb5;font:11px/1.55 system-ui,sans-serif}.voice-conversation-actions{display:flex;flex-wrap:wrap;gap:8px}.voice-conversation-actions .primary{width:auto;background:#315d4d;border-color:#65917e}.voice-conversation-actions .interrupt{background:#8e332a;border-color:#bb6b5d}.voice-conversation-status{display:grid;gap:4px;margin:0;padding:9px 11px;color:#cbdcd2;background:#07130f88;border-radius:10px;font:12px/1.55 system-ui,sans-serif}.voice-conversation-status span{color:#aebfb5;overflow-wrap:anywhere}.voice-conversation-status span[hidden]{display:none}.voice-latency{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}.voice-latency div{padding:7px;background:#06100d88}.voice-latency dd{font:600 12px/1.3 system-ui,sans-serif;color:#d7eadf}
-  .voice-performance{display:grid;gap:8px;padding-top:10px;border-top:1px solid #527565}.voice-performance>div:first-child,.voice-performance dl div{display:flex;gap:8px;align-items:baseline;justify-content:space-between}.voice-performance dl{display:grid;gap:4px;margin:0}.voice-performance dt{color:#aebfb5}.voice-performance dd{margin:0;color:#d7eadf}.voice-performance-actions{display:flex;flex-wrap:wrap;gap:6px}.voice-performance-actions button{min-height:32px;padding:5px 10px;background:transparent;color:#bda987;font-size:11px}
-  .voice-input-notice { margin: -3px 0 0; padding: 8px 10px; color: #d7eadf; background: #17322966; border: 1px solid #527565; border-radius: 10px; font: 12px/1.55 system-ui,sans-serif; }
-  .voice-notice { margin: -3px 0 0; padding: 8px 10px; color: #e0b9ad; background: #7a2c2422; border: 1px solid #8d4c43; border-radius: 10px; font: 12px/1.55 system-ui,sans-serif; } .voice-notice[hidden] { display:none; }
-  footer { margin-top: 18px; color: #8f8578; font: 11px/1.65 system-ui,sans-serif; } textarea:focus,button:focus-visible,[data-latest]:focus { outline: 3px solid #d2a15b; outline-offset: 3px; }
-  @keyframes cursor-blink{50%{opacity:0}}@keyframes halo-turn{to{rotate:360deg}}@keyframes breathe{50%{transform:translateY(-4px) scale(1.007)}}@keyframes blink{0%,45%,48%,100%{opacity:0;transform:scaleY(.08)}46%,47%{opacity:.88;transform:scaleY(1)}}@keyframes soft-blink{0%,68%,72%,100%{opacity:0;transform:scaleY(.08)}70%{opacity:.78;transform:scaleY(.78)}}@keyframes listen-lean{to{transform:translateY(-5px) scale(1.018) rotate(-.28deg)}}@keyframes acknowledge{0%{transform:translateY(-2px)}38%{transform:translateY(6px) scale(.995)}72%{transform:translateY(-2px) scale(1.004)}100%{transform:none}}@keyframes ponder{to{transform:translate(-3px,-2px) rotate(-.22deg)}}@keyframes inhale{0%{transform:scale(.998)}70%{transform:translateY(-4px) scale(1.012)}100%{transform:translateY(-2px) scale(1.006)}}@keyframes speaking-body{to{transform:translateY(-2px) scale(1.004)}}@keyframes interrupt-recover{0%{transform:translateY(-2px) scale(1.006)}35%{transform:translateX(-7px) rotate(-.65deg)}100%{transform:translateY(-3px) scale(1.014)}}@keyframes present-reading{from{transform:translateY(5px);filter:brightness(.9)}to{transform:translate(-1.2%,-2px);filter:brightness(1.04)}}@keyframes attention{0%{opacity:.65;transform:scale(.7)}100%{opacity:0;transform:scale(1.28)}}@keyframes token-reveal{from{opacity:0;transform:translateY(18px) rotate(4deg)}to{opacity:1;transform:translateY(0) rotate(0)}}@keyframes pulse{50%{opacity:.38;box-shadow:0 0 0 8px currentColor}}@keyframes meter{to{height:var(--amp)}}
-  @media(max-width:860px){ .master-card{align-items:start}.experience{grid-template-columns:1fr}.avatar-stage{position:relative;top:auto;min-height:470px}.portrait-stack{inset:-20px 0 54px}.oracle-halo{width:340px}.oracle-halo span{transform:rotate(calc(var(--i)*45deg)) translateY(-132px) rotate(calc(var(--i)*-45deg))}.dialogue{max-height:400px} }
-  @media(max-width:560px){ .shell{padding:15px;border-radius:17px}.master-card{display:grid}.system-state{text-align:left}.avatar-stage{min-height:390px}.portrait-stack{inset:-5px -25px 54px}.avatar-panel{margin:0 9px 9px}.oracle-halo{top:4%;width:270px}.oracle-halo span{width:28px;height:28px;margin:-14px;transform:rotate(calc(var(--i)*45deg)) translateY(-105px) rotate(calc(var(--i)*-45deg))}.input-row{grid-template-columns:1fr}.line{grid-template-columns:1fr;gap:2px}dl:not(.voice-latency){grid-template-columns:1fr}.message{max-width:96%}.memory-tools{align-items:flex-start}.voice-conversation-actions button{flex:1}.voice-latency{grid-template-columns:repeat(3,minmax(0,1fr))} }
-  @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important;animation:none!important}[data-mouth-state="audio"] .avatar-speaking{opacity:var(--voice-level)}[data-avatar-motion="present-reading"] .avatar-reading-token{opacity:1;transform:none}}
-  /* Courtyard visual system: the conversation and its two choices lead the page. */
-  :host { --ink:#0a1110; --paper:#15201d; --paper-deep:#101815; --gold:#d5b889; --soft:#baae97; --red:#ab4a38; color:#eee5d2; }
-  .shell { width:min(1390px,100%); padding:16px 32px 30px; background:transparent; border:0; border-radius:0; box-shadow:none; }
-  .master-card { align-items:center; padding:24px 4px 28px; border-bottom:1px solid #b99d694a; }
-  .master-card > div:first-child { max-width:820px; }
-  .eyebrow { margin-bottom:15px; color:var(--gold); font:600 12px/1.4 system-ui,sans-serif; letter-spacing:.34em; }
-  .eyebrow span { color:#7b6751; margin:0 7px; }
-  h1 { margin:0 0 13px; color:#f5eddc; font-size:clamp(34px,4.15vw,62px); font-weight:500; line-height:1.18; letter-spacing:.035em; text-shadow:0 6px 30px #0007; }
-  h1 em { color:#dbbc83; font-style:normal; }
-  .master-card p:not(.eyebrow) { color:#c6bba5; font:14px/1.7 system-ui,sans-serif; letter-spacing:.025em; }
-  .system-state { align-self:end; padding-bottom:5px; }
-  .status { padding:8px 13px; border-radius:4px; border-color:#72654a; color:#c3b8a1; background:#1d292479; font-size:11px; }
-  .status.online { border-color:#6b8b74; color:#cbe0c8; background:#21372b9e; }
-  .knowledge-status { color:#7e8579; }
-  .experience { grid-template-columns:minmax(330px,.86fr) minmax(0,1.25fr); gap:30px; padding-top:30px; }
-  .avatar-stage { top:26px; min-height:655px; border:1px solid #9d7d5080; border-radius:4px; background:radial-gradient(ellipse at 50% 33%,#6b704159,transparent 47%), radial-gradient(ellipse at 50% 100%,#60361e70,transparent 58%), linear-gradient(145deg,#1c2a25,#0b1413 70%); box-shadow:0 30px 65px #0008,inset 0 0 80px #0106059c; }
-  .avatar-stage::before { z-index:0; inset:18px; border:1px solid #ae95614f; background:linear-gradient(90deg,#d4b37421 1px,transparent 1px) 0 0/25% 100%, linear-gradient(#d4b37416 1px,transparent 1px) 0 0/100% 25%; mask-image:linear-gradient(#0007,transparent 74%); }
-  .avatar-stage::after { content:"觀"; position:absolute; z-index:0; top:10%; left:50%; translate:-50% 0; color:#d9c38b; opacity:.08; font-size:clamp(170px,22vw,290px); line-height:1; pointer-events:none; }
-  .oracle-halo { z-index:0; top:4%; width:76%; border-color:#c5a36352; animation-duration:70s; }
-  .oracle-halo span { color:#e0c694; border-color:#9979497d; background:#0e1815df; }
-  .portrait-stack { z-index:1; inset:20px -3% 52px; }
-  .avatar-panel { margin:0 16px 16px; padding:13px 15px; border:1px solid #a58b5c88; border-radius:3px; background:#101815e8; box-shadow:0 12px 32px #0008; }
-  .avatar-state-line { color:#e8d8b8; font-size:12px; }
-  .avatar-panel p { color:#b9ac94; }
-  .conversation-column { gap:0; }
-  .conversation-head { display:flex; align-items:baseline; justify-content:space-between; gap:12px; padding:1px 3px 12px; border-bottom:1px solid #806a4b7d; }
-  .conversation-head span { color:#e7d5b4; font-size:18px; letter-spacing:.12em; }
-  .conversation-head small { color:#9e9e8e; font:11px/1.3 system-ui,sans-serif; letter-spacing:.07em; }
-  .dialogue { gap:12px; min-height:220px; max-height:330px; padding:20px 16px 16px; border:1px solid #4d5a4e; border-top:0; background:linear-gradient(145deg,#18221eeb,#101715e8); scrollbar-color:#7c7256 #111916; }
-  .message { max-width:87%; padding:8px 13px 10px; border:0; border-left:2px solid #ad8c60; border-radius:0 7px 7px 0; background:#e3d3aa0b; }
-  .message.user { border:1px solid #677f71; border-radius:7px 0 7px 7px; background:#31504455; }
-  .message b { color:#e1bd84; font:600 12px/1.4 system-ui,sans-serif; letter-spacing:.07em; }
-  .message p { margin-top:6px; color:#f0e8d7; font-size:15px; line-height:1.76; }
-  .message.error { border-left-color:#d16d5d; }
-  .controls { gap:15px; margin-top:16px; padding:20px; border:1px solid #756449; border-radius:4px; background:linear-gradient(135deg,#19221c,#121a17 66%); box-shadow:0 18px 38px #0003; }
-  .controls form { margin:0; }
-  .controls label { margin-bottom:12px; color:#e8d5b5; font-size:20px; font-weight:500; }
-  .input-row { grid-template-columns:minmax(0,1fr) 148px; gap:10px; }
-  textarea { min-height:105px; padding:14px 15px; color:#f6ecd9; border:1px solid #6e725e; border-radius:3px; background:#0b1412; font:15px/1.7 system-ui,sans-serif; }
-  textarea::placeholder { color:#868b7f; }
-  button { min-height:42px; padding:9px 15px; border:1px solid #8d7956; border-radius:3px; color:#efe1c4; background:#243029; font:500 13px/1.4 system-ui,sans-serif; transition:background .2s,border-color .2s,transform .2s; }
-  button:hover:not(:disabled) { border-color:#e3c088; background:#36463a; }
-  .submit-actions { gap:9px; }
-  .submit-actions button { min-height:48px; }
-  .primary,.voice-conversation-actions .primary { background:#9a4132; border-color:#c2694c; color:#fff0d3; font-weight:600; }
-  .primary:hover:not(:disabled),.voice-conversation-actions .primary:hover:not(:disabled) { background:#b4513b; border-color:#e38b65; }
-  .composer-hint { margin-top:8px; color:#8f9688; }
-  .voice-conversation { grid-template-columns:1fr auto; align-items:center; gap:8px 16px; padding:12px 14px; border:1px solid #587666; border-radius:3px; background:#20372a73; }
-  .voice-conversation-copy strong { color:#ddedda; font:600 14px/1.3 system-ui,sans-serif; }
-  .voice-conversation-copy small { max-width:430px; color:#adbdad; font-size:11px; }
-  .voice-conversation-actions { justify-content:flex-end; }
-  .voice-conversation-actions button { min-height:38px; }
-  .voice-conversation-status,.voice-performance { grid-column:1/-1; }
-  .voice-tools { gap:7px; }
-  .voice-tools button { min-height:36px; border-color:#5b6758; color:#c8d1bf; background:#16231f; font-size:12px; }
-  .memory-tools { gap:12px; padding-top:14px; border-top:1px solid #5360526b; color:#919b8b; }
-  .memory-tools button { border-color:#5360527a; color:#b8b99f; }
-  .memory-drawer { border-top:1px solid #5360526b; padding-top:12px; }
-  .memory-drawer summary { display:flex; align-items:center; gap:9px; width:max-content; color:#b7aa8d; font:12px/1.4 system-ui,sans-serif; cursor:pointer; list-style:none; }
-  .memory-drawer summary::-webkit-details-marker { display:none; }
-  .memory-drawer summary::before { content:"＋"; color:#cbad7e; font-size:16px; }
-  .memory-drawer[open] summary::before { content:"－"; }
-  .memory-drawer summary span { color:#818e81; font-size:11px; }
-  .memory-drawer .memory-tools { margin-top:12px; border-top:0; padding-top:0; }
-  .text-button { justify-self:start; min-height:30px; padding-left:0; text-decoration:none; color:#bead89; }
-  .reading { margin-top:16px; border-color:#a587587a; border-radius:3px; background:#1b2119; }
-  .reading-explanation { border-radius:3px; }
-  .intake-card { border-radius:3px; }
-  footer { padding:22px 4px 0; border-top:1px solid #74684b52; color:#858e7f; letter-spacing:.08em; }
-  @media(max-width:980px) { .shell{padding:14px 18px 25px}.experience{grid-template-columns:minmax(250px,.7fr) minmax(0,1fr);gap:18px}.avatar-stage{min-height:580px}.input-row{grid-template-columns:1fr}.submit-actions{grid-template-columns:1fr 1fr}.system-state{max-width:190px} }
-  @media(max-width:700px) { .master-card{display:grid;gap:16px;padding-top:18px}h1{font-size:clamp(32px,8vw,47px)}.system-state{text-align:left;max-width:none}.knowledge-status{display:inline;margin-left:7px}.experience{grid-template-columns:1fr;gap:19px;padding-top:20px}.avatar-stage{position:relative;top:auto;min-height:320px;max-height:370px}.portrait-stack{inset:-70px 8% 40px}.oracle-halo{width:280px;top:-40px}.avatar-panel{margin:0 10px 10px}.conversation-head{padding-top:0}.dialogue{min-height:170px;max-height:300px}.voice-conversation{grid-template-columns:1fr}.voice-conversation-actions{justify-content:flex-start} }
-  @media(max-width:500px) { .shell{padding:10px 2px 22px}.master-card{padding:13px 4px 17px}.eyebrow{font-size:10px;margin-bottom:9px}h1{font-size:clamp(30px,7.6vw,38px);margin-bottom:8px}.master-card p:not(.eyebrow){font-size:12px}.system-state{padding:0}.status{padding:5px 8px;font-size:10px}.knowledge-status{display:none}.avatar-stage{min-height:218px;max-height:218px}.portrait-stack{inset:-5px 15% 25px}.oracle-halo{width:190px;top:-20px}.oracle-halo span{width:25px;height:25px;margin:-12px;transform:rotate(calc(var(--i)*45deg)) translateY(-76px) rotate(calc(var(--i)*-45deg))}.avatar-panel{padding:6px 9px;margin:0 8px 8px}.avatar-state-line{font-size:10px}.avatar-panel p,.voice-meter{display:none}.conversation-head span{font-size:16px}.conversation-head small{font-size:10px}.dialogue{padding:14px 11px;min-height:145px;max-height:240px}.message{max-width:96%}.message p{font-size:14px}.controls{padding:15px 12px}.controls label{font-size:17px}.submit-actions{grid-template-columns:1fr 1fr}.submit-actions button{padding:8px;font-size:12px}.memory-tools{display:grid}.memory-tools>div{justify-content:flex-start}.voice-conversation-copy small{font-size:10px} }
-</style>`;

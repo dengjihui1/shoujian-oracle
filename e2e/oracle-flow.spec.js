@@ -135,6 +135,7 @@ test("云端 TTS 失败只降级语音，不锁死文字输入", async ({ page }
   await mockChatStream(page, () => "第一句用于触发语音。第二句确认文字回答完整。" );
   await page.goto("/");
 
+  await openVoiceSettings(page);
   await page.locator('[data-action="voice"]').click();
   await page.locator('[data-action="voice-mode"]').click();
   await expect(page.locator('[data-action="voice"]')).toContainText("云端");
@@ -200,13 +201,14 @@ test("导入异常来源记录后页面仍可用，刷新也不会被污染", as
 
 test("语音验收报告只导出延迟，不包含转写内容", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByText("墨衡云端 · 周易 RAG 已连接")).toBeVisible();
+  await expect(page.getByText("墨衡已连接")).toBeVisible();
   const injected = await page.locator("shoujian-oracle").evaluate((host) => {
     host.voicePerformance.record({ listeningAt: 10, submittedAt: 20, asrFinalMs: 80, firstTokenMs: 620, firstAudioMs: 980, turnComplete: true, transcript: "不应导出" });
     host.render();
     return host.voicePerformance.summary;
   });
   expect(injected.turns).toBe(1);
+  await openVoiceSettings(page);
   await expect(page.getByText("本机验收 · 1 轮")).toBeVisible();
 
   const downloadPromise = page.waitForEvent("download");
@@ -281,6 +283,7 @@ test("浏览器实时识别网络失败后自动语音对话继续，仍可手�
   await expect(page.locator('[data-action="voice-conversation"]')).toContainText("结束语音对话");
   await expect(page.getByText("已自动切换为停顿识别", { exact: false })).toBeVisible();
   await page.locator('[data-action="voice-conversation"]').click();
+  await openVoiceSettings(page);
   await page.locator('[data-action="record"]').click();
   await expect(page.locator('[data-action="stop-record"]')).toContainText("停止并转文字");
   await page.locator('[data-action="stop-record"]').click();
@@ -299,10 +302,12 @@ test("单次语音输入网络失败后也能改用录音", async ({ page }) => 
       async cancel() {},
     };
   });
+  await openVoiceSettings(page);
   await page.locator('[data-action="record"]').click();
   await page.evaluate(() => globalThis.__shoujianRecognition.onerror({ error: "network" }));
   await expect(page.getByText("浏览器增量转写网络不可用", { exact: false })).toBeVisible();
   await expect(page.locator('[data-action="record"]')).toContainText("按下说话");
+  await openVoiceSettings(page);
   await page.locator('[data-action="record"]').click();
   await page.locator('[data-action="stop-record"]').click();
   await expect(page.locator("textarea#say")).toHaveValue("单次录音成功");
@@ -344,6 +349,7 @@ test("识别网络失败后真实 MediaRecorder 能录制并释放合成麦克�
   });
   await page.goto("/");
   const nativeCapture = await page.evaluate(() => typeof MediaRecorder === "function" && typeof AudioContext === "function" && typeof navigator.mediaDevices?.getUserMedia === "function");
+  await openVoiceSettings(page);
   await page.locator('[data-action="record"]').click();
   await page.evaluate(() => globalThis.__shoujianRecognition.onerror({ error: "network" }));
   if (!nativeCapture) {
@@ -351,6 +357,7 @@ test("识别网络失败后真实 MediaRecorder 能录制并释放合成麦克�
     await expect(page.locator("textarea#say")).toBeEnabled();
     return;
   }
+  await openVoiceSettings(page);
   await page.locator('[data-action="record"]').click();
   await expect(page.locator('[data-action="stop-record"]')).toContainText("停止并转文字");
   await page.waitForTimeout(250);
@@ -365,6 +372,7 @@ test("识别网络失败后真实 MediaRecorder 能录制并释放合成麦克�
 test("录音器自行停止后页面自动转写并恢复输入", async ({ page }) => {
   await page.route("**/api/transcribe", (route) => route.fulfill({ json: { text: "自动停止的录音" } }));
   await page.goto("/");
+  await openVoiceSettings(page);
   await page.locator('[data-action="record"]').click();
   await page.evaluate(() => globalThis.__shoujianRecognition.onerror({ error: "network" }));
   await page.locator("shoujian-oracle").evaluate((host) => {
@@ -379,6 +387,7 @@ test("录音器自行停止后页面自动转写并恢复输入", async ({ page 
     };
     host.render();
   });
+  await openVoiceSettings(page);
   await page.locator('[data-action="record"]').click();
   await expect(page.locator('[data-action="stop-record"]')).toBeVisible();
   await page.evaluate(() => globalThis.__finishRecordedAudio());
@@ -388,6 +397,7 @@ test("录音器自行停止后页面自动转写并恢复输入", async ({ page 
 
 test("录音器中途报错后页面解除占用并保留文字输入", async ({ page }) => {
   await page.goto("/");
+  await openVoiceSettings(page);
   await page.locator('[data-action="record"]').click();
   await page.evaluate(() => globalThis.__shoujianRecognition.onerror({ error: "network" }));
   await page.locator("shoujian-oracle").evaluate((host) => {
@@ -402,6 +412,7 @@ test("录音器中途报错后页面解除占用并保留文字输入", async ({
     };
     host.render();
   });
+  await openVoiceSettings(page);
   await page.locator('[data-action="record"]').click();
   await page.evaluate(() => globalThis.__failRecordedAudio());
   await expect(page.locator(".message.master p", { hasText: "录音设备已断开" })).toBeVisible();
@@ -532,4 +543,9 @@ async function mockChatStream(page, answer) {
 
 function event(name, data) {
   return `event: ${name}\ndata: ${JSON.stringify(data)}\n\n`;
+}
+
+async function openVoiceSettings(page) {
+  const drawer = page.locator('[data-drawer="voice"]');
+  if (await drawer.getAttribute("open") === null) await drawer.locator("summary").click();
 }

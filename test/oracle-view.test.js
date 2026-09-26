@@ -102,7 +102,7 @@ test("streaming messages expose the progressive cursor class", () => {
   const html = render({ messages: [{ role: "master", text: "正在回答", streaming: true }] });
   assert.match(html, /message master\s+streaming/u);
   assert.match(html, /\.message\.streaming p::after/u);
-  assert.match(html, /content: "▍"/u);
+  assert.match(html, /content:\s*"▍"/u);
 });
 
 test("recording locks text submission but leaves the stop-recording action available", () => {
@@ -133,7 +133,7 @@ test("visible footer stays concise while the reading card carries the reference 
     changed: null,
   };
   const html = render({ stage: "reading", question: "这门生意如何？", reading });
-  assert.match(html, /守简问卦 · 传统文化体验 · 卦象仅供参考/u);
+  assert.match(html, /传统文化体验 · 卦象仅供参考/u);
   assert.match(html, /class="reading-disclaimer"/u);
   assert.doesNotMatch(html, /文字、最近上下文/u);
   assert.doesNotMatch(html, /发送给 Google Gemini/u);
@@ -148,12 +148,24 @@ test("a moving question gets a conditional plain-language decision check", () =>
   assert.doesNotMatch(reply, /会顺利|一定合适/u);
 });
 
+test("matching trigrams produce one clear action without pretending facts are verified", () => {
+  const reply = plainReading(castHexagram([7, 7, 7, 7, 7, 7]), "如何安排阅读？");
+  assert.match(reply, /如果关键条件已核实/u);
+  assert.equal(reply.match(/列出最重要的事项和顺序/gu)?.length, 1);
+});
+
+test("replaying the entrance cannot hide active microphone or cancellation controls", () => {
+  for (const state of [{ recording: true }, { recordingStarting: true }, { voiceConversationActive: true }, { busy: true }, { transcribing: true }]) {
+    assert.match(render(state), /data-action="replay-entry" disabled/u);
+  }
+});
+
 test("cloud UI uses Moheng branding and presents divination as broadly available", () => {
   const html = render();
-  assert.match(html, /墨衡云端 · 周易 RAG 已连接/u);
+  assert.match(html, /墨衡已连接/u);
   assert.match(html, /借一卦，/u);
   assert.match(html, /生意、感情、健康、学业或任何困惑/u);
-  assert.match(html, /以此问起卦 · 仅供参考/u);
+  assert.match(html, /以此问起卦/u);
 });
 
 test("a failed cloud turn exposes a user-triggered retry without locking chat", () => {
@@ -204,7 +216,7 @@ test("intake review is editable and must be confirmed before casting", () => {
     stage: "ready",
     intake: { status: "confirmed", summary: "所问：未来三个月是否继续项目" },
   });
-  assert.match(ready, /问卦摘要已冻结/u);
+  assert.match(ready, /这次所问 · 已确认/u);
   assert.match(ready, /data-action="cast"/u);
 });
 
@@ -212,7 +224,7 @@ test("supported browsers expose explicit automatic voice conversation", () => {
   const html = render();
   assert.match(html, /自动语音对话/u);
   assert.match(html, /开始语音对话（自动发送）/u);
-  assert.match(html, /浏览器支持时显示增量文字，否则停顿后云端转写/u);
+  assert.match(html, /实时转写取决于浏览器支持/u);
 });
 
 test("active voice conversation reports transcript, latency and interruption", () => {
